@@ -1,0 +1,11 @@
+# dependencies
+node_modules/
+replica/node_modules/
+
+# build outputs
+dist/
+.next/
+
+# env files
+.env
+.env.local
