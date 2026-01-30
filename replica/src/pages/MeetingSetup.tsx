@@ -175,6 +175,21 @@ export function CreateMeeting() {
     const dateInputRef = useRef<HTMLInputElement>(null);
     const timeInputRef = useRef<HTMLInputElement>(null);
 
+    // Autofill detection for date/time
+    // When browser autofills, input event is fired with isTrusted true, but sometimes only animationstart is reliable
+    // We'll use both for robustness
+    const handleDateAutofill = (e: React.SyntheticEvent<HTMLInputElement>) => {
+        // If value is filled and popup is open, close it
+        if (e.currentTarget.value && showDatePicker) {
+            setShowDatePicker(false);
+        }
+    };
+    const handleTimeAutofill = (e: React.SyntheticEvent<HTMLInputElement>) => {
+        if (e.currentTarget.value && showTimePicker) {
+            setShowTimePicker(false);
+        }
+    };
+
     // For date picker
     const today = new Date();
     const selectedDate = formData.date ? new Date(formData.date) : null;
@@ -278,6 +293,8 @@ export function CreateMeeting() {
                                                 }
                                                 setFormData({ ...formData, date: val });
                                             }}
+                                            onInput={handleDateAutofill}
+                                            onAnimationStart={handleDateAutofill}
                                             className="bg-[#1C1C1C] border-[#404040] pl-10"
                                         />
                                         {/* Date Picker Popover */}
@@ -446,6 +463,8 @@ export function CreateMeeting() {
                                             onChange={(e) => {
                                                 setFormData({ ...formData, time: e.target.value });
                                             }}
+                                            onInput={handleTimeAutofill}
+                                            onAnimationStart={handleTimeAutofill}
                                             className="bg-[#1C1C1C] border-[#404040] pl-10"
                                         />
                                         {/* Time Picker Popover */}

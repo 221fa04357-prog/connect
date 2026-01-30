@@ -135,14 +135,6 @@ export default function ControlBar() {
               hasDropdown
             />
 
-            {/* Security (Host Only) */}
-            {isHost && (
-              <ControlButton
-                icon={Shield}
-                label="Security"
-                onClick={toggleSettings}
-              />
-            )}
 
             {/* Participants */}
             <div className="relative">
