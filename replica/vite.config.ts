@@ -1,18 +1,16 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
-import path from 'path';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react-swc'
+import path from 'path'
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  plugins: [
-    react(),
-  ],
+  base: "./",   // 🔥 THIS LINE FIXES THE 404
+  plugins: [react()],
   server: {
-    watch: { usePolling: true, interval: 800 /* 300~1500 */ },
+    watch: { usePolling: true, interval: 800 },
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
-}));
+}))
