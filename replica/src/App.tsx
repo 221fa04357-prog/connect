@@ -3,7 +3,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
-import { Login, Register } from './pages/Auth';
+import { Login, Register, ResetPassword } from './pages/Auth';
 import { JoinMeeting, CreateMeeting } from './pages/MeetingSetup';
 import MeetingRoom from './pages/MeetingRoom';
 import Settings from './pages/Settings';
@@ -30,7 +30,9 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+
           <Route path="/register" element={<Register />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Protected Meeting Routes */}
           <Route path="/join-meeting" element={

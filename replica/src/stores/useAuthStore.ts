@@ -13,9 +13,41 @@ interface AuthState {
     logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-    user: null,
-    isAuthenticated: false,
-    login: (user) => set({ user, isAuthenticated: true }),
-    logout: () => set({ user: null, isAuthenticated: false }),
-}));
+// Helpers for localStorage
+const AUTH_KEY = 'connectpro_auth';
+function saveAuth(user: User | null, isAuthenticated: boolean) {
+    if (isAuthenticated && user) {
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ user, isAuthenticated }));
+    } else {
+        localStorage.removeItem(AUTH_KEY);
+    }
+}
+function loadAuth(): { user: User | null; isAuthenticated: boolean } {
+    try {
+        const raw = localStorage.getItem(AUTH_KEY);
+        if (!raw) return { user: null, isAuthenticated: false };
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.user && parsed.isAuthenticated) {
+            return { user: parsed.user, isAuthenticated: true };
+        }
+        return { user: null, isAuthenticated: false };
+    } catch {
+        return { user: null, isAuthenticated: false };
+    }
+}
+
+export const useAuthStore = create<AuthState>((set) => {
+    const initial = loadAuth();
+    return {
+        user: initial.user,
+        isAuthenticated: initial.isAuthenticated,
+        login: (user) => {
+            saveAuth(user, true);
+            set({ user, isAuthenticated: true });
+        },
+        logout: () => {
+            saveAuth(null, false);
+            set({ user: null, isAuthenticated: false });
+        },
+    };
+});
