@@ -70,15 +70,27 @@ export default function ControlBar() {
 
   const handleAudioToggle = () => {
     toggleAudio();
-    if (user && participants.find(p => p.id === user.id)) {
-      updateParticipant(user.id, { isAudioMuted: !isAudioMuted });
+    // Fallback to participant-1 if user is not set or ID mismatch
+    const userId = user?.id;
+    const participant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`)
+      || participants.find(p => p.id === 'participant-1');
+
+    if (participant) {
+      updateParticipant(participant.id, { isAudioMuted: !isAudioMuted });
     }
   };
 
   const handleVideoToggle = () => {
     toggleVideo();
-    if (user && participants.find(p => p.id === user.id)) {
-      updateParticipant(user.id, { isVideoOff: !isVideoOff });
+    // Fallback to participant-1
+    const userId = user?.id;
+    const participant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`)
+      || participants.find(p => p.id === 'participant-1');
+
+    if (participant) {
+      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
     }
   };
 
@@ -103,7 +115,7 @@ export default function ControlBar() {
         <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
 
           {/* Main Controls - Left/Center Aligned (Zoom style) */}
-          <div className="flex items-center gap-2 md:gap-4 lg:gap-6 flex-1 justify-center md:justify-start lg:justify-center">
+          <div className="flex items-center gap-2 md:gap-4 lg:gap-6 flex-1 justify-center md:justify-start lg:justify-center overflow-x-auto no-scrollbar">
 
             {/* Audio */}
             <ControlButton

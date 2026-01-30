@@ -99,3 +99,13 @@
 .animate-slide-in-bottom {
   animation: slideInFromBottom 0.3s ease-out;
 }
+
+/* Utility to hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -177,7 +177,7 @@ export function CreateMeeting() {
                         <h2 className="text-3xl font-bold">Create Meeting</h2>
                     </div>
 
-                    <div className="flex gap-4 mb-8">
+                    <div className="flex flex-col sm:flex-row gap-4 mb-8">
                         <Button
                             onClick={() => setIsScheduled(false)}
                             variant={!isScheduled ? 'default' : 'outline'}

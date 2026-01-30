@@ -17,7 +17,7 @@ export default function MeetingRoom() {
       const randomParticipant = participants[Math.floor(Math.random() * participants.length)];
       if (randomParticipant && !randomParticipant.isAudioMuted) {
         setActiveSpeaker(randomParticipant.id);
-        
+
         // Clear after 2 seconds
         setTimeout(() => setActiveSpeaker(null), 2000);
       }

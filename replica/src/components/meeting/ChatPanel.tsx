@@ -1,53 +1,107 @@
 import { useState, useRef, useEffect } from 'react';
-import { useChatStore } from '@/stores/useChatStore';
-import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Send, Paperclip, X, SmilePlus } from 'lucide-react';
+import { Send, SmilePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useMeetingStore } from '@/stores/useMeetingStore';
 import { cn } from '@/lib/utils';
-import { ChatMessage } from '@/types';
+import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useParticipantsStore } from '@/stores/useParticipantsStore';
 
-const reactionEmojis = ['👍', '👏', '❤️', '😂', '😮', '🎉', '😍', '🔥'];
+/* ---------------- TYPES ---------------- */
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  type: 'public' | 'private';
+  timestamp: Date;
+  privateTo?: string; // participant id
+}
+
+/* ---------------- DEMO MESSAGES ---------------- */
+
+const DEMO_MESSAGES: ChatMessage[] = [
+  {
+    id: '1',
+    senderId: 'user-1',
+    senderName: 'Alice Johnson',
+    content: 'Hello everyone 👋',
+    type: 'public',
+    timestamp: new Date(),
+  },
+  {
+    id: '2',
+    senderId: 'user-2',
+    senderName: 'Bob Smith',
+    content: 'Can you hear me?',
+    type: 'public',
+    timestamp: new Date(),
+  },
+];
+
+/* ---------------- EMOJIS ---------------- */
+
+const EMOJIS = ['😀', '😂', '😍', '👍', '🔥', '🎉', '😮', '❤️'];
+
+/* ---------------- COMPONENT ---------------- */
 
 export default function ChatPanel() {
   const { isChatOpen, toggleChat } = useMeetingStore();
-  const { messages, activeTab, setActiveTab, sendMessage, markAsRead } = useChatStore();
   const { participants } = useParticipantsStore();
+
+  const [messages, setMessages] = useState<ChatMessage[]>(DEMO_MESSAGES);
+  const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
   const [input, setInput] = useState('');
-  const [messageReactions, setMessageReactions] = useState<{ [key: string]: string[] }>({});
-  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [privateTo, setPrivateTo] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /* ---------------- AUTO SCROLL ---------------- */
 
   useEffect(() => {
     if (isChatOpen) {
-      markAsRead();
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [isChatOpen, messages, markAsRead]);
+  }, [messages, isChatOpen]);
+
+  /* ---------------- SEND MESSAGE ---------------- */
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendMessage(input, activeTab);
+
+    if (activeTab === 'private' && !privateTo) {
+      alert('Please select a participant');
+      return;
+    }
+
+    const receiver = participants.find(p => p.id === privateTo);
+
+    const newMessage: ChatMessage = {
+      id: Date.now().toString(),
+      senderId: 'current-user',
+      senderName: 'You',
+      content: input,
+      type: activeTab,
+      timestamp: new Date(),
+      privateTo: activeTab === 'private' ? privateTo ?? undefined : undefined,
+    };
+
+    setMessages(prev => [...prev, newMessage]);
     setInput('');
+    setShowEmojiPicker(false);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const addReaction = (messageId: string, emoji: string) => {
-    setMessageReactions(prev => ({
-      ...prev,
-      [messageId]: prev[messageId] ? [...prev[messageId], emoji] : [emoji]
-    }));
-    setShowReactionPicker(null);
-  };
+  /* ---------------- FILTER ---------------- */
 
   const publicMessages = messages.filter(m => m.type === 'public');
   const privateMessages = messages.filter(m => m.type === 'private');
@@ -60,9 +114,15 @@ export default function ChatPanel() {
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed right-0 top-0 bottom-0 w-full md:w-80 lg:w-96 bg-[#1C1C1C] border-l border-[#404040] z-30 flex flex-col"
+          className="
+            fixed right-0 top-0 bottom-14
+            w-[380px]
+            bg-[#1C1C1C]
+            border-l border-[#404040]
+            z-30 flex flex-col
+          "
         >
-          {/* Header */}
+          {/* HEADER */}
           <div className="flex items-center justify-between p-4 border-b border-[#404040]">
             <h3 className="text-lg font-semibold">Chat</h3>
             <Button
@@ -75,64 +135,131 @@ export default function ChatPanel() {
             </Button>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'public' | 'private')} className="flex-1 flex flex-col">
+          {/* TABS */}
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => {
+              setActiveTab(v as 'public' | 'private');
+              setPrivateTo(null);
+            }}
+            className="flex-1 flex flex-col"
+          >
             <TabsList className="w-full bg-[#232323] rounded-none border-b border-[#404040]">
-              <TabsTrigger value="public" className="flex-1">
+              <TabsTrigger
+                value="public"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-[#0B5CFF]"
+              >
                 Public ({publicMessages.length})
               </TabsTrigger>
-              <TabsTrigger value="private" className="flex-1">
+              <TabsTrigger
+                value="private"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-[#0B5CFF]"
+              >
                 Private ({privateMessages.length})
               </TabsTrigger>
             </TabsList>
 
+            {/* PRIVATE RECIPIENT SELECT */}
+            {activeTab === 'private' && (
+              <div className="p-3 border-b border-[#404040]">
+                <label className="text-xs text-gray-400 mb-1 block">
+                  Send private message to
+                </label>
+
+                <select
+                  value={privateTo ?? ''}
+                  onChange={(e) => setPrivateTo(e.target.value)}
+                  className="w-full bg-[#232323] border border-[#404040] rounded px-2 py-1 text-sm"
+                >
+                  <option value="" disabled>
+                    Select participant
+                  </option>
+
+                  {participants
+                    .filter(p => p.id !== 'current-user')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
             <TabsContent value="public" className="flex-1 overflow-hidden mt-0">
-              <MessageList 
-                messages={publicMessages} 
+              <MessageList
+                messages={publicMessages}
+                participants={participants}
                 messagesEndRef={messagesEndRef}
-                messageReactions={messageReactions}
-                onAddReaction={addReaction}
-                showReactionPicker={showReactionPicker}
-                setShowReactionPicker={setShowReactionPicker}
               />
             </TabsContent>
 
             <TabsContent value="private" className="flex-1 overflow-hidden mt-0">
-              <MessageList 
-                messages={privateMessages} 
+              <MessageList
+                messages={privateMessages}
+                participants={participants}
                 messagesEndRef={messagesEndRef}
-                messageReactions={messageReactions}
-                onAddReaction={addReaction}
-                showReactionPicker={showReactionPicker}
-                setShowReactionPicker={setShowReactionPicker}
               />
             </TabsContent>
           </Tabs>
 
-          {/* Input */}
-          <div className="p-4 border-t border-[#404040]">
-            <div className="flex gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hover:bg-[#2D2D2D] flex-shrink-0"
-              >
-                <Paperclip className="w-5 h-5" />
-              </Button>
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type a message..."
-                className="bg-[#232323] border-[#404040] focus-visible:ring-[#0B5CFF]"
-              />
-              <Button
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="bg-[#0B5CFF] hover:bg-[#2D8CFF] flex-shrink-0"
-              >
-                <Send className="w-5 h-5" />
-              </Button>
+          {/* INPUT */}
+          <div className="px-4 pb-4 pt-2 bg-[#1C1C1C] sticky bottom-16 relative">
+            {showEmojiPicker && (
+              <div className="absolute bottom-20 right-4 bg-[#232323] border border-[#404040] rounded-lg p-2 flex gap-2 z-50">
+                {EMOJIS.map(e => (
+                  <button
+                    key={e}
+                    onClick={() => {
+                      setInput(prev => prev + e);
+                      setShowEmojiPicker(false);
+                    }}
+                    className="text-xl hover:scale-125 transition"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="bg-[#232323] border border-[#404040] rounded-xl p-2 shadow-md">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    activeTab === 'private'
+                      ? privateTo
+                        ? `Message to ${participants.find(p => p.id === privateTo)?.name}`
+                        : 'Select a participant'
+                      : 'Type a message...'
+                  }
+                  className="flex-1 bg-transparent border-none focus-visible:ring-0 text-white"
+                />
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowEmojiPicker(v => !v)}
+                >
+                  <SmilePlus className="w-5 h-5" />
+                </Button>
+
+                <Button
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  size="icon"
+                  className={cn(
+                    input.trim()
+                      ? 'bg-[#0B5CFF] hover:bg-[#2D8CFF]'
+                      : 'bg-[#2D2D2D]',
+                    'text-white'
+                  )}
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -141,109 +268,53 @@ export default function ChatPanel() {
   );
 }
 
-function MessageList({ 
-  messages, 
-  messagesEndRef, 
-  messageReactions,
-  onAddReaction,
-  showReactionPicker,
-  setShowReactionPicker
-}: { 
-  messages: ChatMessage[]
-  messagesEndRef: React.RefObject<HTMLDivElement>
-  messageReactions: { [key: string]: string[] }
-  onAddReaction: (messageId: string, emoji: string) => void
-  showReactionPicker: string | null
-  setShowReactionPicker: (id: string | null) => void
+/* ---------------- MESSAGE LIST ---------------- */
+
+function MessageList({
+  messages,
+  participants,
+  messagesEndRef,
+}: {
+  messages: ChatMessage[];
+  participants: { id: string; name: string }[];
+  messagesEndRef: React.RefObject<HTMLDivElement>;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-      {messages.map((message) => (
-        <motion.div
-          key={message.id}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={cn(
-            'flex flex-col gap-1 group',
-            message.senderId === 'current-user' && 'items-end'
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{message.senderName}</span>
-            <span className="text-xs text-gray-500">
-              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="relative">
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {messages.map(msg => {
+        const isMe = msg.senderId === 'current-user';
+        const receiverName =
+          msg.type === 'private'
+            ? participants.find(p => p.id === msg.privateTo)?.name
+            : null;
+
+        return (
+          <div
+            key={msg.id}
+            className={cn('flex flex-col gap-1', isMe ? 'items-end' : 'items-start')}
+          >
+            <div className="text-xs text-gray-400">
+              {msg.senderName}
+              {receiverName && <> → {receiverName}</>} •{' '}
+              {msg.timestamp.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </div>
+
             <div
               className={cn(
-                'max-w-[80%] rounded-lg p-3',
-                message.senderId === 'current-user'
-                  ? 'bg-[#0B5CFF] text-white'
-                  : 'bg-[#232323]'
+                'px-4 py-2 rounded-2xl text-sm max-w-[80%]',
+                isMe
+                  ? 'bg-[#0B5CFF] text-white rounded-br-none'
+                  : 'bg-[#2A2A2A] text-gray-200 rounded-bl-none'
               )}
             >
-              <p className="text-sm break-words">{message.content}</p>
-            </div>
-
-            {/* Reaction button */}
-            <div className="absolute -bottom-8 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="relative">
-                <button
-                  onClick={() => setShowReactionPicker(showReactionPicker === message.id ? null : message.id)}
-                  className="p-1 hover:bg-[#2D2D2D] rounded"
-                >
-                  <SmilePlus className="w-4 h-4" />
-                </button>
-
-                <AnimatePresence>
-                  {showReactionPicker === message.id && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="absolute -top-12 right-0 bg-[#232323] rounded-lg p-2 flex gap-1 shadow-xl z-50"
-                    >
-                      {reactionEmojis.map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => onAddReaction(message.id, emoji)}
-                          className="text-xl hover:scale-125 transition-transform"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {msg.content}
             </div>
           </div>
-
-          {/* Display reactions */}
-          {(messageReactions[message.id] || message.reactions) && (
-            <div className="flex gap-1 flex-wrap mt-2">
-              {message.reactions?.map((reaction, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-1 bg-[#232323] rounded-full px-2 py-1 text-xs"
-                >
-                  <span>{reaction.emoji}</span>
-                  <span className="text-gray-400">{reaction.users.length}</span>
-                </div>
-              ))}
-              {messageReactions[message.id]?.map((emoji, idx) => (
-                <div
-                  key={`user-reaction-${idx}`}
-                  className="bg-[#232323] rounded-full px-2 py-1 text-xs"
-                >
-                  {emoji}
-                </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-      ))}
+        );
+      })}
       <div ref={messagesEndRef} />
     </div>
   );

@@ -2,6 +2,7 @@ import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import VideoTile from './VideoTile';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
 
 export default function VideoGrid() {
   const { participants, activeSpeakerId, pinnedParticipantId, pinParticipant, unpinParticipant } = useParticipantsStore();
@@ -51,9 +52,9 @@ export default function VideoGrid() {
 
   // Gallery View
   const gridCols = participants.length <= 2 ? 'grid-cols-1 md:grid-cols-2' :
-                   participants.length <= 4 ? 'grid-cols-2' :
-                   participants.length <= 9 ? 'grid-cols-2 md:grid-cols-3' :
-                   'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
+    participants.length <= 4 ? 'grid-cols-2' :
+      participants.length <= 9 ? 'grid-cols-2 md:grid-cols-3' :
+        'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
 
   return (
     <div className={cn('grid gap-2 md:gap-4 p-2 md:p-4 h-full overflow-auto', gridCols)}>

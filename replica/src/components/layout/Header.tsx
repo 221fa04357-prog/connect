@@ -30,7 +30,7 @@ export const Header = () => {
       </div>
 
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2 text-sm text-[#A3A3A3]">
+        <div className="hidden sm:flex items-center gap-2 text-sm text-[#A3A3A3]">
           <Clock className="w-4 h-4" />
           <span>{time.toLocaleTimeString()}</span>
         </div>
@@ -41,7 +41,7 @@ export const Header = () => {
               <div className="w-8 h-8 rounded-full bg-[#0B5CFF] flex items-center justify-center text-white font-semibold text-sm">
                 {user.name.charAt(0).toUpperCase()}
               </div>
-              <div className="text-white hidden sm:block">
+              <div className="text-white hidden md:block">
                 <p className="text-xs font-semibold">{user.name}</p>
               </div>
             </div>
