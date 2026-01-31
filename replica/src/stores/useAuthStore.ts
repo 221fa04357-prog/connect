@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 
+import type { UserRole } from '@/types';
 interface User {
     id: string;
     name: string;
     email: string;
+    role: UserRole;
 }
 
 interface AuthState {

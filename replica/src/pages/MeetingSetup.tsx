@@ -30,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 
 export function JoinMeeting() {
     const navigate = useNavigate();
@@ -37,13 +38,21 @@ export function JoinMeeting() {
     const [name, setName] = useState('');
     const [isAudioMuted, setIsAudioMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
+    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
 
     const handleJoin = () => {
         if (!meetingId || !name) {
             alert('Please enter meeting ID and your name');
             return;
         }
-        navigate('/meeting');
+        // Allow join if authenticated or guest session is active
+        if (isAuthenticated || guestSessionActive) {
+            navigate('/meeting');
+        } else {
+            alert('Guest session expired. Please sign in to continue.');
+            navigate('/login');
+        }
     };
 
     return (

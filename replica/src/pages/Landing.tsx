@@ -3,6 +3,8 @@ import { Video, Users, Monitor, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
+import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 
 export default function Landing() {
@@ -10,6 +12,29 @@ export default function Landing() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
+  const guestSessionExpiresAt = useGuestSessionStore((state) => state.guestSessionExpiresAt);
+  const startGuestSession = useGuestSessionStore((state) => state.startGuestSession);
+
+  // Start guest session on mount if not authenticated and not already started
+  useEffect(() => {
+    if (!isAuthenticated && !guestSessionActive) {
+      startGuestSession();
+    }
+  }, [isAuthenticated, guestSessionActive, startGuestSession]);
+
+  // Timer state for countdown
+  const [remaining, setRemaining] = useState<number | null>(null);
+  useEffect(() => {
+    if (guestSessionActive && guestSessionExpiresAt) {
+      const update = () => setRemaining(Math.max(0, guestSessionExpiresAt - Date.now()));
+      update();
+      const interval = setInterval(update, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setRemaining(null);
+    }
+  }, [guestSessionActive, guestSessionExpiresAt]);
 
   const features = [
     {
@@ -62,6 +87,23 @@ export default function Landing() {
             </div>
           </div>
         </header>
+      )}
+
+      {/* Guest session timer (show only if not authenticated and guest session is active) */}
+      {!isAuthenticated && guestSessionActive && remaining !== null && (
+        <div className="w-full flex justify-center">
+          <div
+            className="max-w-xl w-full mx-2 mt-2 px-4 py-2 bg-white/10 text-white rounded-xl shadow-lg border border-white/20 flex items-center justify-center font-semibold text-base backdrop-blur-md"
+            style={{
+              letterSpacing: '0.01em',
+            }}
+          >
+            <span className="mr-2 text-blue-400">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" style={{display:'inline',verticalAlign:'middle'}}><circle cx="10" cy="10" r="9" stroke="#3B82F6" strokeWidth="2"/><text x="10" y="15" textAnchor="middle" fontWeight="bold" fontSize="15" fill="#3B82F6" fontFamily="Segoe UI,Arial,sans-serif">G</text></svg>
+            </span>
+            Guest session: <span className="ml-1 mr-2 text-blue-300">{Math.floor(remaining / 60000)}:{String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')}</span> remaining. 
+          </div>
+        </div>
       )}
 
       {/* Hero Section */}
