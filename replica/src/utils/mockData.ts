@@ -77,7 +77,9 @@ export const generateMockBreakoutRooms = (): BreakoutRoom[] => [
   { id: 'room-3', name: 'Room 3', participantIds: ['participant-6', 'participant-7'], capacity: 4 }
 ];
 
-export const generateWaitingRoomParticipants = (): WaitingRoomParticipant[] => [
-  { id: 'waiting-1', name: 'New Participant 1', joinedAt: new Date() },
-  { id: 'waiting-2', name: 'New Participant 2', joinedAt: new Date(Date.now() - 30000) }
-];
+export const generateWaitingRoomParticipants = (): WaitingRoomParticipant[] =>
+  Array.from({ length: 10 }, (_, i) => ({
+    id: `waiting-${i + 1}`,
+    name: `New Participant ${i + 1}`,
+    joinedAt: new Date(Date.now() - i * 15000)
+  }));
