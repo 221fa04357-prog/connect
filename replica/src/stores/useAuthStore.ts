@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import type { UserRole } from '@/types';
 interface User {
     id: string;
     name: string;

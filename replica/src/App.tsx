@@ -9,13 +9,28 @@ import MeetingRoom from './pages/MeetingRoom';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import { useAuthStore } from './stores/useAuthStore';
+import { useGuestSessionStore } from './stores/useGuestSessionStore';
+import { useEffect } from 'react';
 
 const queryClient = new QueryClient();
 
+
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
+  const checkGuestSession = useGuestSessionStore((state) => state.checkGuestSession);
 
-  if (!isAuthenticated) {
+  // Check guest session timer every second
+  useEffect(() => {
+    if (!isAuthenticated && guestSessionActive) {
+      const interval = setInterval(() => {
+        checkGuestSession();
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, guestSessionActive, checkGuestSession]);
+
+  if (!isAuthenticated && !guestSessionActive) {
     return <Navigate to="/login" replace />;
   }
 
