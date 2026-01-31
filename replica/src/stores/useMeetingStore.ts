@@ -2,6 +2,9 @@
 
 import { create } from 'zustand';
 import { Meeting, ViewMode, Reaction } from '@/types';
+import { eventBus } from '@/lib/eventBus';
+
+const INSTANCE_ID = eventBus.instanceId;
 
 interface MeetingState {
   meeting: Meeting | null;
@@ -24,6 +27,7 @@ interface MeetingState {
 
   // Actions
   setMeeting: (meeting: Meeting) => void;
+  extendMeetingTime: (minutes: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleAudio: () => void;
   toggleVideo: () => void;
@@ -49,8 +53,15 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   meeting: {
     id: 'meeting-123',
     title: 'Team Standup',
-    hostId: '1',
+    hostId: 'participant-1',
+    originalHostId: 'participant-1',
     startTime: new Date(),
+    duration: 60,
+    settings: {
+      enableWaitingRoom: true,
+      allowParticipantsToUnmute: true,
+      allowParticipantsToShareScreen: true,
+    },
     isRecording: false,
     isScreenSharing: false,
     viewMode: 'gallery'
@@ -113,4 +124,25 @@ export const useMeetingStore = create<MeetingState>((set) => ({
 
   setScreenShareStream: (stream) => set({ screenShareStream: stream }),
   setRecordingStartTime: (time) => set({ recordingStartTime: time })
+  ,
+  extendMeetingTime: (minutes: number) => set((state) => {
+    if (!state.meeting) return {} as any;
+    const m = state.meeting;
+    const newDuration = (m.duration || 0) + minutes;
+    const next = { meeting: { ...m, duration: newDuration } } as any;
+    setTimeout(() => eventBus.publish('meeting:update', { meeting: useMeetingStore.getState().meeting }, { source: INSTANCE_ID }));
+    return next;
+  })
 }));
+
+// subscribe to remote meeting updates
+eventBus.subscribe('meeting:update', (payload, meta) => {
+  if (meta?.source === INSTANCE_ID) return;
+  if (payload && payload.meeting) {
+    useMeetingStore.setState({ meeting: payload.meeting });
+  }
+});
+
+// Subscription helper for meeting changes
+export const subscribeToMeeting = (listener: (meeting: Meeting | null) => void) =>
+  useMeetingStore.subscribe((state) => listener(state.meeting));

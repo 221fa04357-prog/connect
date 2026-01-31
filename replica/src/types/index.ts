@@ -39,6 +39,14 @@ export interface Meeting {
   title: string;
   hostId: string;
   startTime: Date;
+  // Optional extended fields
+  duration?: number; // minutes
+  settings?: {
+    enableWaitingRoom?: boolean;
+    allowParticipantsToUnmute?: boolean;
+    allowParticipantsToShareScreen?: boolean;
+  };
+  originalHostId?: string;
   isRecording: boolean;
   isScreenSharing: boolean;
   viewMode: ViewMode;

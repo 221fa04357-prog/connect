@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Reaction } from '@/types';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +26,6 @@ const reactionEmojis = ['👍', '❤️', '😂', '👏', '🎉', '😮'];
 export default function ControlBar() {
   const navigate = useNavigate();
   // Store hooks
-  const { user } = useAuthStore();
   const {
     meeting,
     isAudioMuted,
@@ -48,7 +47,10 @@ export default function ControlBar() {
     leaveMeeting,
     setScreenShareStream,
     setRecordingStartTime
+    ,
+    extendMeetingTime
   } = useMeetingStore();
+  const { user, isSubscribed } = useAuthStore();
 
   const { participants, updateParticipant } = useParticipantsStore();
 
@@ -56,6 +58,27 @@ export default function ControlBar() {
   const [showReactions, setShowReactions] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
+  const reactionsRef = useRef<HTMLDivElement | null>(null);
+
+  // Close reactions on outside click or Escape
+  useEffect(() => {
+    function handleDocClick(e: MouseEvent) {
+      if (!showReactions) return;
+      const el = reactionsRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setShowReactions(false);
+      }
+    }
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowReactions(false);
+    }
+    document.addEventListener('mousedown', handleDocClick);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleDocClick);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [showReactions]);
 
   // Recording Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -123,6 +146,10 @@ export default function ControlBar() {
   };
 
   const handleToggleValidRecording = async () => {
+    if (!isSubscribed) {
+      alert('Recording is a pro feature. Upgrade to record meetings.');
+      return;
+    }
     if (isRecording) {
       // Stop Recording
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -227,7 +254,7 @@ export default function ControlBar() {
                 >
                   {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                   <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
-                    {isVideoOff ? 'Start Video' : 'Stop Video'}
+                    {isVideoOff ? 'video' : 'video'}
                   </span>
                 </button>
                 <DropdownMenuTrigger asChild>
@@ -261,34 +288,33 @@ export default function ControlBar() {
             />
 
             {/* Reactions - Moved before Share */}
-            <div className="relative">
+            <div className="relative" ref={reactionsRef}>
               <ControlButton
                 icon={Smile}
                 label="Reactions"
                 onClick={() => setShowReactions(!showReactions)}
-                isActiveState={showReactions}
               />
               <AnimatePresence>
                 {showReactions && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 bg-[#232323]/95 backdrop-blur-md border border-[#444] rounded-full p-2 flex gap-1 shadow-2xl z-50 min-w-[280px] justify-center"
+                    role="dialog"
+                    aria-label="Reactions"
+                    initial={{ opacity: 0, scale: 0.78, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 8 }}
+                    transition={{ type: 'spring', stiffness: 720, damping: 48 }}
+                    style={{ transformOrigin: 'center bottom' }}
+                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-[rgba(18,18,18,0.7)] backdrop-blur-md border border-[rgba(255,255,255,0.04)] rounded-2xl p-3 flex gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.6)] z-50 min-w-[220px] justify-center"
                   >
                     {reactionEmojis.map((emoji) => (
                       <button
                         key={emoji}
                         onClick={() => handleReaction(emoji)}
-                        className="text-2xl hover:bg-white/10 p-2 rounded-full transition-all hover:scale-125 active:scale-95"
+                        className="text-2xl transition-transform transform hover:scale-110 hover:-translate-y-0.5 motion-reduce:transform-none p-2 rounded-md bg-white/5 hover:bg-white/6 focus:outline-none"
                       >
                         {emoji}
                       </button>
                     ))}
-                    <div className="w-[1px] h-8 bg-gray-600 mx-1 self-center" />
-                    <button className="text-white hover:bg-white/10 p-2 rounded-full transition-colors" title="More reactions">
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -368,6 +394,38 @@ export default function ControlBar() {
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
+                {isHost && (
+                  <>
+                    <DropdownMenuSeparator className="bg-[#333]" />
+                    <DropdownMenuItem onClick={() => {
+                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
+                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
+                        return;
+                      }
+                      extendMeetingTime(15);
+                    }} className="cursor-pointer">
+                      Extend +15 min
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
+                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
+                        return;
+                      }
+                      extendMeetingTime(30);
+                    }} className="cursor-pointer">
+                      Extend +30 min
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
+                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
+                        return;
+                      }
+                      extendMeetingTime(60);
+                    }} className="cursor-pointer">
+                      Extend +60 min
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 

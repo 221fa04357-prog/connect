@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -31,6 +32,7 @@ export default function ParticipantsPanel() {
   const {
     participants,
     waitingRoom,
+    transientRoles,
     toggleHandRaise,
     muteParticipant,     // MUST TOGGLE
     unmuteParticipant,
@@ -38,6 +40,8 @@ export default function ParticipantsPanel() {
     unmuteAll,
     makeHost,
     makeCoHost,
+    revokeHost,
+    revokeCoHost,
     removeParticipant,
     admitFromWaitingRoom,
     removeFromWaitingRoom,
@@ -45,11 +49,17 @@ export default function ParticipantsPanel() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  /** CURRENT USER */
-  const currentUser = participants.find(p => p.id === 'participant-1');
-  const isHost = currentUser?.role === 'host';
-  const isCoHost = currentUser?.role === 'co-host';
-  const canControl = isHost || isCoHost;
+  const { user } = useAuthStore();
+  const { meeting } = useMeetingStore();
+
+  /** Resolve current participant by auth user or fallback to mock */
+  const currentUser = participants.find(p => p.id === user?.id) || participants.find(p => p.id === 'participant-1');
+  const currentRole = (currentUser && (transientRoles[currentUser.id] || currentUser.role)) || 'participant';
+  const isHost = meeting?.hostId === currentUser?.id || currentRole === 'host';
+  const isCoHost = currentRole === 'co-host';
+  const canControl = isHost || isCoHost; // general controls (mute all, waiting room)
+  const canChangeRoles = isHost; // only host can change roles
+  const isOriginalHost = meeting?.originalHostId === currentUser?.id;
 
   /** SEARCH */
   const filteredParticipants = participants.filter(p =>
@@ -174,11 +184,15 @@ export default function ParticipantsPanel() {
 
           {/* PARTICIPANTS LIST */}
           <div className="flex-1 overflow-y-auto">
-            {filteredParticipants.map(participant => (
+            {filteredParticipants.map(participant => {
+              const displayedRole = transientRoles[participant.id] || participant.role;
+              return (
               <ParticipantItem
                 key={participant.id}
                 participant={participant}
                 canControl={canControl}
+                canChangeRoles={canChangeRoles}
+                isOriginalHost={isOriginalHost}
                 onToggleHand={() => toggleHandRaise(participant.id)}
                 onToggleMute={() => {
                   if (participant.isAudioMuted) {
@@ -190,8 +204,12 @@ export default function ParticipantsPanel() {
                 onMakeHost={() => makeHost(participant.id)}
                 onMakeCoHost={() => makeCoHost(participant.id)}
                 onRemove={() => removeParticipant(participant.id)}
+                onRevokeHost={() => revokeHost(participant.id)}
+                onRevokeCoHost={() => revokeCoHost(participant.id)}
+                displayedRole={displayedRole}
               />
-            ))}
+              );
+            })}
           </div>
         </motion.div>
       )}
@@ -204,23 +222,34 @@ export default function ParticipantsPanel() {
 interface ParticipantItemProps {
   participant: Participant;
   canControl: boolean;
+  canChangeRoles?: boolean;
+  isOriginalHost?: boolean;
   onToggleHand: () => void;
   onToggleMute: () => void;
   onMakeHost: () => void;
   onMakeCoHost: () => void;
   onRemove: () => void;
+  onRevokeHost?: () => void;
+  onRevokeCoHost?: () => void;
+  displayedRole?: Participant['role'];
 }
 
 function ParticipantItem({
   participant,
   canControl,
+  canChangeRoles = false,
   onToggleHand,
   onToggleMute,
   onMakeHost,
   onMakeCoHost,
   onRemove,
+  onRevokeHost,
+  onRevokeCoHost,
+  isOriginalHost = false,
+  displayedRole = participant.role,
 }: ParticipantItemProps) {
   const isCurrentUser = participant.id === 'participant-1';
+  const effectiveRole = displayedRole || participant.role;
 
   return (
     <div className="flex items-center justify-between p-4 hover:bg-[#232323]">
@@ -237,10 +266,10 @@ function ParticipantItem({
             <span className="text-sm font-medium truncate">
               {participant.name} {isCurrentUser && '(You)'}
             </span>
-            {participant.role === 'host' && (
+            {effectiveRole === 'host' && (
               <Crown className="w-4 h-4 text-yellow-500" />
             )}
-            {participant.role === 'co-host' && (
+            {effectiveRole === 'co-host' && (
               <Shield className="w-4 h-4 text-purple-500" />
             )}
           </div>
@@ -294,18 +323,44 @@ function ParticipantItem({
                 {participant.isAudioMuted ? 'Unmute' : 'Mute'}
               </DropdownMenuItem>
 
-              <DropdownMenuItem onClick={onMakeHost}>
-                <Crown className="w-4 h-4 mr-2" />
-                Make Host
-              </DropdownMenuItem>
+                {canChangeRoles && (
+                <>
+                  <DropdownMenuItem onClick={onMakeHost}>
+                    <Crown className="w-4 h-4 mr-2" />
+                    Make Host
+                  </DropdownMenuItem>
 
-              <DropdownMenuItem onClick={onMakeCoHost}>
-                <Shield className="w-4 h-4 mr-2" />
-                Make Co-Host
-              </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onMakeCoHost}>
+                    <Shield className="w-4 h-4 mr-2" />
+                    Make Co-Host
+                  </DropdownMenuItem>
+                </>
+              )}
+
+              {/* Original host may revoke roles */}
+              {isOriginalHost && effectiveRole === 'host' && onRevokeHost && (
+                <DropdownMenuItem onClick={onRevokeHost} className="text-yellow-400">
+                  <Crown className="w-4 h-4 mr-2" />
+                  Remove Host
+                </DropdownMenuItem>
+              )}
+
+              {isOriginalHost && effectiveRole === 'co-host' && onRevokeCoHost && (
+                <DropdownMenuItem onClick={onRevokeCoHost} className="text-yellow-400">
+                  <Shield className="w-4 h-4 mr-2" />
+                  Remove Co-Host
+                </DropdownMenuItem>
+              )}
 
               <DropdownMenuItem
-                onClick={onRemove}
+                onClick={() => {
+                  // Prevent removing the host via UI; store also protects this
+                  if (effectiveRole === 'host') {
+                    alert('Cannot remove the host. Transfer host role first.');
+                    return;
+                  }
+                  onRemove();
+                }}
                 className="text-red-500"
               >
                 <X className="w-4 h-4 mr-2" />

@@ -4,13 +4,16 @@ interface User {
     id: string;
     name: string;
     email: string;
+    subscriptionPlan?: 'free' | 'pro' | 'enterprise';
 }
 
 interface AuthState {
     user: User | null;
     isAuthenticated: boolean;
+    isSubscribed: boolean;
     login: (user: User) => void;
     logout: () => void;
+    setSubscription: (plan: User['subscriptionPlan']) => void;
 }
 
 // Helpers for localStorage
@@ -41,13 +44,25 @@ export const useAuthStore = create<AuthState>((set) => {
     return {
         user: initial.user,
         isAuthenticated: initial.isAuthenticated,
+        isSubscribed: !!(initial.user && initial.user.subscriptionPlan && initial.user.subscriptionPlan !== 'free'),
         login: (user) => {
             saveAuth(user, true);
             set({ user, isAuthenticated: true });
         },
         logout: () => {
             saveAuth(null, false);
-            set({ user: null, isAuthenticated: false });
+            set({ user: null, isAuthenticated: false, isSubscribed: false });
         },
+        setSubscription: (plan) => {
+            const curr = loadAuth();
+            const user = curr.user;
+            if (!user) return;
+            user.subscriptionPlan = plan;
+            saveAuth(user, true);
+            set({ user, isSubscribed: plan !== 'free' });
+        }
     };
 });
+
+export const subscribeToAuth = (listener: (auth: { user: User | null; isAuthenticated: boolean; isSubscribed: boolean }) => void) =>
+    useAuthStore.subscribe((state) => listener({ user: state.user, isAuthenticated: state.isAuthenticated, isSubscribed: state.isSubscribed }));
