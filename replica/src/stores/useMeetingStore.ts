@@ -18,6 +18,10 @@ interface MeetingState {
   virtualBackground: string | null;
   isBackgroundBlurred: boolean;
 
+  // New State for features
+  screenShareStream: MediaStream | null;
+  recordingStartTime: number | null;
+
   // Actions
   setMeeting: (meeting: Meeting) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -34,6 +38,8 @@ interface MeetingState {
   setVirtualBackground: (bg: string | null) => void;
   toggleBackgroundBlur: () => void;
   leaveMeeting: () => void;
+  setScreenShareStream: (stream: MediaStream | null) => void;
+  setRecordingStartTime: (time: number | null) => void;
 }
 
 // TODO: Connect to backend WebSocket for real-time meeting state updates
@@ -61,6 +67,8 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   reactions: [],
   virtualBackground: null,
   isBackgroundBlurred: false,
+  screenShareStream: null,
+  recordingStartTime: null,
 
   setMeeting: (meeting) => set({ meeting }),
   setViewMode: (mode) => set({ viewMode: mode }),
@@ -99,5 +107,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
 
   // TODO: Call backend to end meeting
   // POST /api/meeting/{meetingId}/leave
-  leaveMeeting: () => set({ meeting: null })
+  // TODO: Call backend to end meeting
+  // POST /api/meeting/{meetingId}/leave
+  leaveMeeting: () => set({ meeting: null }),
+
+  setScreenShareStream: (stream) => set({ screenShareStream: stream }),
+  setRecordingStartTime: (time) => set({ recordingStartTime: time })
 }));
