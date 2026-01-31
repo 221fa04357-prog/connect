@@ -102,9 +102,9 @@ export default function ParticipantsPanel() {
             </Button>
           </div>
 
-          {/* SEARCH */}
-          <div className="p-4 border-b border-[#404040]">
-            <div className="relative">
+          {/* SEARCH & HOST CONTROLS SIDE BY SIDE */}
+          <div className="p-4 border-b border-[#404040] flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <Input
                 value={searchQuery}
@@ -113,11 +113,7 @@ export default function ParticipantsPanel() {
                 className="pl-10 bg-[#232323] border-[#404040]"
               />
             </div>
-          </div>
-
-          {/* 🔇 HOST CONTROLS */}
-          {canControl && (
-            <div className="p-4 border-b border-[#404040]">
+            {canControl && (
               <Button
                 onClick={() => {
                   if (allMuted) {
@@ -127,7 +123,7 @@ export default function ParticipantsPanel() {
                   }
                 }}
                 variant="outline"
-                className="w-full justify-start border-[#404040] hover:bg-[#2D2D2D]"
+                className="min-w-[120px] border-[#404040] hover:bg-[#2D2D2D]"
               >
                 {allMuted ? (
                   <>
@@ -141,8 +137,8 @@ export default function ParticipantsPanel() {
                   </>
                 )}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* WAITING ROOM */}
           {waitingRoom.length > 0 && canControl && (
@@ -151,7 +147,7 @@ export default function ParticipantsPanel() {
                 <h4 className="text-sm font-semibold mb-3">
                   Waiting Room ({waitingRoom.length})
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
                   {waitingRoom.map(person => (
                     <div
                       key={person.id}

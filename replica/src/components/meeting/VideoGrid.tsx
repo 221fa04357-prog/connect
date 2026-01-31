@@ -51,7 +51,7 @@ export default function VideoGrid() {
 
   // Responsive Zoom-like Gallery View
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto pb-[110px]">
+    <div className="flex-1 min-h-0 overflow-y-auto pb-[110px] no-scrollbar">
       <div
         className={cn(
           'grid gap-2 md:gap-4 p-2 md:p-4 w-full',
