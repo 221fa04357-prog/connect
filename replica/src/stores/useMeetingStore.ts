@@ -24,9 +24,11 @@ interface MeetingState {
   // New State for features
   screenShareStream: MediaStream | null;
   recordingStartTime: number | null;
+  localStream: MediaStream | null;
 
   // Actions
   setMeeting: (meeting: Meeting) => void;
+  setLocalStream: (stream: MediaStream | null) => void;
   extendMeetingTime: (minutes: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleAudio: () => void;
@@ -47,6 +49,10 @@ interface MeetingState {
   leaveMeeting: () => void;
   setScreenShareStream: (stream: MediaStream | null) => void;
   setRecordingStartTime: (time: number | null) => void;
+
+  // View Settings
+  showSelfView: boolean;
+  toggleSelfView: () => void;
 }
 
 export const useMeetingStore = create<MeetingState>((set) => ({
@@ -82,9 +88,14 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   isBackgroundBlurred: false,
   screenShareStream: null,
   recordingStartTime: null,
+  showSelfView: true,
+  localStream: null,
 
   setMeeting: (meeting) => set({ meeting }),
+  setLocalStream: (stream) => set({ localStream: stream }),
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  toggleSelfView: () => set((state) => ({ showSelfView: !state.showSelfView })),
 
   toggleAudio: () =>
     set((state) => ({ isAudioMuted: !state.isAudioMuted })),

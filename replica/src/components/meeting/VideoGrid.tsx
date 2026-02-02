@@ -1,11 +1,13 @@
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import VideoTile from './VideoTile';
 import { cn } from '@/lib/utils';
 
 export default function VideoGrid() {
   const { participants, activeSpeakerId, pinnedParticipantId, pinParticipant, unpinParticipant } = useParticipantsStore();
-  const { viewMode } = useMeetingStore();
+  const { viewMode, showSelfView } = useMeetingStore();
+  const { user } = useAuthStore();
 
   const handlePin = (participantId: string) => {
     if (pinnedParticipantId === participantId) {
@@ -15,21 +17,37 @@ export default function VideoGrid() {
     }
   };
 
+  // Filter participants based on Self View setting
+  const visibleParticipants = participants.filter(p => {
+    // Robust check for "isLocal" matching VideoTile logic
+    const isLocal =
+      p.id === user?.id ||
+      p.id === `participant-${user?.id}` ||
+      (user?.role === 'host' && p.id === 'participant-1');
+
+    if (isLocal) {
+      return showSelfView;
+    }
+    return true;
+  });
+
   if (viewMode === 'speaker') {
-    const speaker = participants.find(p => p.id === activeSpeakerId) || participants[0];
-    const others = participants.filter(p => p.id !== speaker.id);
+    const speaker = visibleParticipants.find(p => p.id === activeSpeakerId) || visibleParticipants[0];
+    const others = visibleParticipants.filter(p => p.id !== speaker?.id);
 
     return (
       <div className="h-full flex flex-col gap-2 p-4">
         {/* Main Speaker */}
         <div className="flex-1">
-          <VideoTile
-            participant={speaker}
-            isActive={true}
-            isPinned={pinnedParticipantId === speaker.id}
-            onPin={() => handlePin(speaker.id)}
-            className="h-full"
-          />
+          {speaker && (
+            <VideoTile
+              participant={speaker}
+              isActive={true}
+              isPinned={pinnedParticipantId === speaker.id}
+              onPin={() => handlePin(speaker.id)}
+              className="h-full"
+            />
+          )}
         </div>
 
         {/* Thumbnails */}
@@ -65,7 +83,7 @@ export default function VideoGrid() {
           justifyItems: 'stretch',
         }}
       >
-        {participants.map((participant) => (
+        {visibleParticipants.map((participant) => (
           <VideoTile
             key={participant.id}
             participant={participant}
