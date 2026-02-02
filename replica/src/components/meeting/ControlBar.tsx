@@ -20,6 +20,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Reaction } from '@/types';
 import { useNavigate } from 'react-router-dom';
+import SubscriptionModal from '@/components/ui/SubscriptionModal';
+import ShareScreenModal from '@/components/meeting/ShareScreenModal';
 
 const reactionEmojis = ['👍', '❤️', '😂', '👏', '🎉', '😮'];
 
@@ -46,9 +48,10 @@ export default function ControlBar() {
     addReaction,
     leaveMeeting,
     setScreenShareStream,
-    setRecordingStartTime
-    ,
-    extendMeetingTime
+    setRecordingStartTime,
+    extendMeetingTime,
+    showSelfView,
+    toggleSelfView
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
@@ -59,6 +62,9 @@ export default function ControlBar() {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
   const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+
   const reactionsRef = useRef<HTMLDivElement | null>(null);
 
   // Close reactions on outside click or Escape
@@ -99,7 +105,7 @@ export default function ControlBar() {
     addReaction(reaction);
     setShowReactions(false);
   };
- 
+
   const handleAudioToggle = () => {
     toggleAudio();
     const userId = user?.id;
@@ -124,17 +130,56 @@ export default function ControlBar() {
     }
   };
 
+  // Centralized Stop Sharing
+  const handleStopScreenShare = () => {
+    // 1. Get current stream from store or ref if needed (store is best source of truth)
+    const currentStream = useMeetingStore.getState().screenShareStream;
+
+    // 2. Stop all tracks securely
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    // 3. Update Store State
+    setScreenShareStream(null);
+    if (useMeetingStore.getState().isScreenSharing) {
+      toggleScreenShare(); // Turn off
+    }
+  };
+
+  const handleShareClick = () => {
+    if (isScreenSharing) {
+      handleStopScreenShare();
+    } else {
+      // Direct start - bypassing intermediate modal
+      handleStartScreenShare();
+    }
+  };
+
   const handleStartScreenShare = async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: 'monitor' // Hint to browser to default to entire screen
+        } as MediaTrackConstraints,
+        audio: true
+      });
+
+      // 1. Set stream immediately
       setScreenShareStream(stream);
-      if (!isScreenSharing) toggleScreenShare();
+
+      // 2. Set state if not already
+      if (!useMeetingStore.getState().isScreenSharing) {
+        toggleScreenShare();
+      }
+
       setShowScreenShareOptions(false);
 
+      // 3. Handle external stop (e.g. browser UI "Stop Sharing" button)
       stream.getVideoTracks()[0].onended = () => {
-        setScreenShareStream(null);
-        if (isScreenSharing) toggleScreenShare();
+        handleStopScreenShare();
       };
+
     } catch (err) {
       console.error("Error sharing screen:", err);
     }
@@ -159,11 +204,6 @@ export default function ControlBar() {
     }
   };
 
-  const handleStopScreenShare = () => {
-    if (isScreenSharing) toggleScreenShare();
-    setScreenShareStream(null);
-    // You would typically stop the tracks here if needed, but the store update is reactive
-  };
   const handleToggleValidRecording = async () => {
     if (isRecording) {
       // Stop Recording
@@ -175,10 +215,14 @@ export default function ControlBar() {
     } else {
       // Start Recording
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { mediaSource: "screen" } as any,
-          audio: true // Optional
-        });
+        // Use local stream (User Camera) to start instantly without Browser Picker Dialog
+        const stream = useMeetingStore.getState().localStream;
+
+        if (!stream) {
+          console.error("No local camera stream available to record.");
+          // Ideally show a toast here
+          return;
+        }
 
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
@@ -201,8 +245,7 @@ export default function ControlBar() {
           a.click();
           window.URL.revokeObjectURL(url);
 
-          // Stop all tracks to clear the red recording icon from tab
-          stream.getTracks().forEach(track => track.stop());
+          // NOTE: Do NOT stop tracks here, as this is the live camera stream.
         };
 
         mediaRecorder.start();
@@ -218,6 +261,15 @@ export default function ControlBar() {
   const handleLeave = () => {
     leaveMeeting();
     navigate('/');
+  };
+
+  // Helper for checking subscription
+  const handleExtendMeeting = (minutes: number) => {
+    if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
+      setShowUpgradeModal(true);
+      return;
+    }
+    extendMeetingTime(minutes);
   };
 
   return (
@@ -302,50 +354,47 @@ export default function ControlBar() {
               isActiveState={isChatOpen}
             />
 
-           
             {/* Reactions Button */}
-<ControlButton
-  icon={Smile}
-  label="Reactions"
-  onClick={() => setShowReactions(!showReactions)}
-/>
+            <ControlButton
+              icon={Smile}
+              label="Reactions"
+              onClick={() => setShowReactions(!showReactions)}
+            />
 
-{/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
-<AnimatePresence>
-  {showReactions && (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="
-        fixed
-        bottom-[64px]
-        left-0
-        right-0
-        z-40
-        flex
-        justify-center
-        gap-4
-        py-2
-        bg-[#111]
-        border-t border-[#222]
-      "
-    >
-      {reactionEmojis.map((emoji) => (
-        <button
-          key={emoji}
-          onClick={() => handleReaction(emoji)}
-          className="text-2xl hover:scale-125 transition-transform"
-        >
-          {emoji}
-        </button>
-      ))}
-    </motion.div>
-  )}
-</AnimatePresence>
-
-
+            {/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
+            <AnimatePresence>
+              {showReactions && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 12 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="
+                    fixed
+                    bottom-[64px]
+                    left-0
+                    right-0
+                    z-40
+                    flex
+                    justify-center
+                    gap-4
+                    py-2
+                    bg-[#111]
+                    border-t border-[#222]
+                  "
+                >
+                  {reactionEmojis.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => handleReaction(emoji)}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Share Screen */}
             <DropdownMenu>
@@ -372,7 +421,7 @@ export default function ControlBar() {
 
                   {/* Copy meeting link */}
                   <DropdownMenuItem onClick={handleCopyMeetingLink} className="cursor-pointer flex items-center justify-between">
-                    <span className="flex-1">Copy Meeting Link</span>
+                    <span className="flex-1">Share Meeting Link</span>
                     {copiedMeetingLink ? (
                       <span className="text-xs text-green-400 font-semibold">Copied</span>
                     ) : (
@@ -381,7 +430,7 @@ export default function ControlBar() {
                   </DropdownMenuItem>
 
                   <DropdownMenuSeparator className="bg-[#333]" />
-                  <DropdownMenuItem onClick={handleStartScreenShare} className="cursor-pointer">
+                  <DropdownMenuItem onClick={handleShareClick} className="cursor-pointer">
                     <span className="flex-1">Share Screen / Window</span>
                     {isScreenSharing && <Check className="w-4 h-4 text-green-500" />}
                   </DropdownMenuItem>
@@ -400,7 +449,7 @@ export default function ControlBar() {
                 </DropdownMenuContent>
               </div>
             </DropdownMenu>
-            
+
             {/* Record Button */}
             <ControlButton
               icon={Circle}
@@ -409,7 +458,6 @@ export default function ControlBar() {
               active={isRecording}
               className={isRecording ? "text-red-500" : ""}
             />
-
 
             {/* More */}
             <DropdownMenu>
@@ -427,6 +475,10 @@ export default function ControlBar() {
                   {viewMode === 'gallery' ? <User className="w-4 h-4 mr-2" /> : <Grid3x3 className="w-4 h-4 mr-2" />}
                   {viewMode === 'gallery' ? 'Speaker View' : 'Gallery View'}
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleSelfView} className="cursor-pointer">
+                  {showSelfView ? <Check className="w-4 h-4 mr-2" /> : <div className="w-4 h-4 mr-2" />}
+                  Show Self View
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleSettings} className="cursor-pointer">
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
@@ -434,31 +486,13 @@ export default function ControlBar() {
                 {isHost && (
                   <>
                     <DropdownMenuSeparator className="bg-[#333]" />
-                    <DropdownMenuItem onClick={() => {
-                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
-                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
-                        return;
-                      }
-                      extendMeetingTime(15);
-                    }} className="cursor-pointer">
+                    <DropdownMenuItem onClick={() => handleExtendMeeting(15)} className="cursor-pointer">
                       Extend +15 min
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
-                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
-                        return;
-                      }
-                      extendMeetingTime(30);
-                    }} className="cursor-pointer">
+                    <DropdownMenuItem onClick={() => handleExtendMeeting(30)} className="cursor-pointer">
                       Extend +30 min
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      if (!user || !user.subscriptionPlan || user.subscriptionPlan === 'free') {
-                        alert('Extending meeting time is a pro feature. Upgrade to extend.');
-                        return;
-                      }
-                      extendMeetingTime(60);
-                    }} className="cursor-pointer">
+                    <DropdownMenuItem onClick={() => handleExtendMeeting(60)} className="cursor-pointer">
                       Extend +60 min
                     </DropdownMenuItem>
                   </>
@@ -480,6 +514,14 @@ export default function ControlBar() {
 
         </div>
       </div>
+
+      <SubscriptionModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
+
+      <ShareScreenModal
+        open={showShareModal}
+        onOpenChange={setShowShareModal}
+        onConfirm={handleStartScreenShare}
+      />
 
       {/* Leave Confirmation Modal */}
       <AnimatePresence>

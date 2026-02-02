@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import VideoGrid from '@/components/meeting/VideoGrid';
 import ControlBar from '@/components/meeting/ControlBar';
+import TopBar from '@/components/meeting/TopBar';
 import ChatPanel from '@/components/meeting/ChatPanel';
 import ParticipantsPanel from '@/components/meeting/ParticipantsPanel';
 import { useMeetingStore } from '@/stores/useMeetingStore';
@@ -21,8 +22,46 @@ export default function MeetingRoom() {
     reactions,
     removeReaction,   // 🔥 IMPORTANT
     isRecording,
-    recordingStartTime
+    recordingStartTime,
+    isVideoOff,
+    localStream,
+    setLocalStream
   } = useMeetingStore();
+
+  /* ---------------- CAMERA MANAGEMENT ---------------- */
+  /* ---------------- CAMERA MANAGEMENT ---------------- */
+  useEffect(() => {
+    const manageCamera = async () => {
+      // Case 1: Video is ON but no stream exists -> Initialize Camera
+      if (!isVideoOff && (!localStream || !localStream.active)) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setLocalStream(stream);
+        } catch (err) {
+          console.error("Failed to access camera:", err);
+        }
+      }
+      // Case 2: Stream exists -> Toggle tracks (Instant response)
+      else if (localStream && localStream.active) {
+        localStream.getVideoTracks().forEach(track => {
+          track.enabled = !isVideoOff;
+        });
+      }
+    };
+
+    manageCamera();
+  }, [isVideoOff, localStream, setLocalStream]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      const stream = useMeetingStore.getState().localStream;
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        useMeetingStore.getState().setLocalStream(null);
+      }
+    };
+  }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
   const user = useAuthStore((state) => state.user);
@@ -127,6 +166,7 @@ export default function MeetingRoom() {
 
       {/* ---------------- MAIN CONTENT ---------------- */}
       <div className="flex-1 min-h-0 relative">
+        <TopBar />
         <VideoGrid />
 
         {/* 🔥 ZOOM-STYLE GLOBAL REACTIONS OVERLAY */}
