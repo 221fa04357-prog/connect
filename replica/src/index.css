@@ -109,3 +109,24 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Zoom-style red blink (opacity only) — reusable utility */
+@-webkit-keyframes blinkRed {
+  0% { opacity: 1; }
+  50% { opacity: 0.15; }
+  100% { opacity: 1; }
+}
+
+@keyframes blinkRed {
+  0% { opacity: 1; }
+  50% { opacity: 0.15; }
+  100% { opacity: 1; }
+}
+
+/* Apply to icon elements (use together with a red color class, e.g. text-red-500) */
+.blink-red {
+  -webkit-animation: blinkRed 1s ease-in-out infinite;
+  animation: blinkRed 1s ease-in-out infinite;
+  will-change: opacity;
+  /* No background or box added — icon only */
+}

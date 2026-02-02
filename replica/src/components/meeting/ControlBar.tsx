@@ -58,6 +58,7 @@ export default function ControlBar() {
   const [showReactions, setShowReactions] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
+  const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
   const reactionsRef = useRef<HTMLDivElement | null>(null);
 
   // Close reactions on outside click or Escape
@@ -98,7 +99,7 @@ export default function ControlBar() {
     addReaction(reaction);
     setShowReactions(false);
   };
-
+ 
   const handleAudioToggle = () => {
     toggleAudio();
     const userId = user?.id;
@@ -139,17 +140,31 @@ export default function ControlBar() {
     }
   };
 
+  // Copy meeting link to clipboard (falls back to alert with the link)
+  const handleCopyMeetingLink = async () => {
+    const link = meeting?.id ? `${window.location.origin}/join/${meeting.id}` : window.location.href;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(link);
+        setCopiedMeetingLink(true);
+        setTimeout(() => setCopiedMeetingLink(false), 2000);
+      } else {
+        // Fallback
+        window.prompt('Copy meeting link', link);
+      }
+    } catch (err) {
+      console.error('Copy failed', err);
+      // Final fallback
+      alert('Unable to copy automatically. Here is the link:\n' + link);
+    }
+  };
+
   const handleStopScreenShare = () => {
     if (isScreenSharing) toggleScreenShare();
     setScreenShareStream(null);
     // You would typically stop the tracks here if needed, but the store update is reactive
   };
-
   const handleToggleValidRecording = async () => {
-    if (!isSubscribed) {
-      alert('Recording is a pro feature. Upgrade to record meetings.');
-      return;
-    }
     if (isRecording) {
       // Stop Recording
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -287,38 +302,49 @@ export default function ControlBar() {
               isActiveState={isChatOpen}
             />
 
-            {/* Reactions - Moved before Share */}
-            <div className="relative" ref={reactionsRef}>
-              <ControlButton
-                icon={Smile}
-                label="Reactions"
-                onClick={() => setShowReactions(!showReactions)}
-              />
-              <AnimatePresence>
-                {showReactions && (
-                  <motion.div
-                    role="dialog"
-                    aria-label="Reactions"
-                    initial={{ opacity: 0, scale: 0.78, y: 8 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                    transition={{ type: 'spring', stiffness: 720, damping: 48 }}
-                    style={{ transformOrigin: 'center bottom' }}
-                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-[rgba(18,18,18,0.7)] backdrop-blur-md border border-[rgba(255,255,255,0.04)] rounded-2xl p-3 flex gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.6)] z-50 min-w-[220px] justify-center"
-                  >
-                    {reactionEmojis.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => handleReaction(emoji)}
-                        className="text-2xl transition-transform transform hover:scale-110 hover:-translate-y-0.5 motion-reduce:transform-none p-2 rounded-md bg-white/5 hover:bg-white/6 focus:outline-none"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+           
+            {/* Reactions Button */}
+<ControlButton
+  icon={Smile}
+  label="Reactions"
+  onClick={() => setShowReactions(!showReactions)}
+/>
+
+{/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
+<AnimatePresence>
+  {showReactions && (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 12 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="
+        fixed
+        bottom-[64px]
+        left-0
+        right-0
+        z-40
+        flex
+        justify-center
+        gap-4
+        py-2
+        bg-[#111]
+        border-t border-[#222]
+      "
+    >
+      {reactionEmojis.map((emoji) => (
+        <button
+          key={emoji}
+          onClick={() => handleReaction(emoji)}
+          className="text-2xl hover:scale-125 transition-transform"
+        >
+          {emoji}
+        </button>
+      ))}
+    </motion.div>
+  )}
+</AnimatePresence>
+
 
 
             {/* Share Screen */}
@@ -343,6 +369,17 @@ export default function ControlBar() {
 
                 <DropdownMenuContent className="bg-[#1A1A1A] border-[#333] text-gray-200 w-64">
                   <DropdownMenuLabel>Sharing Options</DropdownMenuLabel>
+
+                  {/* Copy meeting link */}
+                  <DropdownMenuItem onClick={handleCopyMeetingLink} className="cursor-pointer flex items-center justify-between">
+                    <span className="flex-1">Copy Meeting Link</span>
+                    {copiedMeetingLink ? (
+                      <span className="text-xs text-green-400 font-semibold">Copied</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">Copy</span>
+                    )}
+                  </DropdownMenuItem>
+
                   <DropdownMenuSeparator className="bg-[#333]" />
                   <DropdownMenuItem onClick={handleStartScreenShare} className="cursor-pointer">
                     <span className="flex-1">Share Screen / Window</span>
@@ -363,9 +400,8 @@ export default function ControlBar() {
                 </DropdownMenuContent>
               </div>
             </DropdownMenu>
-
-
-            {/* Record */}
+            
+            {/* Record Button */}
             <ControlButton
               icon={Circle}
               label={isRecording ? "Stop Recording" : "Record"}
@@ -373,6 +409,7 @@ export default function ControlBar() {
               active={isRecording}
               className={isRecording ? "text-red-500" : ""}
             />
+
 
             {/* More */}
             <DropdownMenu>

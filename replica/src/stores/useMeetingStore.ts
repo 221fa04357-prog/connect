@@ -37,17 +37,17 @@ interface MeetingState {
   toggleParticipants: () => void;
   toggleWhiteboard: () => void;
   toggleSettings: () => void;
+
   addReaction: (reaction: Reaction) => void;
+  removeReaction: (id: string) => void;      // 🔥 ADDED
   clearReactions: () => void;
+
   setVirtualBackground: (bg: string | null) => void;
   toggleBackgroundBlur: () => void;
   leaveMeeting: () => void;
   setScreenShareStream: (stream: MediaStream | null) => void;
   setRecordingStartTime: (time: number | null) => void;
 }
-
-// TODO: Connect to backend WebSocket for real-time meeting state updates
-// WebSocket endpoint: ws://api.example.com/meeting/{meetingId}
 
 export const useMeetingStore = create<MeetingState>((set) => ({
   meeting: {
@@ -66,6 +66,7 @@ export const useMeetingStore = create<MeetingState>((set) => ({
     isScreenSharing: false,
     viewMode: 'gallery'
   },
+
   viewMode: 'gallery',
   isAudioMuted: false,
   isVideoOff: false,
@@ -75,6 +76,7 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   isParticipantsOpen: false,
   isWhiteboardOpen: false,
   isSettingsOpen: false,
+
   reactions: [],
   virtualBackground: null,
   isBackgroundBlurred: false,
@@ -84,58 +86,77 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   setMeeting: (meeting) => set({ meeting }),
   setViewMode: (mode) => set({ viewMode: mode }),
 
-  // TODO: Connect to backend API
-  // PUT /api/meeting/{meetingId}/audio
-  toggleAudio: () => set((state) => ({ isAudioMuted: !state.isAudioMuted })),
+  toggleAudio: () =>
+    set((state) => ({ isAudioMuted: !state.isAudioMuted })),
 
-  // TODO: Connect to backend API
-  // PUT /api/meeting/{meetingId}/video
-  toggleVideo: () => set((state) => ({ isVideoOff: !state.isVideoOff })),
+  toggleVideo: () =>
+    set((state) => ({ isVideoOff: !state.isVideoOff })),
 
-  // TODO: Connect to backend WebRTC signaling
-  // POST /api/meeting/{meetingId}/screen-share
-  toggleScreenShare: () => set((state) => ({ isScreenSharing: !state.isScreenSharing })),
+  toggleScreenShare: () =>
+    set((state) => ({ isScreenSharing: !state.isScreenSharing })),
 
-  // TODO: Connect to recording service
-  // POST /api/meeting/{meetingId}/recording/start
-  // POST /api/meeting/{meetingId}/recording/stop
-  toggleRecording: () => set((state) => ({ isRecording: !state.isRecording })),
+  toggleRecording: () =>
+    set((state) => ({ isRecording: !state.isRecording })),
 
-  toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
-  toggleParticipants: () => set((state) => ({ isParticipantsOpen: !state.isParticipantsOpen })),
-  toggleWhiteboard: () => set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
-  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+  toggleChat: () =>
+    set((state) => ({ isChatOpen: !state.isChatOpen })),
 
-  // TODO: Broadcast reaction via WebSocket
-  // WS message: { type: 'reaction', data: { emoji, participantId } }
-  addReaction: (reaction) => set((state) => ({
-    reactions: [...state.reactions, reaction]
-  })),
+  toggleParticipants: () =>
+    set((state) => ({ isParticipantsOpen: !state.isParticipantsOpen })),
+
+  toggleWhiteboard: () =>
+    set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
+
+  toggleSettings: () =>
+    set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+
+  // 🔥 Zoom-style reaction add + auto cleanup support
+  addReaction: (reaction) =>
+    set((state) => ({
+      reactions: [...state.reactions, reaction],
+    })),
+
+  // 🔥 REMOVE reaction after animation
+  removeReaction: (id) =>
+    set((state) => ({
+      reactions: state.reactions.filter((r) => r.id !== id),
+    })),
 
   clearReactions: () => set({ reactions: [] }),
-  setVirtualBackground: (bg) => set({ virtualBackground: bg }),
-  toggleBackgroundBlur: () => set((state) => ({ isBackgroundBlurred: !state.isBackgroundBlurred })),
 
-  // TODO: Call backend to end meeting
-  // POST /api/meeting/{meetingId}/leave
-  // TODO: Call backend to end meeting
-  // POST /api/meeting/{meetingId}/leave
+  setVirtualBackground: (bg) => set({ virtualBackground: bg }),
+
+  toggleBackgroundBlur: () =>
+    set((state) => ({ isBackgroundBlurred: !state.isBackgroundBlurred })),
+
   leaveMeeting: () => set({ meeting: null }),
 
-  setScreenShareStream: (stream) => set({ screenShareStream: stream }),
-  setRecordingStartTime: (time) => set({ recordingStartTime: time })
-  ,
-  extendMeetingTime: (minutes: number) => set((state) => {
-    if (!state.meeting) return {} as any;
-    const m = state.meeting;
-    const newDuration = (m.duration || 0) + minutes;
-    const next = { meeting: { ...m, duration: newDuration } } as any;
-    setTimeout(() => eventBus.publish('meeting:update', { meeting: useMeetingStore.getState().meeting }, { source: INSTANCE_ID }));
-    return next;
-  })
+  setScreenShareStream: (stream) =>
+    set({ screenShareStream: stream }),
+
+  setRecordingStartTime: (time) =>
+    set({ recordingStartTime: time }),
+
+  extendMeetingTime: (minutes: number) =>
+    set((state) => {
+      if (!state.meeting) return {} as any;
+      const m = state.meeting;
+      const newDuration = (m.duration || 0) + minutes;
+      const next = { meeting: { ...m, duration: newDuration } } as any;
+
+      setTimeout(() =>
+        eventBus.publish(
+          'meeting:update',
+          { meeting: useMeetingStore.getState().meeting },
+          { source: INSTANCE_ID }
+        )
+      );
+
+      return next;
+    }),
 }));
 
-// subscribe to remote meeting updates
+// Subscribe to remote meeting updates
 eventBus.subscribe('meeting:update', (payload, meta) => {
   if (meta?.source === INSTANCE_ID) return;
   if (payload && payload.meeting) {
@@ -143,6 +164,10 @@ eventBus.subscribe('meeting:update', (payload, meta) => {
   }
 });
 
-// Subscription helper for meeting changes
-export const subscribeToMeeting = (listener: (meeting: Meeting | null) => void) =>
-  useMeetingStore.subscribe((state) => listener(state.meeting));
+// Subscription helper
+export const subscribeToMeeting = (
+  listener: (meeting: Meeting | null) => void
+) =>
+  useMeetingStore.subscribe((state) =>
+    listener(state.meeting)
+  );
