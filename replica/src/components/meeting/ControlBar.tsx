@@ -205,6 +205,10 @@ export default function ControlBar() {
   };
 
   const handleToggleValidRecording = async () => {
+    if (!('MediaRecorder' in window)) {
+      alert('Recording is not supported in this browser.');
+      return;
+    }
     if (isRecording) {
       // Stop Recording
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -219,12 +223,17 @@ export default function ControlBar() {
         const stream = useMeetingStore.getState().localStream;
 
         if (!stream) {
-          console.error("No local camera stream available to record.");
-          // Ideally show a toast here
+          alert("No local camera/mic stream available. Please enable your camera and microphone before recording.");
           return;
         }
 
-        const mediaRecorder = new MediaRecorder(stream);
+        let mediaRecorder;
+        try {
+          mediaRecorder = new MediaRecorder(stream);
+        } catch (err) {
+          alert('Failed to start recording. This browser may not support the selected stream type.');
+          return;
+        }
         mediaRecorderRef.current = mediaRecorder;
         chunksRef.current = [];
 
@@ -236,6 +245,10 @@ export default function ControlBar() {
 
         mediaRecorder.onstop = () => {
           const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+          if (blob.size === 0) {
+            alert('No data was recorded.');
+            return;
+          }
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
@@ -243,9 +256,10 @@ export default function ControlBar() {
           a.download = `recording-${new Date().toISOString()}.webm`;
           document.body.appendChild(a);
           a.click();
-          window.URL.revokeObjectURL(url);
-
-          // NOTE: Do NOT stop tracks here, as this is the live camera stream.
+          setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+          }, 100);
         };
 
         mediaRecorder.start();
@@ -253,6 +267,7 @@ export default function ControlBar() {
         setRecordingStartTime(Date.now());
 
       } catch (err) {
+        alert("Error starting recording: " + (err instanceof Error ? err.message : err));
         console.error("Error starting recording:", err);
       }
     }
