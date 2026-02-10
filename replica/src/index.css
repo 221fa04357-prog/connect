@@ -1,3 +1,13 @@
+/* Hide scrollbars globally but keep scroll functionality */
+html, body, * {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* Chrome, Safari, Edge */
+*::-webkit-scrollbar {
+  display: none;
+}
 /* Force mobile control bar to always be visible and above all content */
 .controlbar-mobile-fix {
   z-index: 9999 !important;
