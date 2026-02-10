@@ -219,28 +219,10 @@ export default function ControlBar() {
 
   const handleAudioToggle = () => {
     toggleAudio();
-    const userId = user?.id;
-    const participant = participants.find(p => p.id === userId)
-      || participants.find(p => p.id === `participant-${userId}`)
-      || participants.find(p => p.id === 'participant-1');
-
-    if (participant) {
-      updateParticipant(participant.id, { isAudioMuted: !isAudioMuted });
-    }
   };
 
   const handleVideoToggle = () => {
     toggleVideo();
-    const userId = user?.id;
-    const participant = participants.find(p => p.id === userId)
-      || participants.find(p => p.id === `participant-${userId}`)
-      || participants.find(p => p.id === 'participant-1');
-
-    if (participant) {
-      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
-    }
-
-    // Stream management is handled by MeetingRoom.tsx effect based on isVideoOff state
   };
 
   // Centralized Stop Sharing
