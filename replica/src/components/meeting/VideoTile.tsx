@@ -24,7 +24,7 @@ export default function VideoTile({
 }: VideoTileProps) {
     const { updateParticipant } = useParticipantsStore();
     const { user } = useAuthStore();
-    const { localStream } = useMeetingStore();
+    const { localStream, toggleAudio, toggleVideo } = useMeetingStore();
 
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
@@ -43,12 +43,20 @@ export default function VideoTile({
 
     const handleToggleMute = (e: React.MouseEvent) => {
         e.stopPropagation();
-        updateParticipant(participant.id, { isAudioMuted: !participant.isAudioMuted });
+        if (isLocal) {
+            toggleAudio();
+        } else {
+            updateParticipant(participant.id, { isAudioMuted: !participant.isAudioMuted });
+        }
     };
 
     const handleToggleVideo = (e: React.MouseEvent) => {
         e.stopPropagation();
-        updateParticipant(participant.id, { isVideoOff: !participant.isVideoOff });
+        if (isLocal) {
+            toggleVideo();
+        } else {
+            updateParticipant(participant.id, { isVideoOff: !participant.isVideoOff });
+        }
     };
 
     return (
