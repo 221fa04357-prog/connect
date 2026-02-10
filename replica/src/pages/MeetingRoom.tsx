@@ -57,24 +57,9 @@ export default function MeetingRoom() {
           track.stop();
         });
       }
-    }
-  }, [useMeetingStore.getState().isAudioMuted, useMeetingStore.getState().isVideoOff, participants, user]);
+    };
 
-  /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
-  // Just ensure stream is active if video is supposed to be ON
-  useEffect(() => {
-    if (!isVideoOff && (!localStream || !localStream.active)) {
-      // Re-acquire if missing
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(stream => {
-          // Apply current state
-          const { isAudioMuted } = useMeetingStore.getState();
-          stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-          // Video is enabled by default in new stream
-          setLocalStream(stream);
-        })
-        .catch(e => console.error("Re-acquire camera failed", e));
-    }
+    manageCamera();
   }, [isVideoOff, localStream, setLocalStream]);
 
   // Cleanup on unmount
