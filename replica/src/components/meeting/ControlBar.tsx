@@ -52,7 +52,8 @@ export default function ControlBar() {
     setRecordingStartTime,
     extendMeetingTime,
     showSelfView,
-    toggleSelfView
+    toggleSelfView,
+    setLocalStream
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
@@ -119,15 +120,51 @@ export default function ControlBar() {
     }
   };
 
-  const handleVideoToggle = () => {
-    toggleVideo();
+  const handleVideoToggle = async () => {
+    // Determine the new state (toggling)
+    const turningOn = isVideoOff;
+
+    if (turningOn) {
+      // 1. Try to get stream if missing or inactive
+      const currentStream = useMeetingStore.getState().localStream;
+
+      if (!currentStream || !currentStream.active) {
+        try {
+          // Explicit getUserMedia call on user interaction (Click)
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setLocalStream(stream);
+        } catch (err) {
+          console.error("Failed to access camera:", err);
+          alert("Could not access camera. Please check permissions.");
+          return; // Do not toggle state if failed
+        }
+      } else {
+        // Stream exists, just enable tracks
+        currentStream.getVideoTracks().forEach(track => {
+          track.enabled = true;
+        });
+      }
+    } else {
+      // Turning OFF
+      const currentStream = useMeetingStore.getState().localStream;
+      if (currentStream) {
+        currentStream.getVideoTracks().forEach(track => {
+          track.enabled = false;
+        });
+      }
+    }
+
+    // 2. Update Store State
+    toggleVideo(); // This sets isVideoOff = !isVideoOff
+
+    // 3. Update Participant State (for other users to see)
     const userId = user?.id;
     const participant = participants.find(p => p.id === userId)
       || participants.find(p => p.id === `participant-${userId}`)
       || participants.find(p => p.id === 'participant-1');
 
     if (participant) {
-      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
+      updateParticipant(participant.id, { isVideoOff: !turningOn });
     }
   };
 

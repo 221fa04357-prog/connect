@@ -31,26 +31,22 @@ export default function MeetingRoom() {
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   useEffect(() => {
-    const manageCamera = async () => {
-      // Case 1: Video is ON but no stream exists -> Initialize Camera
+    // Only initialize camera on mount if needed
+    const initCamera = async () => {
+      const { isVideoOff, localStream, setLocalStream } = useMeetingStore.getState();
+
       if (!isVideoOff && (!localStream || !localStream.active)) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ video: true });
           setLocalStream(stream);
         } catch (err) {
-          console.error("Failed to access camera:", err);
+          console.error("Failed to access camera on mount:", err);
         }
-      }
-      // Case 2: Stream exists -> Toggle tracks (Instant response)
-      else if (localStream && localStream.active) {
-        localStream.getVideoTracks().forEach(track => {
-          track.enabled = !isVideoOff;
-        });
       }
     };
 
-    manageCamera();
-  }, [isVideoOff, localStream, setLocalStream]);
+    initCamera();
+  }, []); // Run ONCE on mount
 
   // Cleanup on unmount
   useEffect(() => {
