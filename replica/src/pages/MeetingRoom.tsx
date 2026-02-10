@@ -31,45 +31,45 @@ export default function MeetingRoom() {
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   /* ---------------- CAMERA MANAGEMENT ---------------- */
-  useEffect(() => {
-    const manageCamera = async () => {
-      // Case 1: Video is ON
-      if (!isVideoOff) {
-        // If no stream, or stream is inactive, or tracks ended -> Initialize/Re-acquire Camera
-        const needsStream = !localStream || !localStream.active || localStream.getVideoTracks().some(t => t.readyState === 'ended');
-        
-        if (needsStream) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            setLocalStream(stream);
-            
-            // Sync with participant store if needed (optional safety)
-            if (participants.length > 0) {
-               const myId = user?.id; // Assuming user is available in scope or useAuthStore
-               // This part is handled by ControlBar usually, but ensuring stream is active is key.
-            }
-          } catch (err) {
-            console.error("Failed to access camera:", err);
-          }
-        } else {
-             // Ensure existing tracks are enabled
-             localStream.getVideoTracks().forEach(track => {
-                 if (!track.enabled) track.enabled = true;
-             });
-        }
-      }
-      // Case 2: Video is OFF -> STOP tracks (Kills Hardware Light)
-      else if (localStream) {
-        // We must STOP the tracks to release the hardware camera
-        localStream.getVideoTracks().forEach(track => {
-           track.stop();
-        });
-        // We don't setLocalStream(null) here to avoid UI flickering 
-        // until the sync completes, but the stream is effectively dead.
-      }
-    };
+  const user = useAuthStore((state) => state.user);
 
-    manageCamera();
+  // Sync local media state to participant store for UI consistency
+  useEffect(() => {
+    const userId = user?.id; // Assuming user is available from useAuthStore
+    if (!userId) return;
+
+    const myParticipant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`);
+
+    if (myParticipant) {
+      // Only update if different to avoid loops
+      if (myParticipant.isAudioMuted !== useMeetingStore.getState().isAudioMuted ||
+        myParticipant.isVideoOff !== useMeetingStore.getState().isVideoOff) {
+
+        // We need to import updateParticipant from the store hook if not already
+        useParticipantsStore.getState().updateParticipant(myParticipant.id, {
+          isAudioMuted: useMeetingStore.getState().isAudioMuted,
+          isVideoOff: useMeetingStore.getState().isVideoOff
+        });
+      }
+    }
+  }, [useMeetingStore.getState().isAudioMuted, useMeetingStore.getState().isVideoOff, participants, user]);
+
+  /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
+  // Just ensure stream is active if video is supposed to be ON
+  useEffect(() => {
+    if (!isVideoOff && (!localStream || !localStream.active)) {
+      // Re-acquire if missing
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          // Apply current state
+          const { isAudioMuted } = useMeetingStore.getState();
+          stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+          // Video is enabled by default in new stream
+          setLocalStream(stream);
+        })
+        .catch(e => console.error("Re-acquire camera failed", e));
+    }
   }, [isVideoOff, localStream, setLocalStream]);
 
   // Cleanup on unmount
@@ -84,7 +84,7 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
-  const user = useAuthStore((state) => state.user);
+
   const [waiting, setWaiting] = useState(false);
   const isHost = user?.role === 'host';
   const [showHostWaitingOverlay, setShowHostWaitingOverlay] = useState(false);

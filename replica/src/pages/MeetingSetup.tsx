@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,16 +37,77 @@ export function JoinMeeting() {
     const navigate = useNavigate();
     const [meetingId, setMeetingId] = useState('');
     const [name, setName] = useState('');
-    const [isAudioMuted, setIsAudioMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
+    const [permissionDenied, setPermissionDenied] = useState(false);
+
+    // Use global store for media state
+    const {
+        isAudioMuted,
+        isVideoOff,
+        toggleAudio,
+        toggleVideo,
+        setLocalStream,
+        localStream
+    } = useMeetingStore();
+
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
+
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const isJoiningRef = useRef(false);
+
+    // Initial Stream Setup
+    useEffect(() => {
+        const initCamera = async () => {
+            try {
+                // Only request if we don't have one active
+                if (!localStream || !localStream.active) {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: true
+                    });
+
+                    // Apply initial state
+                    const { isAudioMuted, isVideoOff } = useMeetingStore.getState();
+                    stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+                    stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+
+                    setLocalStream(stream);
+                    setPermissionDenied(false);
+                }
+            } catch (err) {
+                console.error("Camera permission denied:", err);
+                setPermissionDenied(true);
+            }
+        };
+        initCamera();
+
+        // Cleanup: Stop stream ONLY if NOT joining the meeting
+        return () => {
+            if (!isJoiningRef.current) {
+                const currentStream = useMeetingStore.getState().localStream;
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                    useMeetingStore.getState().setLocalStream(null);
+                }
+            }
+        };
+    }, []);
+
+    // Bind stream to video element
+    useEffect(() => {
+        if (videoRef.current && localStream) {
+            videoRef.current.srcObject = localStream;
+        }
+    }, [localStream]);
 
     const handleJoin = () => {
         if (!meetingId || !name) {
             alert('Please enter meeting ID and your name');
             return;
         }
+
+        isJoiningRef.current = true; // Prevent cleanup
+
         // Allow join if authenticated or guest session is active
         if (isAuthenticated || guestSessionActive) {
             navigate('/meeting');
@@ -68,15 +129,36 @@ export function JoinMeeting() {
                         <h3 className="text-xl font-semibold mb-4">Preview</h3>
 
                         <div className="flex-1 bg-[#1C1C1C] rounded-lg relative overflow-hidden mb-4">
-                            {isVideoOff ? (
-                                <div className="absolute inset-0 flex items-center justify-center">
+                            {/* Video Element */}
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                muted
+                                playsInline
+                                className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                                style={{ transform: 'scaleX(-1)' }}
+                            />
+
+                            {/* Permission Denied Error */}
+                            {permissionDenied && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-20 text-center p-4">
+                                    <p className="text-white text-sm">Camera access blocked. Please enable it in browser settings.</p>
+                                </div>
+                            )}
+
+                            {/* Video Off Placeholder Overlay */}
+                            {isVideoOff && !permissionDenied && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C] z-10">
                                     <div className="w-24 h-24 rounded-full bg-[#0B5CFF] flex items-center justify-center text-white text-3xl font-semibold">
                                         {name ? name.charAt(0).toUpperCase() : 'Y'}
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
-                                    <Video className="w-16 h-16 text-gray-500" />
+                            )}
+
+                            {/* Loading State if no stream yet and no error */}
+                            {!localStream && !permissionDenied && !isVideoOff && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black">
+                                    <VideoOff className="w-12 h-12 text-gray-600 animate-pulse" />
                                 </div>
                             )}
                         </div>
@@ -85,7 +167,7 @@ export function JoinMeeting() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => setIsAudioMuted(!isAudioMuted)}
+                                onClick={toggleAudio}
                                 className={cn(
                                     'rounded-full w-12 h-12',
                                     isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
@@ -97,7 +179,7 @@ export function JoinMeeting() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => setIsVideoOff(!isVideoOff)}
+                                onClick={toggleVideo}
                                 className={cn(
                                     'rounded-full w-12 h-12',
                                     isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
