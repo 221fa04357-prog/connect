@@ -45,6 +45,14 @@ const EMOJIS = ['😀', '😂', '😍', '👍', '🔥', '🎉', '😮', '❤️'
 
 /* ---------------- COMPONENT ---------------- */
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 export default function ChatPanel() {
   const { isChatOpen, toggleChat } = useMeetingStore();
   const { participants } = useParticipantsStore();
@@ -53,20 +61,47 @@ export default function ChatPanel() {
   const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
   const [input, setInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [privateTo, setPrivateTo] = useState<string | null>(null);
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   /* ---------------- DERIVED COUNTS ---------------- */
 
   const publicMessages = messages.filter(m => m.type === 'public');
-  const privateMessages = messages.filter(m => m.type === 'private');
+
+  // Count ALL private messages for user for the badge
+  const totalPrivateMessages = messages.filter(m =>
+    m.type === 'private' &&
+    (m.senderId === 'current-user' || m.privateTo === 'current-user')
+  ).length;
+
+  // Filter private messages for the selected recipient
+  const privateMessages = messages.filter(m =>
+    m.type === 'private' &&
+    (selectedRecipientId ? (
+      (m.senderId === 'current-user' && m.privateTo === selectedRecipientId) ||
+      (m.senderId === selectedRecipientId && m.privateTo === 'current-user')
+    ) : false)
+  );
+
+  // Get potential recipients (everyone except self)
+  // Assuming 'current-user' is the ID for the local user as per DEMO_MESSAGES. 
+  // In a real app, use user.id from useAuthStore.
+  const potentialRecipients = participants.filter(p => p.id !== 'current-user');
+
+  // Initialize selected recipient if needed
+  useEffect(() => {
+    if (activeTab === 'private' && !selectedRecipientId && potentialRecipients.length > 0) {
+      setSelectedRecipientId(potentialRecipients[0].id);
+    }
+  }, [activeTab, potentialRecipients, selectedRecipientId]);
+
 
   /* ---------------- AUTO SCROLL ---------------- */
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, activeTab]);
+  }, [messages, activeTab, selectedRecipientId]);
 
   /* ---------------- SEND MESSAGE ---------------- */
 
@@ -80,7 +115,7 @@ export default function ChatPanel() {
       content: input,
       type: activeTab,
       timestamp: new Date(),
-      privateTo: activeTab === 'private' ? privateTo ?? undefined : undefined,
+      privateTo: activeTab === 'private' ? selectedRecipientId : undefined,
     };
 
     setMessages(prev => [...prev, newMessage]);
@@ -98,11 +133,11 @@ export default function ChatPanel() {
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="
             fixed top-0 right-0
-            h-[calc(100vh-56px)]
+            bottom-[88px]
             w-full sm:w-[380px]
             bg-[#1C1C1C]
             border-l border-[#404040]
-            z-30
+            z-50
             flex flex-col
             overflow-x-hidden
           "
@@ -120,7 +155,6 @@ export default function ChatPanel() {
             value={activeTab}
             onValueChange={(v) => {
               setActiveTab(v as 'public' | 'private');
-              setPrivateTo(null);
             }}
             className="flex-1 min-h-0 flex flex-col"
           >
@@ -129,11 +163,14 @@ export default function ChatPanel() {
                 Public ({publicMessages.length})
               </TabsTrigger>
               <TabsTrigger value="private" className="flex-1">
-                Private ({privateMessages.length})
+                Private {totalPrivateMessages > 0 && `(${totalPrivateMessages})`}
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="public" className="flex-1 min-h-0 data-[state=active]:flex">
+            <TabsContent
+              value="public"
+              className="flex-1 min-h-0 mt-0 flex-col data-[state=active]:flex"
+            >
               <MessageList
                 messages={publicMessages}
                 participants={participants}
@@ -141,7 +178,30 @@ export default function ChatPanel() {
               />
             </TabsContent>
 
-            <TabsContent value="private" className="flex-1 min-h-0 data-[state=active]:flex">
+            <TabsContent
+              value="private"
+              className="flex-1 min-h-0 mt-0 flex-col data-[state=active]:flex"
+            >
+              {/* Recipient Selector */}
+              <div className="shrink-0 p-4 border-b border-[#333]">
+                <Select value={selectedRecipientId} onValueChange={setSelectedRecipientId}>
+                  <SelectTrigger className="w-full bg-[#2A2A2A] border-[#444] text-white">
+                    <SelectValue placeholder="Select a recipient" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#2A2A2A] border-[#444] text-white">
+                    {potentialRecipients.length > 0 ? (
+                      potentialRecipients.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-2 text-sm text-gray-400">No participants</div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <MessageList
                 messages={privateMessages}
                 participants={participants}
@@ -151,9 +211,9 @@ export default function ChatPanel() {
           </Tabs>
 
           {/* INPUT BAR */}
-          <div className="shrink-0 bg-[#1C1C1C] mx-6 mb-6 rounded-xl">
+          <div className="shrink-0 bg-[#1C1C1C] p-4">
             {showEmojiPicker && (
-              <div className="absolute left-8 bottom-[92px] flex gap-2">
+              <div className="absolute left-8 bottom-[80px] flex gap-2">
                 {EMOJIS.map(e => (
                   <button
                     key={e}
@@ -173,7 +233,7 @@ export default function ChatPanel() {
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Type a message..."
+                placeholder={activeTab === 'private' ? "Type a private message..." : "Type a message..."}
                 className="flex-1 bg-transparent border-none text-white focus-visible:ring-0"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -190,7 +250,7 @@ export default function ChatPanel() {
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() || (activeTab === 'private' && !selectedRecipientId)}
                 className={cn(
                   input.trim() ? 'bg-[#0B5CFF]' : 'bg-[#2D2D2D]',
                   'text-white'
