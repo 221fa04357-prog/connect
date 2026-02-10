@@ -40,13 +40,13 @@ export const Header = ({ transparent = false }: { transparent?: boolean }) => {
       }
       style={{ minHeight: '4rem' }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <Video className="w-8 h-8 md:w-10 md:h-10 text-white" />
         <span className="text-2xl md:text-3xl font-bold text-white leading-none">ConnectPro</span>
       </div>
 
 
-      <div className="flex items-center gap-4 md:gap-6">
+      <div className="flex items-center gap-4 md:gap-6 flex-shrink-0">
         <div className="flex items-center gap-2 text-xs md:text-sm text-[#A3A3A3]">
           <Clock className="w-4 h-4" />
           <span>{time.toLocaleTimeString()}</span>
@@ -54,15 +54,7 @@ export const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
         {user && (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/help')}
-              className="text-gray-400 hover:text-white hover:bg-white/10"
-              title="Help & Support"
-            >
-              <HelpCircle className="w-5 h-5" />
-            </Button>
+
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
