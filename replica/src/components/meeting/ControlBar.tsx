@@ -276,15 +276,15 @@ export default function ControlBar() {
   return (
     <>
       {/* Bottom Control Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0A0A0A] border-t border-[#333] z-40 py-3 px-4 shadow-2xl">
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0A0A0A] border-t border-[#333] z-40 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] px-4 shadow-2xl">
         <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
 
           {/* Main Controls - Center Aligned */}
-          <div className="flex items-center gap-2 md:gap-3 lg:gap-4 flex-1 justify-center overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-4 md:gap-3 lg:gap-4 flex-1 justify-start md:justify-center overflow-x-auto no-scrollbar pb-1 px-2">
 
             {/* Audio */}
             <DropdownMenu>
-              <div className="flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
+              <div className="flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
                 <button
                   onClick={handleAudioToggle}
                   className={cn(
@@ -312,7 +312,7 @@ export default function ControlBar() {
 
             {/* Video */}
             <DropdownMenu>
-              <div className="flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
+              <div className="flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
                 <button
                   onClick={handleVideoToggle}
                   className={cn(
@@ -397,7 +397,7 @@ export default function ControlBar() {
 
             {/* Share Screen */}
             <DropdownMenu>
-              <div className="relative">
+              <div className="relative flex-none">
                 <DropdownMenuTrigger asChild>
                   <div className="group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem]">
                     <div className={cn(
@@ -461,7 +461,7 @@ export default function ControlBar() {
             {/* More */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <div className="outline-none">
+                <div className="outline-none flex-none">
                   <ControlButton
                     icon={MoreVertical}
                     label="More"
@@ -592,7 +592,7 @@ interface ControlButtonProps {
 
 function ControlButton({ icon: Icon, label, onClick, active, isActiveState, className, badge }: ControlButtonProps) {
   return (
-    <div className="group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem]" onClick={onClick}>
+    <div className={cn("group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem] flex-none", className)} onClick={onClick}>
       <div className="relative">
         <div className={cn(
           "relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
