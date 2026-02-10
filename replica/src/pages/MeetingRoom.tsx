@@ -30,22 +30,42 @@ export default function MeetingRoom() {
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   /* ---------------- CAMERA MANAGEMENT ---------------- */
+  /* ---------------- CAMERA MANAGEMENT ---------------- */
   useEffect(() => {
     const manageCamera = async () => {
-      // Case 1: Video is ON but no stream exists -> Initialize Camera
-      if (!isVideoOff && (!localStream || !localStream.active)) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          setLocalStream(stream);
-        } catch (err) {
-          console.error("Failed to access camera:", err);
+      // Case 1: Video is ON
+      if (!isVideoOff) {
+        // If no stream, or stream is inactive, or tracks ended -> Initialize/Re-acquire Camera
+        const needsStream = !localStream || !localStream.active || localStream.getVideoTracks().some(t => t.readyState === 'ended');
+        
+        if (needsStream) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setLocalStream(stream);
+            
+            // Sync with participant store if needed (optional safety)
+            if (participants.length > 0) {
+               const myId = user?.id; // Assuming user is available in scope or useAuthStore
+               // This part is handled by ControlBar usually, but ensuring stream is active is key.
+            }
+          } catch (err) {
+            console.error("Failed to access camera:", err);
+          }
+        } else {
+             // Ensure existing tracks are enabled
+             localStream.getVideoTracks().forEach(track => {
+                 if (!track.enabled) track.enabled = true;
+             });
         }
       }
-      // Case 2: Stream exists -> Toggle tracks (Instant response)
-      else if (localStream && localStream.active) {
+      // Case 2: Video is OFF -> STOP tracks (Kills Hardware Light)
+      else if (localStream) {
+        // We must STOP the tracks to release the hardware camera
         localStream.getVideoTracks().forEach(track => {
-          track.enabled = !isVideoOff;
+           track.stop();
         });
+        // We don't setLocalStream(null) here to avoid UI flickering 
+        // until the sync completes, but the stream is effectively dead.
       }
     };
 

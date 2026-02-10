@@ -99,9 +99,9 @@ export default function VideoTile({
                     </button>
                 )}
 
-                {/* Hand Raised Indicator */}
+                {/* Hand Raised Indicator - top right, next to pin */}
                 {participant.isHandRaised && (
-                    <div className="absolute top-2 left-2 p-1.5 bg-yellow-500 rounded-md z-10">
+                    <div className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow">
                         <Hand className="w-4 h-4 text-white" />
                     </div>
                 )}
