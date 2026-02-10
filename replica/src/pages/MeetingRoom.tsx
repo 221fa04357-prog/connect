@@ -22,7 +22,7 @@ export default function MeetingRoom() {
 
   const {
     reactions,
-    removeReaction,   // 🔥 IMPORTANT
+    removeReaction,
     isRecording,
     recordingStartTime,
     isVideoOff,
@@ -45,8 +45,7 @@ export default function MeetingRoom() {
 
             // Sync with participant store if needed (optional safety)
             if (participants.length > 0) {
-              const myId = user?.id; // Assuming user is available in scope or useAuthStore
-              // This part is handled by ControlBar usually, but ensuring stream is active is key.
+              const myId = user?.id;
             }
           } catch (err) {
             console.error("Failed to access camera:", err);
@@ -190,7 +189,7 @@ export default function MeetingRoom() {
         <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
           <AnimatePresence>
             {reactions.map((reaction) => {
-              const x = Math.random() * 80 + 10; // generate ONCE
+              const x = Math.random() * 80 + 10;
 
               return (
                 <motion.div
@@ -203,12 +202,12 @@ export default function MeetingRoom() {
                     bottom: 120
                   }}
                   animate={{
-                    y: -320,          // FAST UP
+                    y: -320,
                     scale: 1.4,
                     opacity: 0
                   }}
                   transition={{
-                    duration: 2.2,    // QUICK DISAPPEAR
+                    duration: 2.2,
                     ease: 'easeOut'
                   }}
                   onAnimationComplete={() => removeReaction(reaction.id)}
