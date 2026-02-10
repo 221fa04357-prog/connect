@@ -18,6 +18,8 @@ export default function MeetingRoom() {
     removeFromWaitingRoom
   } = useParticipantsStore();
 
+  const user = useAuthStore((state) => state.user);
+
   const {
     reactions,
     removeReaction,   // 🔥 IMPORTANT
@@ -66,7 +68,7 @@ export default function MeetingRoom() {
     };
 
     manageCamera();
-  }, [isVideoOff, localStream, setLocalStream]);
+  }, [isVideoOff, localStream, setLocalStream, user]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -80,7 +82,6 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
-  const user = useAuthStore((state) => state.user);
   const [waiting, setWaiting] = useState(false);
   const isHost = user?.role === 'host';
   const [showHostWaitingOverlay, setShowHostWaitingOverlay] = useState(false);
