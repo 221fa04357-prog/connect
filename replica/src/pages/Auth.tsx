@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Video, Eye, EyeOff } from 'lucide-react';
+import { Video, Eye, EyeOff, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -93,14 +93,31 @@ export function Login() {
         }
     }
 
+    const handleClose = () => {
+        if (window.history.length > 2) {
+            navigate(-1);
+        } else {
+            navigate('/');
+        }
+    };
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-2 sm:p-4">
+        <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-2 sm:p-4 relative">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl"
             >
-                <div className="bg-[#232323] rounded-2xl shadow-2xl px-4 py-6 sm:px-8 sm:py-10">
+                <div className="bg-[#232323] rounded-2xl shadow-2xl px-4 py-6 sm:px-8 sm:py-10 relative">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleClose}
+                        className="absolute top-4 right-4 text-white/90 hover:text-white hover:bg-white/10 rounded-full w-12 h-12 sm:w-14 sm:h-14"
+                        aria-label="Close"
+                    >
+                        <X className="w-10 h-10 sm:w-12 sm:h-12" />
+                    </Button>
                     <div className="flex items-center justify-center gap-2 mb-6 sm:mb-8">
                         <Video className="w-8 h-8 sm:w-10 sm:h-10 text-[#0B5CFF]" />
                         <span className="text-xl sm:text-2xl font-bold text-white">ConnectPro</span>
@@ -394,14 +411,31 @@ export function Register() {
         navigate('/login');
     };
 
+    const handleClose = () => {
+        if (window.history.length > 2) {
+            navigate(-1);
+        } else {
+            navigate('/');
+        }
+    };
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-4 relative">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-md"
             >
-                <div className="bg-[#232323] rounded-2xl shadow-2xl p-8">
+                <div className="bg-[#232323] rounded-2xl shadow-2xl p-8 relative">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleClose}
+                        className="absolute top-4 right-4 text-white/90 hover:text-white hover:bg-white/10 rounded-full w-12 h-12 sm:w-14 sm:h-14"
+                        aria-label="Close"
+                    >
+                        <X className="w-10 h-10 sm:w-12 sm:h-12" />
+                    </Button>
                     <div className="flex items-center justify-center gap-2 mb-8">
                         <Video className="w-10 h-10 text-[#0B5CFF]" />
                         <span className="text-2xl font-bold text-white">ConnectPro</span>

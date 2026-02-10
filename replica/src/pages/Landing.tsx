@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Video, Users, Monitor, Shield } from 'lucide-react';
+import { Video, Users, Monitor, Shield, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -64,30 +64,80 @@ export default function Landing() {
       {isAuthenticated ? (
         <Header transparent />
       ) : (
-        <header className="border-b border-white/10 backdrop-blur-sm">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Video className="w-8 h-8 text-white" />
-              <span className="text-2xl font-bold text-white">ConnectPro</span>
+        <header className="border-b border-white/10 backdrop-blur-sm relative">
+          <style>{`
+            .mobile-help-icon { display: none; }
+            .mobile-help-text { display: inline; }
+            
+            @media (max-width: 768px) {
+              .mobile-header-inner {
+                width: 100% !important;
+                box-sizing: border-box !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+                max-width: 100% !important;
+              }
+              .mobile-logo-group {
+                flex-shrink: 0 !important;
+                margin-right: 0;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+              }
+              .mobile-logo-text {
+                font-size: 1.25rem !important;
+                white-space: nowrap !important;
+                overflow: visible !important;
+                text-overflow: unset !important;
+                display: block;
+              }
+              .mobile-nav-group {
+                display: flex !important;
+                align-items: center !important;
+                gap: 0.25rem !important;
+                flex-shrink: 0 !important;
+              }
+              .mobile-nav-item {
+                flex-shrink: 0 !important;
+                white-space: nowrap !important;
+                padding-left: 0.35rem !important;
+                padding-right: 0.35rem !important;
+                font-size: 0.875rem !important;
+                height: 2.25rem !important;
+                min-width: auto !important;
+              }
+              .mobile-help-text { display: none !important; }
+              .mobile-help-icon { display: block !important; }
+            }
+          `}</style>
+          <div className="container mx-auto px-4 py-4 flex items-center justify-between mobile-header-inner">
+            <div className="flex items-center gap-2 mobile-logo-group">
+              <Video className="w-8 h-8 text-white flex-shrink-0" />
+              <span className="text-2xl font-bold text-white mobile-logo-text">ConnectPro</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 mobile-nav-group">
               <Button
                 variant="ghost"
                 onClick={() => navigate('/help')}
-                className="text-white hover:bg-white/10"
+                className="text-white hover:bg-white/10 mobile-nav-item"
+                title="Help"
               >
-                Help
+                <span className="mobile-help-text">Help</span>
+                <HelpCircle className="w-5 h-5 mobile-help-icon" />
               </Button>
               <Button
                 variant="ghost"
                 onClick={() => navigate('/login')}
-                className="text-white hover:bg-white/10"
+                className="text-white hover:bg-white/10 mobile-nav-item"
               >
                 Sign In
               </Button>
               <Button
                 onClick={() => navigate('/register')}
-                className="bg-white text-[#0B5CFF] hover:bg-white/90"
+                className="bg-white text-[#0B5CFF] hover:bg-white/90 mobile-nav-item"
               >
                 Sign Up Free
               </Button>
@@ -114,7 +164,7 @@ export default function Landing() {
       )}
 
       {/* Hero Section */}
-      <section className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-10 sm:py-16 md:py-20">
+      <section className={`w-full max-w-7xl mx-auto px-2 sm:px-4 ${isAuthenticated ? 'pt-24 pb-10' : 'py-10'} sm:py-16 md:py-20`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center">
           <motion.div
             initial={{ opacity: 0, x: -50 }}
