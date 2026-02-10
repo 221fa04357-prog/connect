@@ -80,15 +80,16 @@ export default function ParticipantsPanel() {
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="
-            fixed right-0 top-0 bottom-0
+            fixed right-0 top-0
             w-full md:w-80 lg:w-96
+            h-full max-h-screen max-h-[100dvh]
             bg-[#1C1C1C]
             border-l border-[#404040]
-            z-30 flex flex-col
+            z-30 flex flex-col min-h-0 overflow-hidden
           "
         >
           {/* HEADER */}
-          <div className="flex items-center justify-between p-4 border-b border-[#404040]">
+          <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
             <h3 className="text-lg font-semibold">
               Participants ({participants.length})
             </h3>
@@ -103,7 +104,7 @@ export default function ParticipantsPanel() {
           </div>
 
           {/* SEARCH & HOST CONTROLS SIDE BY SIDE */}
-          <div className="p-4 border-b border-[#404040] flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+          <div className="p-4 border-b border-[#404040] flex flex-col gap-2 md:flex-row md:items-center md:gap-4 flex-shrink-0">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <Input
@@ -140,70 +141,71 @@ export default function ParticipantsPanel() {
             )}
           </div>
 
-          {/* WAITING ROOM */}
-          {waitingRoom.length > 0 && canControl && (
-            <div className="border-b border-[#404040]">
-              <div className="p-4 bg-[#232323]">
-                <h4 className="text-sm font-semibold mb-3">
-                  Waiting Room ({waitingRoom.length})
-                </h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
-                  {waitingRoom.map(person => (
-                    <div
-                      key={person.id}
-                      className="flex items-center justify-between"
-                    >
-                      <span className="text-sm">{person.name}</span>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => admitFromWaitingRoom(person.id)}
-                          className="bg-green-500 hover:bg-green-600"
-                        >
-                          Admit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => removeFromWaitingRoom(person.id)}
-                          className="hover:bg-red-500/20"
-                        >
-                          Deny
-                        </Button>
+          {/* MAIN SCROLLABLE CONTENT: waiting room + participants list scroll together */}
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            {/* WAITING ROOM */}
+            {waitingRoom.length > 0 && canControl && (
+              <div className="border-b border-[#404040]">
+                <div className="p-4 bg-[#232323]">
+                  <h4 className="text-sm font-semibold mb-3">
+                    Waiting Room ({waitingRoom.length})
+                  </h4>
+                  <div className="space-y-2 pr-1 custom-scrollbar">
+                    {waitingRoom.map(person => (
+                      <div
+                        key={person.id}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm">{person.name}</span>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => admitFromWaitingRoom(person.id)}
+                            className="bg-green-500 hover:bg-green-600"
+                          >
+                            Admit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeFromWaitingRoom(person.id)}
+                            className="hover:bg-red-500/20"
+                          >
+                            Deny
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* PARTICIPANTS LIST */}
-          <div className="flex-1 overflow-y-auto">
+            {/* PARTICIPANTS LIST */}
             {filteredParticipants.map(participant => {
               const displayedRole = transientRoles[participant.id] || participant.role;
               return (
-              <ParticipantItem
-                key={participant.id}
-                participant={participant}
-                canControl={canControl}
-                canChangeRoles={canChangeRoles}
-                isOriginalHost={isOriginalHost}
-                onToggleHand={() => toggleHandRaise(participant.id)}
-                onToggleMute={() => {
-                  if (participant.isAudioMuted) {
-                    unmuteParticipant(participant.id);
-                  } else {
-                    muteParticipant(participant.id);
-                  }
-                }}
-                onMakeHost={() => makeHost(participant.id)}
-                onMakeCoHost={() => makeCoHost(participant.id)}
-                onRemove={() => removeParticipant(participant.id)}
-                onRevokeHost={() => revokeHost(participant.id)}
-                onRevokeCoHost={() => revokeCoHost(participant.id)}
-                displayedRole={displayedRole}
-              />
+                <ParticipantItem
+                  key={participant.id}
+                  participant={participant}
+                  canControl={canControl}
+                  canChangeRoles={canChangeRoles}
+                  isOriginalHost={isOriginalHost}
+                  onToggleHand={() => toggleHandRaise(participant.id)}
+                  onToggleMute={() => {
+                    if (participant.isAudioMuted) {
+                      unmuteParticipant(participant.id);
+                    } else {
+                      muteParticipant(participant.id);
+                    }
+                  }}
+                  onMakeHost={() => makeHost(participant.id)}
+                  onMakeCoHost={() => makeCoHost(participant.id)}
+                  onRemove={() => removeParticipant(participant.id)}
+                  onRevokeHost={() => revokeHost(participant.id)}
+                  onRevokeCoHost={() => revokeCoHost(participant.id)}
+                  displayedRole={displayedRole}
+                />
               );
             })}
           </div>
