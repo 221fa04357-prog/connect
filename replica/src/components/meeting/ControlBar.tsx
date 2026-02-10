@@ -155,11 +155,21 @@ export default function ControlBar() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const dpr = window.devicePixelRatio || 1;
+    // Set actual size in memory (scaled to extra pixels)
+    canvas.width = canvasDims.w * dpr;
+    canvas.height = canvasDims.h * dpr;
+
+    // Normalize coordinate system to logical pixels
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, canvasDims.w, canvasDims.h);
     whiteboardStrokes.forEach(stroke => {
       ctx.strokeStyle = stroke.tool === 'pen' ? stroke.color : '#fff';
       ctx.lineWidth = stroke.size;
       ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       stroke.points.forEach(([x, y], i) => {
         if (i === 0) ctx.moveTo(x, y);
@@ -663,10 +673,8 @@ export default function ControlBar() {
                 {/* Canvas: ensure controls overlay is above canvas */}
                 <canvas
                   ref={canvasRef}
-                  width={canvasDims.w}
-                  height={canvasDims.h}
                   className="absolute inset-0 w-full h-full cursor-crosshair z-[101]"
-                  style={{ zIndex: 101, pointerEvents: 'auto' }}
+                  style={{ zIndex: 101, pointerEvents: 'auto', touchAction: 'none' }}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
