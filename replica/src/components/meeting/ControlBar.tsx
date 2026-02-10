@@ -1,3 +1,4 @@
+
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -400,15 +401,15 @@ export default function ControlBar() {
                 <DropdownMenuTrigger asChild>
                   <div className="group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem]">
                     <div className={cn(
-                      "relative flex items-center justify-center w-12 h-8 rounded-lg transition-colors group-hover:bg-[#2D2D2D]",
-                      isScreenSharing ? "text-green-500" : "text-green-500"
+                      "relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
+                      "hover:bg-[#333] text-gray-200"
                     )}>
-                      <Share2 className="w-6 h-6 fill-current" />
+                      <Share2 className="w-5 h-5" strokeWidth={2} />
                       <div className="absolute top-0 right-0 -mr-1">
                         <ChevronUp className="w-3 h-3 text-gray-400 group-hover:text-white" />
                       </div>
                     </div>
-                    <span className="text-[10px] sm:text-[11px] font-medium text-gray-300 group-hover:text-white whitespace-nowrap">
+                    <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 group-hover:text-white whitespace-nowrap">
                       Share Screen
                     </span>
                   </div>
@@ -613,3 +614,4 @@ function ControlButton({ icon: Icon, label, onClick, active, isActiveState, clas
     </div>
   );
 }
+
