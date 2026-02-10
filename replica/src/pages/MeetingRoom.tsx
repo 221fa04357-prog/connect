@@ -106,7 +106,7 @@ export default function MeetingRoom() {
   /* ---------------- RECORDING TIMER ---------------- */
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (isRecording && recordingStartTime) {
       interval = setInterval(() => {
         const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
