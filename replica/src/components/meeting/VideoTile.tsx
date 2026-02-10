@@ -38,10 +38,6 @@ export default function VideoTile({
     useEffect(() => {
         if (isLocal && videoRef.current && localStream) {
             videoRef.current.srcObject = localStream;
-            // Explicit play to handle autoplay restrictions
-            videoRef.current.play().catch(err => {
-                console.error("Video play failed (likely autoplay policy):", err);
-            });
         }
     }, [isLocal, localStream, participant.isVideoOff]);
 

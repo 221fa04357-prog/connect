@@ -75,7 +75,7 @@ export const useMeetingStore = create<MeetingState>((set) => ({
 
   viewMode: 'gallery',
   isAudioMuted: false,
-  isVideoOff: true, // Default to true to force user interaction for camera (browser policy compliance)
+  isVideoOff: false,
   isScreenSharing: false,
   isRecording: false,
   isChatOpen: false,
