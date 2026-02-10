@@ -33,20 +33,14 @@ export default function MeetingRoom() {
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   useEffect(() => {
     const manageCamera = async () => {
-      // Case 1: Video is ON
       if (!isVideoOff) {
-        // If no stream, or stream is inactive, or tracks ended -> Initialize/Re-acquire Camera
+        // If no stream, or stream is inactive, or tracks ended -> Initialize
         const needsStream = !localStream || !localStream.active || localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
         if (needsStream) {
           try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             setLocalStream(stream);
-
-            // Sync with participant store if needed (optional safety)
-            if (participants.length > 0) {
-              const myId = user?.id;
-            }
           } catch (err) {
             console.error("Failed to access camera:", err);
           }
@@ -57,9 +51,8 @@ export default function MeetingRoom() {
           });
         }
       }
-      // Case 2: Video is OFF -> STOP tracks (Kills Hardware Light)
       else if (localStream) {
-        // We must STOP the tracks to release the hardware camera
+        // Video is OFF -> STOP tracks
         localStream.getVideoTracks().forEach(track => {
           track.stop();
         });
@@ -67,7 +60,7 @@ export default function MeetingRoom() {
     };
 
     manageCamera();
-  }, [isVideoOff, localStream, setLocalStream, user]);
+  }, [isVideoOff, localStream, setLocalStream]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -86,7 +79,6 @@ export default function MeetingRoom() {
   const [showHostWaitingOverlay, setShowHostWaitingOverlay] = useState(false);
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
-
   useEffect(() => {
     if (isHost && waitingRoom.length > 0) {
       setShowHostWaitingOverlay(true);
@@ -104,7 +96,6 @@ export default function MeetingRoom() {
   }, [user, waitingRoom]);
 
   /* ---------------- RECORDING TIMER ---------------- */
-
   useEffect(() => {
     let interval: any;
     if (isRecording && recordingStartTime) {
@@ -117,11 +108,12 @@ export default function MeetingRoom() {
     } else {
       setElapsedTime("00:00");
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [isRecording, recordingStartTime]);
 
-  /* ---------------- ACTIVE SPEAKER (SIMULATION) ---------------- */
-
+  /* ---------------- ACTIVE SPEAKER ---------------- */
   useEffect(() => {
     const interval = setInterval(() => {
       const randomParticipant =
@@ -146,7 +138,6 @@ export default function MeetingRoom() {
   }
 
   /* ---------------- HOST WAITING OVERLAY ---------------- */
-
   const HostWaitingRoomOverlay = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-white/10 backdrop-blur-md rounded-2xl px-8 py-8 w-full max-w-2xl">
@@ -180,17 +171,14 @@ export default function MeetingRoom() {
     <div className="flex flex-col h-screen bg-[#1C1C1C] pt-4">
       {showHostWaitingOverlay && <HostWaitingRoomOverlay />}
 
-      {/* ---------------- MAIN CONTENT ---------------- */}
       <div className="flex-1 min-h-0 relative">
         <TopBar />
         <VideoGrid />
 
-        {/* 🔥 ZOOM-STYLE GLOBAL REACTIONS OVERLAY */}
         <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
           <AnimatePresence>
             {reactions.map((reaction) => {
               const x = Math.random() * 80 + 10;
-
               return (
                 <motion.div
                   key={reaction.id}
@@ -221,10 +209,7 @@ export default function MeetingRoom() {
         </div>
       </div>
 
-      {/* ---------------- CONTROL BAR ---------------- */}
       <ControlBar />
-
-      {/* ---------------- SIDE PANELS ---------------- */}
       <ChatPanel />
       <ParticipantsPanel />
     </div>
