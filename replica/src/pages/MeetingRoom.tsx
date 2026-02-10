@@ -32,34 +32,30 @@ export default function MeetingRoom() {
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
   useEffect(() => {
-    const manageCamera = async () => {
+    const initCamera = async () => {
+      // Only initialize if video is NOT explicitly off and we don't have an active stream
       if (!isVideoOff) {
-        // If no stream, or stream is inactive, or tracks ended -> Initialize
         const needsStream = !localStream || !localStream.active || localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
         if (needsStream) {
           try {
+            console.log("MeetingRoom: Initializing media stream...");
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+            // Sync current state to new tracks
+            const { isAudioMuted, isVideoOff: videoOffState } = useMeetingStore.getState();
+            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+            stream.getVideoTracks().forEach(t => t.enabled = !videoOffState);
+
             setLocalStream(stream);
           } catch (err) {
-            console.error("Failed to access camera:", err);
+            console.error("MeetingRoom: Failed to access camera:", err);
           }
-        } else {
-          // Ensure existing tracks are enabled
-          localStream.getVideoTracks().forEach(track => {
-            if (!track.enabled) track.enabled = true;
-          });
         }
-      }
-      else if (localStream) {
-        // Video is OFF -> STOP tracks
-        localStream.getVideoTracks().forEach(track => {
-          track.stop();
-        });
       }
     };
 
-    manageCamera();
+    initCamera();
   }, [isVideoOff, localStream, setLocalStream]);
 
   // Cleanup on unmount
