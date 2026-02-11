@@ -59,6 +59,13 @@ export function JoinMeeting() {
     useEffect(() => {
         const initCamera = async () => {
             try {
+                // Check if browser supports mediaDevices
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    console.error("MediaDevices API not supported.");
+                    setPermissionDenied(true);
+                    return;
+                }
+
                 // Only request if we don't have one active
                 if (!localStream || !localStream.active) {
                     const stream = await navigator.mediaDevices.getUserMedia({
@@ -74,8 +81,14 @@ export function JoinMeeting() {
                     setLocalStream(stream);
                     setPermissionDenied(false);
                 }
-            } catch (err) {
-                console.error("Camera permission denied:", err);
+            } catch (err: any) {
+                console.error("Camera access error:", err);
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    setPermissionDenied(true);
+                } else if (err.name === 'NotFoundError') {
+                    console.error("No camera/microphone found.");
+                    // We could set a different state here if we wanted specific UI
+                }
                 setPermissionDenied(true);
             }
         };

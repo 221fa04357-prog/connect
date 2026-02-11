@@ -60,15 +60,19 @@ export default function MeetingRoom() {
   useEffect(() => {
     if (!isVideoOff && (!localStream || !localStream.active)) {
       // Re-acquire if missing
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(stream => {
-          // Apply current state
-          const { isAudioMuted } = useMeetingStore.getState();
-          stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-          // Video is enabled by default in new stream
-          setLocalStream(stream);
-        })
-        .catch(e => console.error("Re-acquire camera failed", e));
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+          .then(stream => {
+            // Apply current state
+            const { isAudioMuted } = useMeetingStore.getState();
+            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+            // Video is enabled by default in new stream
+            setLocalStream(stream);
+          })
+          .catch(e => console.error("Re-acquire camera failed", e));
+      } else {
+        console.error("MediaDevices API not supported.");
+      }
     }
   }, [isVideoOff, localStream, setLocalStream]);
 
