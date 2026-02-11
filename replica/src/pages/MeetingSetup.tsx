@@ -166,7 +166,6 @@ export function JoinMeeting() {
                                 autoPlay
                                 muted
                                 playsInline
-                                onLoadedMetadata={(e) => e.currentTarget.play()}
                                 className="absolute inset-0 w-full h-full object-cover rounded-lg"
                                 style={{ transform: 'scaleX(-1)' }}
                             />
