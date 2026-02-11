@@ -12,7 +12,6 @@ import { useAuthStore } from '@/stores/useAuthStore';
 export default function MeetingRoom() {
   const {
     participants, // Active participants list
-    addParticipant,
     setActiveSpeaker,
     waitingRoom,
     admitFromWaitingRoom,
@@ -34,40 +33,27 @@ export default function MeetingRoom() {
 
   const user = useAuthStore((state) => state.user);
 
-  // Sync local user to participants list and media state
+  // Sync local media state to participant store for UI consistency
   useEffect(() => {
-    const userId = user?.id;
+    const userId = user?.id; // Assuming user is available from useAuthStore
     if (!userId) return;
 
     const myParticipant = participants.find(p => p.id === userId)
       || participants.find(p => p.id === `participant-${userId}`);
 
-    if (!myParticipant && user) {
-      // Add local user to participants list if missing
-      addParticipant({
-        id: userId,
-        name: user.name || 'You',
-        role: meeting?.hostId === userId ? 'host' : 'participant',
-        avatar: '#0B5CFF',
-        joinedAt: new Date(),
-        isAudioMuted: useMeetingStore.getState().isAudioMuted,
-        isVideoOff: useMeetingStore.getState().isVideoOff,
-        isHandRaised: false,
-        isSpeaking: false,
-        isPinned: false,
-        isSpotlighted: false
-      });
-    } else if (myParticipant) {
-      // Sync media states
+    if (myParticipant) {
+      // Only update if different to avoid loops
       if (myParticipant.isAudioMuted !== useMeetingStore.getState().isAudioMuted ||
         myParticipant.isVideoOff !== useMeetingStore.getState().isVideoOff) {
+
+        // We need to import updateParticipant from the store hook if not already
         useParticipantsStore.getState().updateParticipant(myParticipant.id, {
           isAudioMuted: useMeetingStore.getState().isAudioMuted,
           isVideoOff: useMeetingStore.getState().isVideoOff
         });
       }
     }
-  }, [user, participants, meeting?.hostId, addParticipant]);
+  }, [useMeetingStore.getState().isAudioMuted, useMeetingStore.getState().isVideoOff, participants, user]);
 
   /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
   useEffect(() => {
