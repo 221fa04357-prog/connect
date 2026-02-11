@@ -288,6 +288,7 @@ export function CreateMeeting() {
         duration: '', // allow empty/null
         waitingRoom: true,
         muteOnEntry: false,
+        disableVideo: false,
         requirePassword: false,
         password: ''
     });
@@ -370,6 +371,8 @@ export function CreateMeeting() {
             settings: {
                 ...baseMeeting.settings,
                 enableWaitingRoom: formData.waitingRoom,
+                muteOnEntry: formData.muteOnEntry,
+                disableParticipantVideo: formData.disableVideo,
                 // other settings can be mapped here
             }
         };
@@ -392,6 +395,7 @@ export function CreateMeeting() {
                 enableWaitingRoom: true,
                 allowParticipantsToUnmute: true,
                 allowParticipantsToShareScreen: true,
+                disableParticipantVideo: false,
             },
             isRecording: false,
             isScreenSharing: false,
@@ -759,6 +763,17 @@ export function CreateMeeting() {
                                         id="muteOnEntry"
                                         checked={formData.muteOnEntry}
                                         onCheckedChange={(checked) => setFormData({ ...formData, muteOnEntry: checked })}
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="disableVideo" className="cursor-pointer">
+                                        Restrict Video on Entry (Host approval needed)
+                                    </Label>
+                                    <Switch
+                                        id="disableVideo"
+                                        checked={formData.disableVideo}
+                                        onCheckedChange={(checked) => setFormData({ ...formData, disableVideo: checked })}
                                     />
                                 </div>
 

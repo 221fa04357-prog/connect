@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,6 +61,18 @@ export default function ControlBar() {
   const currentUserId = user?.id;
   const currentParticipant = participants.find(p => p.id === currentUserId) || participants[0];
   const isHandRaised = !!currentParticipant?.isHandRaised;
+
+  const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
+  const videoAllowed = isHostOrCoHost || currentParticipant?.isVideoAllowed !== false;
+
+  // Sync video state: If host forces video off (currentParticipant.isVideoOff became true), sync local state
+  useEffect(() => {
+    // If remote says video off, but local is on (false), turn it off
+    if (currentParticipant?.isVideoOff && !isVideoOff) {
+      toggleVideo();
+    }
+  }, [currentParticipant?.isVideoOff, isVideoOff, toggleVideo]); // removed currentParticipant from dep array to avoid loop, just property
+
 
   // Toggle hand for self
   const handleToggleHand = () => {
@@ -255,6 +267,10 @@ export default function ControlBar() {
   };
 
   const handleVideoToggle = async () => {
+    if (!videoAllowed) {
+      alert("The host has disabled video for participants.");
+      return;
+    }
     const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
     const currentStream = useMeetingStore.getState().localStream;
 
@@ -490,21 +506,30 @@ export default function ControlBar() {
 
             {/* Video */}
             <DropdownMenu>
-              <div className="flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
+              <div className={cn(
+                "flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden transition-colors border border-transparent",
+                videoAllowed ? "hover:bg-[#2A2A2A] hover:border-[#444]" : "opacity-50 cursor-not-allowed"
+              )}>
                 <button
                   onClick={handleVideoToggle}
+                  disabled={!videoAllowed}
                   className={cn(
                     "flex flex-col items-center justify-center w-14 h-14 px-1 py-1 gap-1 outline-none",
-                    isVideoOff && "text-red-500"
+                    isVideoOff && "text-red-500",
+                    !videoAllowed && "text-gray-500"
                   )}
                 >
-                  {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                  {!videoAllowed ? (
+                    <Lock className="w-5 h-5" />
+                  ) : (
+                    isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />
+                  )}
                   <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
-                    {isVideoOff ? 'video' : 'video'}
+                    Video
                   </span>
                 </button>
-                <DropdownMenuTrigger asChild>
-                  <button className="h-14 px-1 hover:bg-[#3A3A3A] transition-colors flex items-start pt-2">
+                <DropdownMenuTrigger asChild disabled={!videoAllowed}>
+                  <button disabled={!videoAllowed} className="h-14 px-1 hover:bg-[#3A3A3A] transition-colors flex items-start pt-2">
                     <ChevronUp className="w-3 h-3 text-gray-400" />
                   </button>
                 </DropdownMenuTrigger>

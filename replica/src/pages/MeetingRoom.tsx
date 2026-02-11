@@ -15,7 +15,8 @@ export default function MeetingRoom() {
     setActiveSpeaker,
     waitingRoom,
     admitFromWaitingRoom,
-    removeFromWaitingRoom
+    removeFromWaitingRoom,
+    setVideoRestriction
   } = useParticipantsStore();
 
   const {
@@ -28,6 +29,13 @@ export default function MeetingRoom() {
     localStream,
     setLocalStream
   } = useMeetingStore();
+
+  // Sync initial video restriction from meeting settings
+  useEffect(() => {
+    if (meeting?.settings?.disableParticipantVideo !== undefined) {
+      setVideoRestriction(meeting.settings.disableParticipantVideo);
+    }
+  }, [meeting?.settings?.disableParticipantVideo, setVideoRestriction]);
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
 
