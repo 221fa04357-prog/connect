@@ -40,14 +40,15 @@ export function JoinMeeting() {
     const [permissionDenied, setPermissionDenied] = useState(false);
 
     // Use global store for media state
+    const [isAudioMuted, setIsAudioMuted] = useState(false);
+    const [isVideoOff, setIsVideoOff] = useState(false);
+    const toggleAudio = () => setIsAudioMuted(prev => !prev);
+    const toggleVideo = () => setIsVideoOff(prev => !prev);
+
     const {
-        isAudioMuted,
-        isVideoOff,
-        toggleAudio,
-        toggleVideo,
         setLocalStream,
         localStream,
-        setMeeting // Added
+        setMeeting
     } = useMeetingStore();
 
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -75,7 +76,6 @@ export function JoinMeeting() {
                     });
 
                     // Apply initial state
-                    const { isAudioMuted, isVideoOff } = useMeetingStore.getState();
                     stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
                     stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
 
@@ -113,6 +113,24 @@ export function JoinMeeting() {
             videoRef.current.srcObject = localStream;
         }
     }, [localStream]);
+
+    // Sync track enablement with local preview state
+    useEffect(() => {
+        if (localStream) {
+            localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+            localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+        }
+    }, [isAudioMuted, isVideoOff, localStream]);
+
+    const [step, setStep] = useState(0); // 0: Preview, 1: Join Form
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     const handleJoin = () => {
         if (!meetingId || !name) {
@@ -155,119 +173,172 @@ export function JoinMeeting() {
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-4xl"
             >
-                <div className="grid md:grid-cols-2 gap-8">
-                    <div className="bg-[#232323] rounded-2xl p-6 flex flex-col">
-                        <h3 className="text-xl font-semibold mb-4">Preview</h3>
-
-                        <div className="flex-1 bg-[#1C1C1C] rounded-lg relative overflow-hidden mb-4">
-                            {/* Video Element */}
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                muted
-                                playsInline
-                                className="absolute inset-0 w-full h-full object-cover rounded-lg"
-                                style={{ transform: 'scaleX(-1)' }}
-                            />
-
-                            {/* Permission Denied Error */}
-                            {permissionDenied && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-20 text-center p-4">
-                                    <p className="text-white text-sm">Camera access blocked. Please enable it in browser settings.</p>
-                                </div>
+                <div className={cn(
+                    "grid gap-8",
+                    isMobile ? "grid-cols-1" : "md:grid-cols-2"
+                )}>
+                    {/* Step 0: Preview (Shown on Desktop always, or Step 0 on Mobile) */}
+                    {(!isMobile || step === 0) && (
+                        <motion.div
+                            initial={isMobile ? { opacity: 0, x: -20 } : false}
+                            animate={{ opacity: 1, x: 0 }}
+                            className={cn(
+                                "bg-[#232323] rounded-2xl flex flex-col min-h-[420px] shadow-2xl transition-all",
+                                isMobile ? "p-4 pt-3" : "p-6"
                             )}
+                        >
+                            <h3 className={cn(
+                                "text-2xl font-bold text-center md:text-left",
+                                isMobile ? "mb-3" : "mb-4"
+                            )}>Preview</h3>
 
-                            {/* Video Off Placeholder Overlay */}
-                            {isVideoOff && !permissionDenied && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C] z-10">
-                                    <div className="w-24 h-24 rounded-full bg-[#0B5CFF] flex items-center justify-center text-white text-3xl font-semibold">
-                                        {name ? name.charAt(0).toUpperCase() : 'Y'}
+                            <div className={cn(
+                                "flex-1 bg-[#1C1C1C] rounded-lg relative overflow-hidden",
+                                isMobile ? "mb-5 aspect-[4/3]" : "mb-6 aspect-video md:aspect-auto"
+                            )}>
+                                {/* Video Element */}
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    muted
+                                    playsInline
+                                    className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                                    style={{ transform: 'scaleX(-1)' }}
+                                />
+
+                                {/* Permission Denied Error */}
+                                {permissionDenied && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 z-20 text-center p-6">
+                                        <p className="text-white text-sm font-medium">Camera access blocked. Please enable it in browser settings to continue.</p>
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Loading State if no stream yet and no error */}
-                            {!localStream && !permissionDenied && !isVideoOff && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black">
-                                    <VideoOff className="w-12 h-12 text-gray-600 animate-pulse" />
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex justify-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={toggleAudio}
-                                className={cn(
-                                    'rounded-full w-12 h-12',
-                                    isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
                                 )}
-                            >
-                                {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                            </Button>
 
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={toggleVideo}
-                                className={cn(
-                                    'rounded-full w-12 h-12',
-                                    isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
+                                {/* Video Off Placeholder Overlay */}
+                                {isVideoOff && !permissionDenied && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C] z-10">
+                                        <div className="w-24 h-24 rounded-full bg-[#0B5CFF] flex items-center justify-center text-white text-4xl font-bold shadow-xl">
+                                            {name ? name.charAt(0).toUpperCase() : 'Y'}
+                                        </div>
+                                    </div>
                                 )}
-                            >
-                                {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-                            </Button>
-                        </div>
-                    </div>
 
-                    <div className="bg-[#232323] rounded-2xl p-8 flex flex-col justify-center">
-                        <h2 className="text-3xl font-bold mb-2">Join Meeting</h2>
-                        <p className="text-gray-400 mb-8">
-                            Enter the meeting ID to join
-                        </p>
-
-                        <div className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="meetingId">Meeting ID</Label>
-                                <Input
-                                    id="meetingId"
-                                    type="text"
-                                    placeholder="123-456-789"
-                                    value={meetingId}
-                                    onChange={(e) => setMeetingId(e.target.value)}
-                                    className="bg-[#1C1C1C] border-[#404040] text-lg"
-                                />
+                                {/* Loading State */}
+                                {!localStream && !permissionDenied && !isVideoOff && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                                        <VideoOff className="w-12 h-12 text-gray-400 animate-pulse" />
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Your Name</Label>
-                                <Input
-                                    id="name"
-                                    type="text"
-                                    placeholder="John Doe"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="bg-[#1C1C1C] border-[#404040] text-lg"
-                                />
+                            <div className="flex flex-col gap-6">
+                                <div className="flex justify-center gap-6">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={toggleAudio}
+                                        className={cn(
+                                            'rounded-full w-14 h-14 shadow-lg transition-all',
+                                            isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'
+                                        )}
+                                    >
+                                        {isAudioMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                                    </Button>
+
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={toggleVideo}
+                                        className={cn(
+                                            'rounded-full w-14 h-14 shadow-lg transition-all',
+                                            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'
+                                        )}
+                                    >
+                                        {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+                                    </Button>
+                                </div>
+
+                                {isMobile && (
+                                    <Button
+                                        onClick={() => setStep(1)}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] py-6 text-lg font-semibold rounded-xl"
+                                    >
+                                        Next
+                                    </Button>
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* Step 1: Join Form (Shown on Desktop always, or Step 1 on Mobile) */}
+                    {(!isMobile || step === 1) && (
+                        <motion.div
+                            initial={isMobile ? { opacity: 0, x: 20 } : false}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="bg-[#232323] rounded-2xl p-8 flex flex-col justify-center min-h-[400px]"
+                        >
+                            <div className="mb-8">
+                                <h2 className="text-3xl font-bold mb-2">Join Meeting</h2>
+                                <p className="text-gray-400">
+                                    Enter the meeting ID to join the call
+                                </p>
                             </div>
 
-                            <Button
-                                onClick={handleJoin}
-                                className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            >
-                                Join Meeting
-                            </Button>
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <Label htmlFor="meetingId">Meeting ID</Label>
+                                    <Input
+                                        id="meetingId"
+                                        type="text"
+                                        placeholder="123-456-789"
+                                        value={meetingId}
+                                        onChange={(e) => setMeetingId(e.target.value)}
+                                        className="bg-[#1C1C1C] border-[#404040] text-lg h-12"
+                                    />
+                                </div>
 
-                            <Button
-                                variant="ghost"
-                                onClick={() => navigate('/')}
-                                className="w-full"
-                            >
-                                Back to Home
-                            </Button>
-                        </div>
-                    </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="name">Your Name</Label>
+                                    <Input
+                                        id="name"
+                                        type="text"
+                                        placeholder="John Doe"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="bg-[#1C1C1C] border-[#404040] text-lg h-12"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-3 pt-2">
+                                    <Button
+                                        onClick={handleJoin}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-7 text-xl font-bold rounded-xl shadow-lg border-none"
+                                    >
+                                        Join Meeting
+                                    </Button>
+
+                                    {isMobile && (
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => setStep(0)}
+                                            className="w-full h-12 text-gray-400 hover:text-white"
+                                        >
+                                            Back to Preview
+                                        </Button>
+                                    )}
+
+                                    {!isMobile && (
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => navigate('/')}
+                                            className="w-full h-12 text-gray-400 hover:text-white"
+                                        >
+                                            Back to Home
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
                 </div>
             </motion.div>
         </div>

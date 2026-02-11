@@ -30,15 +30,11 @@ export default function ControlBar() {
   // Store hooks
   const {
     meeting,
-    isAudioMuted,
-    isVideoOff,
     isScreenSharing,
     isRecording,
     isChatOpen,
     isParticipantsOpen,
     viewMode,
-    toggleAudio,
-    toggleVideo,
     toggleScreenShare,
     toggleRecording,
     toggleChat,
@@ -56,23 +52,26 @@ export default function ControlBar() {
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
-  const { participants, updateParticipant, toggleHandRaise } = useParticipantsStore();
+  const {
+    participants,
+    updateParticipant,
+    toggleHandRaise,
+    toggleParticipantAudio,
+    toggleParticipantVideo
+  } = useParticipantsStore();
+
   // Find current user participant
   const currentUserId = user?.id;
-  const currentParticipant = participants.find(p => p.id === currentUserId) || participants[0];
+  const currentParticipant = participants.find(p => p.id === currentUserId)
+    || participants.find(p => p.id === `participant-${currentUserId}`)
+    || participants[0];
+
+  const isAudioMuted = currentParticipant?.isAudioMuted ?? true;
+  const isVideoOff = currentParticipant?.isVideoOff ?? true;
   const isHandRaised = !!currentParticipant?.isHandRaised;
 
   const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
   const videoAllowed = isHostOrCoHost || currentParticipant?.isVideoAllowed !== false;
-
-  // Sync video state: If host forces video off (currentParticipant.isVideoOff became true), sync local state
-  useEffect(() => {
-    // If remote says video off, but local is on (false), turn it off
-    if (currentParticipant?.isVideoOff && !isVideoOff) {
-      toggleVideo();
-    }
-  }, [currentParticipant?.isVideoOff, isVideoOff, toggleVideo]); // removed currentParticipant from dep array to avoid loop, just property
-
 
   // Toggle hand for self
   const handleToggleHand = () => {
@@ -241,28 +240,25 @@ export default function ControlBar() {
   };
 
   const handleAudioToggle = async () => {
-    const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+    const currentIsMuted = isAudioMuted;
     const currentStream = useMeetingStore.getState().localStream;
 
     // If we are unmuting and have no active stream, try to get it here (user gesture)
     if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0)) {
       try {
         console.log("Requesting audio stream on user gesture...");
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: !useMeetingStore.getState().isVideoOff });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: !isVideoOff
+        });
         setLocalStream(stream);
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
       }
     }
 
-    toggleAudio();
-    const userId = user?.id;
-    const participant = participants.find(p => p.id === userId)
-      || participants.find(p => p.id === `participant-${userId}`)
-      || participants.find(p => p.id === 'participant-1');
-
-    if (participant) {
-      updateParticipant(participant.id, { isAudioMuted: !isAudioMuted });
+    if (currentParticipant) {
+      toggleParticipantAudio(currentParticipant.id);
     }
   };
 
@@ -271,28 +267,25 @@ export default function ControlBar() {
       alert("The host has disabled video for participants.");
       return;
     }
-    const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+    const currentIsVideoOff = isVideoOff;
     const currentStream = useMeetingStore.getState().localStream;
 
     // If we are turning video ON and have no active video track, try to get it here (user gesture)
     if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0)) {
       try {
         console.log("Requesting video stream on user gesture...");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !useMeetingStore.getState().isAudioMuted });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: !isAudioMuted
+        });
         setLocalStream(stream);
       } catch (err) {
         console.error("Failed to get video stream on toggle:", err);
       }
     }
 
-    toggleVideo();
-    const userId = user?.id;
-    const participant = participants.find(p => p.id === userId)
-      || participants.find(p => p.id === `participant-${userId}`)
-      || participants.find(p => p.id === 'participant-1');
-
-    if (participant) {
-      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
+    if (currentParticipant) {
+      toggleParticipantVideo(currentParticipant.id);
     }
   };
 
