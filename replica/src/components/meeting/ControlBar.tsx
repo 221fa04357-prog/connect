@@ -49,6 +49,7 @@ export default function ControlBar() {
     leaveMeeting,
     setScreenShareStream,
     setRecordingStartTime,
+    setLocalStream,
     extendMeetingTime,
     showSelfView,
     toggleSelfView
@@ -155,11 +156,21 @@ export default function ControlBar() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const dpr = window.devicePixelRatio || 1;
+    // Set actual size in memory (scaled to extra pixels)
+    canvas.width = canvasDims.w * dpr;
+    canvas.height = canvasDims.h * dpr;
+
+    // Normalize coordinate system to logical pixels
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, canvasDims.w, canvasDims.h);
     whiteboardStrokes.forEach(stroke => {
       ctx.strokeStyle = stroke.tool === 'pen' ? stroke.color : '#fff';
       ctx.lineWidth = stroke.size;
       ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       stroke.points.forEach(([x, y], i) => {
         if (i === 0) ctx.moveTo(x, y);
@@ -217,12 +228,56 @@ export default function ControlBar() {
     setShowReactions(false);
   };
 
-  const handleAudioToggle = () => {
+  const handleAudioToggle = async () => {
+    const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+    const currentStream = useMeetingStore.getState().localStream;
+
+    // If we are unmuting and have no active stream, try to get it here (user gesture)
+    if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0)) {
+      try {
+        console.log("Requesting audio stream on user gesture...");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: !useMeetingStore.getState().isVideoOff });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Failed to get audio stream on toggle:", err);
+      }
+    }
+
     toggleAudio();
+    const userId = user?.id;
+    const participant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`)
+      || participants.find(p => p.id === 'participant-1');
+
+    if (participant) {
+      updateParticipant(participant.id, { isAudioMuted: !isAudioMuted });
+    }
   };
 
-  const handleVideoToggle = () => {
+  const handleVideoToggle = async () => {
+    const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+    const currentStream = useMeetingStore.getState().localStream;
+
+    // If we are turning video ON and have no active video track, try to get it here (user gesture)
+    if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0)) {
+      try {
+        console.log("Requesting video stream on user gesture...");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !useMeetingStore.getState().isAudioMuted });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Failed to get video stream on toggle:", err);
+      }
+    }
+
     toggleVideo();
+    const userId = user?.id;
+    const participant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`)
+      || participants.find(p => p.id === 'participant-1');
+
+    if (participant) {
+      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
+    }
   };
 
   // Centralized Stop Sharing
@@ -325,11 +380,28 @@ export default function ControlBar() {
 
         if (!stream) {
           console.error("No local camera stream available to record.");
-          // Ideally show a toast here
+          alert("Please turn on your camera or microphone before recording.");
           return;
         }
 
-        const mediaRecorder = new MediaRecorder(stream);
+        // Check for supported mime types
+        const types = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+          'video/mp4',
+        ];
+
+        const supportedType = types.find(type => MediaRecorder.isTypeSupported(type));
+
+        if (!supportedType) {
+          console.error("No supported mime type found for MediaRecorder");
+          alert("Recording is not supported on this browser.");
+          return;
+        }
+
+        console.log(`Starting recording with type: ${supportedType}`);
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: supportedType });
         mediaRecorderRef.current = mediaRecorder;
         chunksRef.current = [];
 
@@ -340,12 +412,13 @@ export default function ControlBar() {
         };
 
         mediaRecorder.onstop = () => {
-          const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+          const extension = supportedType.includes('video/mp4') ? 'mp4' : 'webm';
+          const blob = new Blob(chunksRef.current, { type: supportedType });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
-          a.download = `recording-${new Date().toISOString()}.webm`;
+          a.download = `recording-${new Date().toISOString()}.${extension}`;
           document.body.appendChild(a);
           a.click();
           window.URL.revokeObjectURL(url);
@@ -359,6 +432,7 @@ export default function ControlBar() {
 
       } catch (err) {
         console.error("Error starting recording:", err);
+        alert(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   };
@@ -655,10 +729,8 @@ export default function ControlBar() {
                 {/* Canvas: ensure controls overlay is above canvas */}
                 <canvas
                   ref={canvasRef}
-                  width={canvasDims.w}
-                  height={canvasDims.h}
                   className="absolute inset-0 w-full h-full cursor-crosshair z-[101]"
-                  style={{ zIndex: 101, pointerEvents: 'auto' }}
+                  style={{ zIndex: 101, pointerEvents: 'auto', touchAction: 'none' }}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
