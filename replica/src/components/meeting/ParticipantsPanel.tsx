@@ -34,6 +34,7 @@ export default function ParticipantsPanel() {
     waitingRoom,
     transientRoles,
     toggleHandRaise,
+    updateParticipant,
     muteParticipant,     // MUST TOGGLE
     unmuteParticipant,
     muteAll,
@@ -68,6 +69,53 @@ export default function ParticipantsPanel() {
   const canControl = isHost || isCoHost; // general controls (mute all, waiting room)
   const canChangeRoles = isHost; // only host can change roles
   const isOriginalHost = meeting?.originalHostId === user?.id;
+  const { setLocalStream, toggleAudio, toggleVideo } = useMeetingStore();
+
+  const handleAudioToggle = async () => {
+    const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+    const currentStream = useMeetingStore.getState().localStream;
+    const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+    if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+      try {
+        const isVideoOff = useMeetingStore.getState().isVideoOff;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: !isVideoOff
+        });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Failed to get audio stream:", err);
+      }
+    }
+    toggleAudio();
+    if (currentUserParticipant) {
+      updateParticipant(currentUserParticipant.id, { isAudioMuted: !currentIsMuted });
+    }
+  };
+
+  const handleVideoToggle = async () => {
+    const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+    const currentStream = useMeetingStore.getState().localStream;
+    const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+    if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+      try {
+        const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: !isAudioMuted
+        });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Failed to get video stream:", err);
+      }
+    }
+    toggleVideo();
+    if (currentUserParticipant) {
+      updateParticipant(currentUserParticipant.id, { isVideoOff: !currentIsVideoOff });
+    }
+  };
 
   /** SEARCH */
   const filteredParticipants = participants.filter(p =>
@@ -184,8 +232,8 @@ export default function ParticipantsPanel() {
 
           {/* MAIN SCROLLABLE CONTENT: waiting room + participants list scroll together */}
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-4">
-            {/* WAITING ROOM - Only visible to host */}
-            {waitingRoom.length > 0 && isHost && (
+            {/* WAITING ROOM - Only visible to host and co-hosts */}
+            {waitingRoom.length > 0 && canControl && (
               <div className="border-b border-[#404040]">
                 <div className="p-4 bg-[#232323]">
                   <h4 className="text-sm font-semibold mb-3">
@@ -234,7 +282,7 @@ export default function ParticipantsPanel() {
                   canChangeRoles={canChangeRoles}
                   isOriginalHost={isOriginalHost}
                   onToggleHand={() => toggleHandRaise(participant.id)}
-                  onToggleMute={() => {
+                  onToggleMute={participant.id === user?.id ? handleAudioToggle : () => {
                     if (participant.isAudioMuted) {
                       unmuteParticipant(participant.id);
                     } else {
@@ -247,6 +295,7 @@ export default function ParticipantsPanel() {
                   onRevokeHost={() => revokeHost(participant.id)}
                   onRevokeCoHost={() => revokeCoHost(participant.id)}
                   onToggleVideoAllowed={() => setVideoAllowed(participant.id, !(participant.isVideoAllowed !== false))}
+                  onToggleVideo={participant.id === user?.id ? handleVideoToggle : undefined}
                   displayedRole={displayedRole}
                   coHostCount={coHostCount}
                   hostCount={hostCount}
@@ -275,6 +324,7 @@ interface ParticipantItemProps {
   onRevokeHost: () => void;
   onRevokeCoHost: () => void;
   onToggleVideoAllowed: () => void;
+  onToggleVideo?: () => void;
   displayedRole?: Participant['role'];
   coHostCount: number;
   hostCount: number;
@@ -292,6 +342,7 @@ function ParticipantItem({
   onRevokeHost,
   onRevokeCoHost,
   onToggleVideoAllowed,
+  onToggleVideo,
   isOriginalHost = false,
   displayedRole = participant.role,
   coHostCount,
@@ -324,16 +375,32 @@ function ParticipantItem({
           </div>
 
           <div className="flex items-center gap-2 mt-1">
-            {participant.isAudioMuted ? (
-              <MicOff className="w-3 h-3 text-red-500" />
-            ) : (
-              <Mic className="w-3 h-3 text-green-500" />
-            )}
-            {participant.isVideoOff ? (
-              <VideoOff className="w-3 h-3 text-red-500" />
-            ) : (
-              <Video className="w-3 h-3 text-green-500" />
-            )}
+            <button
+              onClick={isCurrentUser ? onToggleMute : undefined}
+              className={cn(
+                "transition-opacity hover:opacity-80",
+                !isCurrentUser && "cursor-default"
+              )}
+            >
+              {participant.isAudioMuted ? (
+                <MicOff className="w-3 h-3 text-red-500" />
+              ) : (
+                <Mic className="w-3 h-3 text-green-500" />
+              )}
+            </button>
+            <button
+              onClick={isCurrentUser ? onToggleVideo : undefined}
+              className={cn(
+                "transition-opacity hover:opacity-80",
+                !isCurrentUser && "cursor-default"
+              )}
+            >
+              {participant.isVideoOff ? (
+                <VideoOff className="w-3 h-3 text-red-500" />
+              ) : (
+                <Video className="w-3 h-3 text-green-500" />
+              )}
+            </button>
             {participant.isHandRaised && (
               <Hand className="w-3 h-3 text-yellow-500" />
             )}

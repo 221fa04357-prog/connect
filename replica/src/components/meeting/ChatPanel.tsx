@@ -89,12 +89,10 @@ export default function ChatPanel() {
   // In a real app, use user.id from useAuthStore.
   const potentialRecipients = participants.filter(p => p.id !== 'current-user');
 
-  // Initialize selected recipient if needed
+  // Recipient selection is now manual
   useEffect(() => {
-    if (activeTab === 'private' && !selectedRecipientId && potentialRecipients.length > 0) {
-      setSelectedRecipientId(potentialRecipients[0].id);
-    }
-  }, [activeTab, potentialRecipients, selectedRecipientId]);
+    // We no longer auto-select the first recipient to allow "Select Participant" placeholder to show
+  }, [activeTab]);
 
 
   /* ---------------- AUTO SCROLL ---------------- */
@@ -187,7 +185,7 @@ export default function ChatPanel() {
               <div className="shrink-0 p-4 border-b border-[#333]">
                 <Select value={selectedRecipientId} onValueChange={setSelectedRecipientId}>
                   <SelectTrigger className="w-full bg-[#2A2A2A] border-[#444] text-white">
-                    <SelectValue placeholder="Select a recipient" />
+                    <SelectValue placeholder="Select Participant" />
                   </SelectTrigger>
                   <SelectContent className="bg-[#2A2A2A] border-[#444] text-white">
                     {potentialRecipients.length > 0 ? (

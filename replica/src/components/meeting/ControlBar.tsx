@@ -244,11 +244,21 @@ export default function ControlBar() {
     const currentIsMuted = useMeetingStore.getState().isAudioMuted;
     const currentStream = useMeetingStore.getState().localStream;
 
-    // If we are unmuting and have no active stream, try to get it here (user gesture)
-    if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0)) {
+    // Check if any audio tracks are 'ended'
+    const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+    // If we are unmuting and have no active stream or ended track, try to get it here (user gesture)
+    if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
       try {
         console.log("Requesting audio stream on user gesture...");
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: !useMeetingStore.getState().isVideoOff });
+        const isVideoOff = useMeetingStore.getState().isVideoOff;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: !isVideoOff
+        });
+
+        // If we already had a live video track, we might want to preserve it,
+        // but getting a fresh stream is often more reliable for sync.
         setLocalStream(stream);
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
@@ -262,7 +272,7 @@ export default function ControlBar() {
       || participants.find(p => p.id === 'participant-1');
 
     if (participant) {
-      updateParticipant(participant.id, { isAudioMuted: !isAudioMuted });
+      updateParticipant(participant.id, { isAudioMuted: !currentIsMuted });
     }
   };
 
@@ -274,11 +284,18 @@ export default function ControlBar() {
     const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
     const currentStream = useMeetingStore.getState().localStream;
 
-    // If we are turning video ON and have no active video track, try to get it here (user gesture)
-    if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0)) {
+    // Check if any video tracks are 'ended'
+    const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+    // If we are turning video ON and have no active video track or ended track, try to get it here (user gesture)
+    if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
       try {
         console.log("Requesting video stream on user gesture...");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !useMeetingStore.getState().isAudioMuted });
+        const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: !isAudioMuted
+        });
         setLocalStream(stream);
       } catch (err) {
         console.error("Failed to get video stream on toggle:", err);
@@ -292,7 +309,7 @@ export default function ControlBar() {
       || participants.find(p => p.id === 'participant-1');
 
     if (participant) {
-      updateParticipant(participant.id, { isVideoOff: !isVideoOff });
+      updateParticipant(participant.id, { isVideoOff: !currentIsVideoOff });
     }
   };
 

@@ -86,7 +86,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
     set((state) => {
       const isMuted = !state.isAudioMuted;
       if (state.localStream) {
-        state.localStream.getAudioTracks().forEach((t) => (t.enabled = !isMuted));
+        state.localStream.getAudioTracks().forEach((t) => {
+          if (isMuted) t.stop();
+          else t.enabled = true;
+        });
       }
       return { isAudioMuted: isMuted };
     }),
@@ -95,7 +98,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
     set((state) => {
       const isVideoOff = !state.isVideoOff;
       if (state.localStream) {
-        state.localStream.getVideoTracks().forEach((t) => (t.enabled = !isVideoOff));
+        state.localStream.getVideoTracks().forEach((t) => {
+          if (isVideoOff) t.stop();
+          else t.enabled = true;
+        });
       }
       return { isVideoOff };
     }),

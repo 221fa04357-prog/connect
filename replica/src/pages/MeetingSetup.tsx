@@ -114,6 +114,46 @@ export function JoinMeeting() {
         }
     }, [localStream]);
 
+    const handleAudioToggle = async () => {
+        const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isVideoOff = useMeetingStore.getState().isVideoOff;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: !isVideoOff
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get audio stream:", err);
+            }
+        }
+        toggleAudio();
+    };
+
+    const handleVideoToggle = async () => {
+        const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: !isAudioMuted
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get video stream:", err);
+            }
+        }
+        toggleVideo();
+    };
+
     const handleJoin = () => {
         if (!meetingId || !name) {
             alert('Please enter meeting ID and your name');
@@ -198,7 +238,7 @@ export function JoinMeeting() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={toggleAudio}
+                                onClick={handleAudioToggle}
                                 className={cn(
                                     'rounded-full w-12 h-12',
                                     isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
@@ -210,7 +250,7 @@ export function JoinMeeting() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={toggleVideo}
+                                onClick={handleVideoToggle}
                                 className={cn(
                                     'rounded-full w-12 h-12',
                                     isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'

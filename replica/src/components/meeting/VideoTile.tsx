@@ -24,7 +24,7 @@ export default function VideoTile({
 }: VideoTileProps) {
     const { updateParticipant } = useParticipantsStore();
     const { user } = useAuthStore();
-    const { localStream, toggleAudio, toggleVideo } = useMeetingStore();
+    const { localStream, toggleAudio, toggleVideo, setLocalStream } = useMeetingStore();
 
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
@@ -41,19 +41,53 @@ export default function VideoTile({
         }
     }, [isLocal, localStream, participant.isVideoOff]);
 
-    const handleToggleMute = (e: React.MouseEvent) => {
+    const handleToggleMute = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (isLocal) {
+            const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+            const currentStream = useMeetingStore.getState().localStream;
+            const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+            if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+                try {
+                    const isVideoOff = useMeetingStore.getState().isVideoOff;
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: !isVideoOff
+                    });
+                    setLocalStream(stream);
+                } catch (err) {
+                    console.error("Failed to get audio stream:", err);
+                }
+            }
             toggleAudio();
+            updateParticipant(participant.id, { isAudioMuted: !currentIsMuted });
         } else {
             updateParticipant(participant.id, { isAudioMuted: !participant.isAudioMuted });
         }
     };
 
-    const handleToggleVideo = (e: React.MouseEvent) => {
+    const handleToggleVideo = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (isLocal) {
+            const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+            const currentStream = useMeetingStore.getState().localStream;
+            const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+            if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+                try {
+                    const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: !isAudioMuted
+                    });
+                    setLocalStream(stream);
+                } catch (err) {
+                    console.error("Failed to get video stream:", err);
+                }
+            }
             toggleVideo();
+            updateParticipant(participant.id, { isVideoOff: !currentIsVideoOff });
         } else {
             updateParticipant(participant.id, { isVideoOff: !participant.isVideoOff });
         }
