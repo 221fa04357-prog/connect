@@ -375,20 +375,36 @@ export default function ControlBar() {
           return;
         }
 
-        // Use local stream (User Camera) to start instantly without Browser Picker Dialog
-        const stream = useMeetingStore.getState().localStream;
+        // Try to get local stream from store
+        let stream = useMeetingStore.getState().localStream;
+
+        // If no stream, attempt to acquire it now (user gesture allows this)
+        if (!stream || !stream.active || (stream.getVideoTracks().length === 0 && stream.getAudioTracks().length === 0)) {
+          console.log("No active local stream, attempting to acquire for recording...");
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: !useMeetingStore.getState().isVideoOff,
+              audio: !useMeetingStore.getState().isAudioMuted
+            });
+            setLocalStream(stream);
+          } catch (streamErr) {
+            console.error("Failed to acquire stream for recording:", streamErr);
+            alert("Please ensure your camera or microphone are enabled and accessible before recording.");
+            return;
+          }
+        }
 
         if (!stream) {
-          console.error("No local camera stream available to record.");
-          alert("Please turn on your camera or microphone before recording.");
+          alert("Unable to access camera or microphone for recording. Please check permissions.");
           return;
         }
 
-        // Check for supported mime types
+        // Broaden supported mime types for different browsers/mobile
         const types = [
           'video/webm;codecs=vp9,opus',
           'video/webm;codecs=vp8,opus',
           'video/webm',
+          'video/mp4;codecs=avc1,mp4a.40.2', // Chrome on Android often supports this
           'video/mp4',
         ];
 
@@ -396,7 +412,7 @@ export default function ControlBar() {
 
         if (!supportedType) {
           console.error("No supported mime type found for MediaRecorder");
-          alert("Recording is not supported on this browser.");
+          alert("Recording format not supported on this browser.");
           return;
         }
 
@@ -422,11 +438,9 @@ export default function ControlBar() {
           document.body.appendChild(a);
           a.click();
           window.URL.revokeObjectURL(url);
-
-          // NOTE: Do NOT stop tracks here, as this is the live camera stream.
         };
 
-        mediaRecorder.start();
+        mediaRecorder.start(1000); // 1s timeslices often help with long recordings stability
         toggleRecording();
         setRecordingStartTime(Date.now());
 
