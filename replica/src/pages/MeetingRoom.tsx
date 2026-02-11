@@ -27,7 +27,9 @@ export default function MeetingRoom() {
     isRecording,
     recordingStartTime,
     localStream,
-    setLocalStream
+    setLocalStream,
+    isAudioMuted: meetingStoreAudioMuted,
+    isVideoOff: meetingStoreVideoOff
   } = useMeetingStore();
 
   // Sync initial video restriction from meeting settings
@@ -49,25 +51,19 @@ export default function MeetingRoom() {
   const isAudioMutedLocal = myParticipant?.isAudioMuted ?? true;
   const isVideoOffLocal = myParticipant?.isVideoOff ?? true;
 
-  // Preserve preview states: One-time sync from localStream to ParticipantsStore on mount
+  // Preserve preview states: One-time sync from MeetingStore to ParticipantsStore on mount
   useEffect(() => {
-    if (localStream && myParticipant) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      const videoTrack = localStream.getVideoTracks()[0];
-
-      const isMuted = audioTrack ? !audioTrack.enabled : true;
-      const isOff = videoTrack ? !videoTrack.enabled : true;
-
-      // Only update if store is different from current track state
-      if (myParticipant.isAudioMuted !== isMuted || myParticipant.isVideoOff !== isOff) {
-        console.log("MeetingRoom: Syncing preview state to participant store...");
+    if (myParticipant) {
+      // Sync from MeetingStore (which holds the preview state) to ParticipantsStore
+      if (myParticipant.isAudioMuted !== meetingStoreAudioMuted || myParticipant.isVideoOff !== meetingStoreVideoOff) {
+        console.log("MeetingRoom: Syncing preview state from MeetingStore to participant store...");
         updateParticipant(myParticipant.id, {
-          isAudioMuted: isMuted,
-          isVideoOff: isOff
+          isAudioMuted: meetingStoreAudioMuted,
+          isVideoOff: meetingStoreVideoOff
         });
       }
     }
-  }, [localStream, myParticipant?.id]); // Run when stream or participant is ready
+  }, [myParticipant?.id]); // Run once when participant is ready
 
   // Sync track enablement with store state for local participant (Store wins during meeting)
   useEffect(() => {
@@ -90,8 +86,9 @@ export default function MeetingRoom() {
   /* ---------------- CAMERA MANAGEMENT (Initial & Recovery) ---------------- */
   useEffect(() => {
     const initCamera = async () => {
-      // Only initialize if video is NOT explicitly off in the store
-      if (!isVideoOffLocal) {
+      // Use MeetingStore state (preview state) instead of ParticipantsStore
+      // Only initialize if video is NOT explicitly off in the MeetingStore
+      if (!meetingStoreVideoOff) {
         const needsStream =
           !localStream ||
           !localStream.active ||
@@ -110,20 +107,28 @@ export default function MeetingRoom() {
               audio: true
             });
 
-            // Set initial track states based on store
-            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMutedLocal);
-            stream.getVideoTracks().forEach(t => t.enabled = !isVideoOffLocal);
+            // Set initial track states based on MeetingStore
+            stream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
+            stream.getVideoTracks().forEach(t => t.enabled = !meetingStoreVideoOff);
 
             setLocalStream(stream);
           } catch (err) {
             console.error("Failed to access camera:", err);
           }
         }
+      } else {
+        // If video is off, ensure we stop any existing video tracks to turn off the LED
+        if (localStream) {
+          localStream.getVideoTracks().forEach(track => {
+            track.stop();
+            console.log("MeetingRoom: Stopped video track (video is off)");
+          });
+        }
       }
     };
 
     initCamera();
-  }, [isVideoOffLocal, localStream, setLocalStream, isAudioMutedLocal]);
+  }, [meetingStoreVideoOff, localStream, setLocalStream, meetingStoreAudioMuted]);
 
   // Cleanup on unmount
   useEffect(() => {

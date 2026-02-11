@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export function JoinMeeting() {
     const navigate = useNavigate();
@@ -40,16 +41,18 @@ export function JoinMeeting() {
     const [permissionDenied, setPermissionDenied] = useState(false);
 
     // Use global store for media state
-    const [isAudioMuted, setIsAudioMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
-    const toggleAudio = () => setIsAudioMuted(prev => !prev);
-    const toggleVideo = () => setIsVideoOff(prev => !prev);
-
     const {
-        setLocalStream,
         localStream,
-        setMeeting
+        setLocalStream,
+        setMeeting,
+        isAudioMuted,
+        isVideoOff,
+        toggleAudio,
+        toggleVideo
     } = useMeetingStore();
+
+    const isMobile = useIsMobile();
+    const [step, setStep] = useState(0);
 
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
@@ -75,9 +78,13 @@ export function JoinMeeting() {
                         audio: true
                     });
 
-                    // Apply initial state
-                    stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-                    stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+                    // Apply initial state - STOP tracks if they should be off to ensure hardware release
+                    if (isAudioMuted) {
+                        stream.getAudioTracks().forEach(t => t.stop());
+                    }
+                    if (isVideoOff) {
+                        stream.getVideoTracks().forEach(t => t.stop());
+                    }
 
                     setLocalStream(stream);
                     setPermissionDenied(false);
@@ -130,6 +137,9 @@ export function JoinMeeting() {
             } catch (err) {
                 console.error("Failed to get audio stream:", err);
             }
+        } else if (!currentIsMuted && currentStream) {
+            // Muting: Stop tracks to release hardware
+            currentStream.getAudioTracks().forEach(track => track.stop());
         }
         toggleAudio();
     };
@@ -150,6 +160,9 @@ export function JoinMeeting() {
             } catch (err) {
                 console.error("Failed to get video stream:", err);
             }
+        } else if (!currentIsVideoOff && currentStream) {
+            // Turning Video OFF: Stop tracks to release hardware (turn off LED)
+            currentStream.getVideoTracks().forEach(track => track.stop());
         }
         toggleVideo();
     };
@@ -218,40 +231,35 @@ export function JoinMeeting() {
                                 "flex-1 bg-[#1C1C1C] rounded-lg relative overflow-hidden",
                                 isMobile ? "mb-5 aspect-[4/3]" : "mb-6 aspect-video md:aspect-auto"
                             )}>
-                                {/* Video Element */}
-                                <video
-                                    ref={videoRef}
-                                    autoPlay
-                                    muted
-                                    playsInline
-                                    className="absolute inset-0 w-full h-full object-cover rounded-lg"
-                                    style={{ transform: 'scaleX(-1)' }}
-                                />
+                                {/* Video Element - shown when video is on */}
+                                <div className={cn("w-full h-full", isVideoOff ? "hidden" : "block")}>
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        muted
+                                        playsInline
+                                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                                        style={{ transform: 'scaleX(-1)' }}
+                                    />
+                                </div>
+
+                                {/* Avatar - shown when video is off */}
+                                {isVideoOff && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C]">
+                                        <div
+                                            className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-semibold"
+                                            style={{ backgroundColor: '#0B5CFF' }}
+                                        >
+                                            {name ? name.charAt(0).toUpperCase() : 'Y'}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Permission Denied Error */}
                                 {permissionDenied && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 z-20 text-center p-6">
                                         <p className="text-white text-sm font-medium">Camera access blocked. Please enable it in browser settings to continue.</p>
                                     </div>
-                                )}
-
-                        <div className="flex justify-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleAudioToggle}
-                                className={cn(
-                                    'rounded-full w-12 h-12',
-                                    isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
-                                )}
-
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleVideoToggle}
-                                className={cn(
-                                    'rounded-full w-12 h-12',
-                                    isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
                                 )}
                             </div>
 
@@ -260,7 +268,7 @@ export function JoinMeeting() {
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        onClick={toggleAudio}
+                                        onClick={handleAudioToggle}
                                         className={cn(
                                             'rounded-full w-14 h-14 shadow-lg transition-all',
                                             isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'
@@ -272,7 +280,7 @@ export function JoinMeeting() {
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        onClick={toggleVideo}
+                                        onClick={handleVideoToggle}
                                         className={cn(
                                             'rounded-full w-14 h-14 shadow-lg transition-all',
                                             isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'

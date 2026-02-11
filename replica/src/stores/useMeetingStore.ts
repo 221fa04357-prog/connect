@@ -23,10 +23,14 @@ interface MeetingState {
   screenShareStream: MediaStream | null;
   recordingStartTime: number | null;
   localStream: MediaStream | null;
+  isAudioMuted: boolean;
+  isVideoOff: boolean;
 
   // Actions
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
+  toggleAudio: () => void;
+  toggleVideo: () => void;
   extendMeetingTime: (minutes: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleScreenShare: () => void;
@@ -69,6 +73,8 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   recordingStartTime: null,
   showSelfView: true,
   localStream: null,
+  isAudioMuted: false,
+  isVideoOff: false,
 
   setMeeting: (meeting) => set({ meeting }),
   setLocalStream: (stream) => set({ localStream: stream }),
@@ -79,24 +85,14 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   toggleAudio: () =>
     set((state) => {
       const isMuted = !state.isAudioMuted;
-      if (state.localStream) {
-        state.localStream.getAudioTracks().forEach((t) => {
-          if (isMuted) t.stop();
-          else t.enabled = true;
-        });
-      }
+      // Just update state - track management is handled by components
       return { isAudioMuted: isMuted };
     }),
 
   toggleVideo: () =>
     set((state) => {
       const isVideoOff = !state.isVideoOff;
-      if (state.localStream) {
-        state.localStream.getVideoTracks().forEach((t) => {
-          if (isVideoOff) t.stop();
-          else t.enabled = true;
-        });
-      }
+      // Just update state - track management is handled by components
       return { isVideoOff };
     }),
 

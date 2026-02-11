@@ -40,6 +40,10 @@ export default function ControlBar() {
     toggleChat,
     toggleParticipants,
     toggleSettings,
+    toggleAudio,
+    toggleVideo,
+    isAudioMuted,
+    isVideoOff,
     setViewMode,
     addReaction,
     leaveMeeting,
@@ -66,8 +70,9 @@ export default function ControlBar() {
     || participants.find(p => p.id === `participant-${currentUserId}`)
     || participants[0];
 
-  const isAudioMuted = currentParticipant?.isAudioMuted ?? true;
-  const isVideoOff = currentParticipant?.isVideoOff ?? true;
+  // Use MeetingStore state for audio/video (synced from preview)
+  // const isAudioMuted = currentParticipant?.isAudioMuted ?? true;
+  // const isVideoOff = currentParticipant?.isVideoOff ?? true;
   const isHandRaised = !!currentParticipant?.isHandRaised;
 
   const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
@@ -262,6 +267,12 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
       }
+    } else if (!currentIsMuted && currentStream) {
+      // If we are muting, stop the audio tracks to fully release the microphone
+      currentStream.getAudioTracks().forEach(track => {
+        track.stop();
+        console.log("ControlBar: Stopped audio track (muting)");
+      });
     }
 
     toggleAudio();
@@ -299,6 +310,12 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get video stream on toggle:", err);
       }
+    } else if (!currentIsVideoOff && currentStream) {
+      // If we are turning video OFF, stop the video tracks to turn off the camera LED
+      currentStream.getVideoTracks().forEach(track => {
+        track.stop();
+        console.log("ControlBar: Stopped video track (turning off video)");
+      });
     }
 
     toggleVideo();
