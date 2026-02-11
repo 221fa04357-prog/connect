@@ -56,22 +56,7 @@ interface MeetingState {
 }
 
 export const useMeetingStore = create<MeetingState>((set) => ({
-  meeting: {
-    id: 'meeting-123',
-    title: 'Team Standup',
-    hostId: '1',
-    originalHostId: '1',
-    startTime: new Date(),
-    duration: 60,
-    settings: {
-      enableWaitingRoom: true,
-      allowParticipantsToUnmute: true,
-      allowParticipantsToShareScreen: true,
-    },
-    isRecording: false,
-    isScreenSharing: false,
-    viewMode: 'gallery'
-  },
+  meeting: null,
 
   viewMode: 'gallery',
   isAudioMuted: false,

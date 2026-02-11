@@ -52,14 +52,17 @@ export default function ParticipantsPanel() {
   const { user } = useAuthStore();
   const { meeting } = useMeetingStore();
 
-  /** Resolve current participant by auth user or fallback to mock */
-  const currentUser = participants.find(p => p.id === user?.id) || participants.find(p => p.id === 'participant-1');
-  const currentRole = (currentUser && (transientRoles[currentUser.id] || currentUser.role)) || 'participant';
-  const isHost = meeting?.hostId === currentUser?.id || currentRole === 'host';
+  /** Resolve host status strictly by meeting.hostId */
+  const isHost = meeting?.hostId === user?.id;
+
+  /** Current participant from store */
+  const currentUserParticipant = participants.find(p => p.id === user?.id);
+  const currentRole = (currentUserParticipant && (transientRoles[currentUserParticipant.id] || currentUserParticipant.role)) || 'participant';
+
   const isCoHost = currentRole === 'co-host';
   const canControl = isHost || isCoHost; // general controls (mute all, waiting room)
   const canChangeRoles = isHost; // only host can change roles
-  const isOriginalHost = meeting?.originalHostId === currentUser?.id;
+  const isOriginalHost = meeting?.originalHostId === user?.id;
 
   /** SEARCH */
   const filteredParticipants = participants.filter(p =>
@@ -80,12 +83,13 @@ export default function ParticipantsPanel() {
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="
-            fixed right-0 top-0
+            fixed right-0 top-0 bottom-20
             w-full md:w-80 lg:w-96
-            h-full max-h-screen max-h-[100dvh]
             bg-[#1C1C1C]
             border-l border-[#404040]
+            rounded-none
             z-30 flex flex-col min-h-0 overflow-hidden
+            shadow-2xl
           "
         >
           {/* HEADER */}
@@ -123,8 +127,8 @@ export default function ParticipantsPanel() {
                     if (confirm('Mute all participants?')) muteAll();
                   }
                 }}
-                variant="outline"
-                className="min-w-[120px] border-[#404040] hover:bg-[#2D2D2D]"
+                variant="ghost"
+                className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-10 px-4"
               >
                 {allMuted ? (
                   <>
@@ -142,9 +146,9 @@ export default function ParticipantsPanel() {
           </div>
 
           {/* MAIN SCROLLABLE CONTENT: waiting room + participants list scroll together */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            {/* WAITING ROOM */}
-            {waitingRoom.length > 0 && canControl && (
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-4">
+            {/* WAITING ROOM - Only visible to host */}
+            {waitingRoom.length > 0 && isHost && (
               <div className="border-b border-[#404040]">
                 <div className="p-4 bg-[#232323]">
                   <h4 className="text-sm font-semibold mb-3">
@@ -157,22 +161,20 @@ export default function ParticipantsPanel() {
                         className="flex items-center justify-between"
                       >
                         <span className="text-sm">{person.name}</span>
-                        <div className="flex gap-2">
+                        <div className="flex gap-4 items-center">
                           <Button
                             size="sm"
                             onClick={() => admitFromWaitingRoom(person.id)}
-                            className="bg-green-500 hover:bg-green-600"
+                            className="bg-green-500 hover:bg-green-600 text-white font-bold h-8 px-4"
                           >
                             Admit
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                          <button
                             onClick={() => removeFromWaitingRoom(person.id)}
-                            className="hover:bg-red-500/20"
+                            className="text-white hover:text-gray-300 text-sm font-medium transition-colors"
                           >
                             Deny
-                          </Button>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -321,7 +323,7 @@ function ParticipantItem({
                 {participant.isAudioMuted ? 'Unmute' : 'Mute'}
               </DropdownMenuItem>
 
-                {canChangeRoles && (
+              {canChangeRoles && (
                 <>
                   <DropdownMenuItem onClick={onMakeHost}>
                     <Crown className="w-4 h-4 mr-2" />

@@ -87,6 +87,7 @@ export default function VideoTile({
                                 autoPlay
                                 playsInline
                                 muted
+                                onLoadedMetadata={(e) => e.currentTarget.play()}
                                 className="w-full h-full object-cover transform -scale-x-100"
                             />
                         ) : (
