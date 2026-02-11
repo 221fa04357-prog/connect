@@ -308,6 +308,11 @@ export default function ControlBar() {
 
   const handleStartScreenShare = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        alert("Screen sharing is not supported in this browser.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           displaySurface: 'monitor' // Hint to browser to default to entire screen
@@ -365,6 +370,11 @@ export default function ControlBar() {
     } else {
       // Start Recording
       try {
+        if (typeof MediaRecorder === 'undefined') {
+          alert("Media recording is not supported in this browser.");
+          return;
+        }
+
         // Use local stream (User Camera) to start instantly without Browser Picker Dialog
         const stream = useMeetingStore.getState().localStream;
 
