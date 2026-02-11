@@ -132,14 +132,15 @@ export default function ChatPanel() {
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="
-            fixed top-0 right-0
-            bottom-[88px]
+            fixed top-0 right-0 bottom-20
             w-full sm:w-[380px]
             bg-[#1C1C1C]
             border-l border-[#404040]
+            rounded-none
             z-50
             flex flex-col
-            overflow-x-hidden
+            overflow-hidden
+            shadow-2xl
           "
         >
           {/* HEADER */}

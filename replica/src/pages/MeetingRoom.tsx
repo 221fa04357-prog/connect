@@ -22,7 +22,7 @@ export default function MeetingRoom() {
   const {
     meeting,
     reactions,
-    removeReaction,   // 🔥 IMPORTANT
+    removeReaction,
     isRecording,
     recordingStartTime,
     isVideoOff,
@@ -38,8 +38,7 @@ export default function MeetingRoom() {
   }, [meeting?.settings?.disableParticipantVideo, setVideoRestriction]);
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
-  /* ---------------- CAMERA MANAGEMENT ---------------- */
-  /* ---------------- CAMERA MANAGEMENT ---------------- */
+
   const user = useAuthStore((state) => state.user);
 
   // Sync local media state to participant store for UI consistency
@@ -115,20 +114,10 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
-
   const [waiting, setWaiting] = useState(false);
-  const isHost = user?.role === 'host';
-  const [showHostWaitingOverlay, setShowHostWaitingOverlay] = useState(false);
+  const isHost = meeting?.hostId === user?.id;
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
-
-  useEffect(() => {
-    if (isHost && waitingRoom.length > 0) {
-      setShowHostWaitingOverlay(true);
-    } else {
-      setShowHostWaitingOverlay(false);
-    }
-  }, [isHost, waitingRoom.length]);
 
   useEffect(() => {
     if (user && waitingRoom.some(w => w.name === user.name)) {
@@ -180,40 +169,9 @@ export default function MeetingRoom() {
     );
   }
 
-  /* ---------------- HOST WAITING OVERLAY ---------------- */
-
-  const HostWaitingRoomOverlay = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl px-8 py-8 w-full max-w-2xl">
-        <h3 className="text-xl text-white mb-4">
-          Waiting Room ({waitingRoom.length})
-        </h3>
-        {waitingRoom.map(person => (
-          <div key={person.id} className="flex justify-between mb-3">
-            <span className="text-white">{person.name}</span>
-            <div className="flex gap-2">
-              <button
-                className="bg-green-500 px-3 py-1 rounded"
-                onClick={() => admitFromWaitingRoom(person.id)}
-              >
-                Admit
-              </button>
-              <button
-                className="bg-red-500 px-3 py-1 rounded"
-                onClick={() => removeFromWaitingRoom(person.id)}
-              >
-                Deny
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 
   return (
     <div className="flex flex-col h-screen bg-[#1C1C1C] pt-4">
-      {showHostWaitingOverlay && <HostWaitingRoomOverlay />}
 
       {/* MAIN CONTENT */}
       <div className="flex-1 min-h-0 relative">

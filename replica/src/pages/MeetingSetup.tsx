@@ -46,7 +46,8 @@ export function JoinMeeting() {
         toggleAudio,
         toggleVideo,
         setLocalStream,
-        localStream
+        localStream,
+        setMeeting // Added
     } = useMeetingStore();
 
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -120,6 +121,23 @@ export function JoinMeeting() {
         }
 
         isJoiningRef.current = true; // Prevent cleanup
+
+        // Set the meeting state for joining
+        setMeeting({
+            id: meetingId,
+            title: 'Meeting in Progress',
+            hostId: 'actual-host-id', // Use a dummy ID that won't match the joining user
+            startTime: new Date(),
+            duration: 60,
+            settings: {
+                enableWaitingRoom: true,
+                allowParticipantsToUnmute: true,
+                allowParticipantsToShareScreen: true,
+            },
+            isRecording: false,
+            isScreenSharing: false,
+            viewMode: 'gallery'
+        });
 
         // Allow join if authenticated or guest session is active
         if (isAuthenticated || guestSessionActive) {
