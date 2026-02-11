@@ -76,6 +76,30 @@ export const useMeetingStore = create<MeetingState>((set) => ({
 
   toggleSelfView: () => set((state) => ({ showSelfView: !state.showSelfView })),
 
+  toggleAudio: () =>
+    set((state) => {
+      const isMuted = !state.isAudioMuted;
+      if (state.localStream) {
+        state.localStream.getAudioTracks().forEach((t) => {
+          if (isMuted) t.stop();
+          else t.enabled = true;
+        });
+      }
+      return { isAudioMuted: isMuted };
+    }),
+
+  toggleVideo: () =>
+    set((state) => {
+      const isVideoOff = !state.isVideoOff;
+      if (state.localStream) {
+        state.localStream.getVideoTracks().forEach((t) => {
+          if (isVideoOff) t.stop();
+          else t.enabled = true;
+        });
+      }
+      return { isVideoOff };
+    }),
+
   toggleScreenShare: () =>
     set((state) => ({ isScreenSharing: !state.isScreenSharing })),
 

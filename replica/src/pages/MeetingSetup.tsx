@@ -114,23 +114,45 @@ export function JoinMeeting() {
         }
     }, [localStream]);
 
-    // Sync track enablement with local preview state
-    useEffect(() => {
-        if (localStream) {
-            localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-            localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+    const handleAudioToggle = async () => {
+        const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isVideoOff = useMeetingStore.getState().isVideoOff;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: !isVideoOff
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get audio stream:", err);
+            }
         }
-    }, [isAudioMuted, isVideoOff, localStream]);
+        toggleAudio();
+    };
 
-    const [step, setStep] = useState(0); // 0: Preview, 1: Join Form
-    const [isMobile, setIsMobile] = useState(false);
+    const handleVideoToggle = async () => {
+        const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
 
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
+        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: !isAudioMuted
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get video stream:", err);
+            }
+        }
+        toggleVideo();
+    };
 
     const handleJoin = () => {
         if (!meetingId || !name) {
@@ -213,20 +235,23 @@ export function JoinMeeting() {
                                     </div>
                                 )}
 
-                                {/* Video Off Placeholder Overlay */}
-                                {isVideoOff && !permissionDenied && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C] z-10">
-                                        <div className="w-24 h-24 rounded-full bg-[#0B5CFF] flex items-center justify-center text-white text-4xl font-bold shadow-xl">
-                                            {name ? name.charAt(0).toUpperCase() : 'Y'}
-                                        </div>
-                                    </div>
+                        <div className="flex justify-center gap-4">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleAudioToggle}
+                                className={cn(
+                                    'rounded-full w-12 h-12',
+                                    isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
                                 )}
 
-                                {/* Loading State */}
-                                {!localStream && !permissionDenied && !isVideoOff && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                                        <VideoOff className="w-12 h-12 text-gray-400 animate-pulse" />
-                                    </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleVideoToggle}
+                                className={cn(
+                                    'rounded-full w-12 h-12',
+                                    isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'hover:bg-[#2D2D2D]'
                                 )}
                             </div>
 
