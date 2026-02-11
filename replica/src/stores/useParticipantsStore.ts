@@ -16,6 +16,7 @@ interface ParticipantsState {
   activeSpeakerId: string | null;
   pinnedParticipantId: string | null;
   spotlightedParticipantId: string | null;
+  videoRestricted: boolean;
 
   // Actions
   setParticipants: (participants: Participant[]) => void;
@@ -42,16 +43,23 @@ interface ParticipantsState {
   setWaitingRoomEnabled: (enabled: boolean) => void;
   admitFromWaitingRoom: (id: string) => void;
   removeFromWaitingRoom: (id: string) => void;
+
+  // Video Controls
+  setVideoRestriction: (restricted: boolean) => void;
+  setVideoAllowed: (id: string, allowed: boolean) => void;
+  stopVideoAll: () => void;
+  allowVideoAll: () => void;
 }
 
 // TODO: Connect to backend WebSocket for real-time participant updates
 // WebSocket endpoint: ws://api.example.com/meeting/{meetingId}/participants
 
 export const useParticipantsStore = create<ParticipantsState>((set) => ({
-  participants: generateMockParticipants(8),
+  participants: generateMockParticipants(8).map(p => ({ ...p, isVideoAllowed: true })), // Default allowed
   waitingRoom: generateWaitingRoomParticipants(),
   transientRoles: {},
   waitingRoomEnabled: true,
+  videoRestricted: false,
   activeSpeakerId: null,
   pinnedParticipantId: null,
   spotlightedParticipantId: null,
@@ -61,12 +69,15 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
   // TODO: Broadcast via WebSocket
   // WS message: { type: 'participant_joined', data: participant }
   addParticipant: (participant) => set((state) => {
+    // If video is restricted, new participants start with video disallowed
+    const p = { ...participant, isVideoAllowed: !state.videoRestricted };
+
     // If waiting room feature is enabled, route new non-host participants to waitingRoom
-    if (state.waitingRoomEnabled && participant.role === 'participant') {
-      const waitingEntry: WaitingRoomParticipant = { id: participant.id, name: participant.name, joinedAt: new Date() };
+    if (state.waitingRoomEnabled && p.role === 'participant') {
+      const waitingEntry: WaitingRoomParticipant = { id: p.id, name: p.name, joinedAt: new Date() };
       return { waitingRoom: [...state.waitingRoom, waitingEntry] };
     }
-    const res = { participants: [...state.participants, participant] };
+    const res = { participants: [...state.participants, p] };
     // publish updated participants
     setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
     return res;
@@ -83,11 +94,13 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
     return res;
   }),
 
-  updateParticipant: (id, updates) => set((state) => ({
-    participants: state.participants.map(p =>
+  updateParticipant: (id, updates) => set((state) => {
+    const participants = state.participants.map(p =>
       p.id === id ? { ...p, ...updates } : p
-    )
-  })),
+    );
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
 
   // TODO: Broadcast hand raise via WebSocket
   // WS message: { type: 'hand_raise', data: { participantId, isRaised } }
@@ -154,31 +167,46 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
   makeHost: (id: string) => {
     // Set transient role overrides so role changes are not persisted across refresh
     set((state) => {
+      // Check count of current hosts
+      const currentHostCount = state.participants.filter(p => p.role === 'host').length;
+      if (currentHostCount >= 2) {
+        console.warn('Cannot add host: Maximum 1 additional host allowed (Total 2 hosts).');
+        return {};
+      }
+
       const next = { ...state.transientRoles };
-      // demote any existing transient host to participant
-      Object.keys(next).forEach(k => {
-        if (next[k] === ('host' as Participant['role'])) next[k] = ('participant' as Participant['role']);
-      });
+      // Allow multiple hosts: DO NOT demote existing transient hosts
       next[id] = ('host' as Participant['role']);
-      // also update in-memory participants list so UI reading participant.role updates
+
+      // Update in-memory participants list
       const participants = state.participants.map(p => {
         if (p.id === id) return { ...p, role: ('host' as Participant['role']) };
-        if (p.role === ('host' as Participant['role'])) return { ...p, role: ('participant' as Participant['role']) };
         return p;
       });
+
       const res = { transientRoles: next, participants };
       setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
       return res;
     });
-    // Also update meeting hostId temporarily
-    const meeting = useMeetingStore.getState().meeting;
-    if (meeting) {
-      useMeetingStore.getState().setMeeting({ ...meeting, hostId: id });
-    }
+    // We do NOT update meeting.hostId here to the new host, effectively allowing multiple hosts but keeping the original/current "primary" host ID if needed, 
+    // OR we can update it. The requirement says "original Host must retain Host privileges". 
+    // Usually meeting.hostId tracks the "Owner". Let's leave meeting.hostId as is or only update if it acts as "current presenter".
+    // For now, I'll remove the meeting.hostId update to avoid confusion about who is the "primary". 
+    // The role 'host' on the participant is what grants privileges.
   },
 
   makeCoHost: (id: string) => {
     set((state) => {
+      // Check maximum 2 co-hosts rule
+      const currentCoHostsCheck = state.participants.filter(p => p.role === 'co-host');
+      if (currentCoHostsCheck.length >= 2) {
+        console.warn('Cannot add co-host: Maximum 2 co-hosts allowed.');
+        // We can't easily return an error to the caller here as it is void,
+        // but the state update will simply not happen.
+        // Ideally UI checks this too.
+        return {};
+      }
+
       const next = { ...state.transientRoles, [id]: ('co-host' as Participant['role']) };
       const participants = state.participants.map(p => p.id === id ? { ...p, role: ('co-host' as Participant['role']) } : p);
       const res = { transientRoles: next, participants };
@@ -198,25 +226,44 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
     return res;
   }),
   clearAllTransientRoles: () => set({ transientRoles: {} }),
+
   // Revoke transient host/co-host roles
   revokeHost: (id: string) => {
     set((state) => {
       const next = { ...state.transientRoles };
+      // Simply remove the host role. If they were originally a participant, they become one. 
+      // If they were originally a host (in DB), this transient store might not fully handle "stripping" a real DB host, 
+      // but assuming 'transientRoles' overlays everything.
+      // However, if we want to "Remove Host" role, we should set them to 'participant'.
+      // Deleting from transientRoles reverts to base 'role'. If base role is 'participant', great.
       delete next[id];
-      // revert participant roles
-      const participants = state.participants.map(p => ({ ...p, role: p.role === ('host' as Participant['role']) && p.id === id ? ('participant' as Participant['role']) : p.role }));
+
+      // Also explicitly set to participant in memory to be safe if we want to force demotion
+      if (state.participants.find(p => p.id === id)?.role === 'host') {
+        next[id] = 'participant';
+      }
+
+      const participants = state.participants.map(p => ({
+        ...p,
+        role: p.id === id ? ('participant' as Participant['role']) : p.role
+      }));
+
       const res = { transientRoles: next, participants };
       setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
       return res;
     });
-    const meeting = useMeetingStore.getState().meeting;
-    if (meeting?.originalHostId) {
-      useMeetingStore.getState().setMeeting({ ...meeting, hostId: meeting.originalHostId });
-    }
   },
+
   revokeCoHost: (id: string) => set((state) => {
+    // Removed minimum 2 co-hosts rule as per new requirement: "acceptable to have 0, 1, or 2 Co-hosts"
+
     const next = { ...state.transientRoles };
     if (next[id] === 'co-host') delete next[id];
+    // Force to participant
+    if (state.participants.find(p => p.id === id)?.role === 'co-host') {
+      next[id] = 'participant';
+    }
+
     const participants = state.participants.map(p => p.id === id && p.role === ('co-host' as Participant['role']) ? { ...p, role: ('participant' as Participant['role']) } : p);
     const res = { transientRoles: next, participants };
     setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
@@ -260,6 +307,43 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
     const res = { waitingRoom: state.waitingRoom.filter(p => p.id !== id) };
     setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles, waitingRoom: useParticipantsStore.getState().waitingRoom }, { source: INSTANCE_ID }));
     return res;
+  }),
+
+  // Video Controls Implementation
+  setVideoRestriction: (restricted) => set((state) => ({ videoRestricted: restricted })),
+
+  setVideoAllowed: (id, allowed) => set((state) => {
+    const participants = state.participants.map(p =>
+      p.id === id ? { ...p, isVideoAllowed: allowed, isVideoOff: !allowed ? true : p.isVideoOff } : p
+    );
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
+
+  stopVideoAll: () => set((state) => {
+    // "Video Off All" -> Disable video and disallow starting for regular participants
+    const participants = state.participants.map(p => {
+      const role = state.transientRoles[p.id] || p.role;
+      if (role === 'participant') {
+        return { ...p, isVideoOff: true, isVideoAllowed: false };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
+
+  allowVideoAll: () => set((state) => {
+    // "Video On All" -> Allow starting for regular participants (does not force ON, just unlocks)
+    const participants = state.participants.map(p => {
+      const role = state.transientRoles[p.id] || p.role;
+      if (role === 'participant') {
+        return { ...p, isVideoAllowed: true };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
   })
 }));
 

@@ -45,6 +45,11 @@ export default function ParticipantsPanel() {
     removeParticipant,
     admitFromWaitingRoom,
     removeFromWaitingRoom,
+    videoRestricted,
+    setVideoRestriction,
+    stopVideoAll,
+    allowVideoAll,
+    setVideoAllowed,
   } = useParticipantsStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,6 +144,38 @@ export default function ParticipantsPanel() {
                 )}
               </Button>
             )}
+
+            {isHost && (
+              <Button
+                onClick={() => {
+                  if (videoRestricted) {
+                    if (confirm('Allow participants to start video?')) {
+                      allowVideoAll();
+                      setVideoRestriction(false);
+                    }
+                  } else {
+                    if (confirm('Stop all participant videos and restrict them?')) {
+                      stopVideoAll();
+                      setVideoRestriction(true);
+                    }
+                  }
+                }}
+                variant="outline"
+                className="min-w-[120px] border-[#404040] hover:bg-[#2D2D2D] ml-2"
+              >
+                {videoRestricted ? (
+                  <>
+                    <Video className="w-4 h-4 mr-2 text-green-500" />
+                    Enable All
+                  </>
+                ) : (
+                  <>
+                    <VideoOff className="w-4 h-4 mr-2 text-red-500" />
+                    Disable All
+                  </>
+                )}
+              </Button>
+            )}
           </div>
 
           {/* MAIN SCROLLABLE CONTENT: waiting room + participants list scroll together */}
@@ -184,6 +221,9 @@ export default function ParticipantsPanel() {
             {/* PARTICIPANTS LIST */}
             {filteredParticipants.map(participant => {
               const displayedRole = transientRoles[participant.id] || participant.role;
+              const coHostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'co-host').length;
+              const hostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'host').length;
+
               return (
                 <ParticipantItem
                   key={participant.id}
@@ -204,7 +244,10 @@ export default function ParticipantsPanel() {
                   onRemove={() => removeParticipant(participant.id)}
                   onRevokeHost={() => revokeHost(participant.id)}
                   onRevokeCoHost={() => revokeCoHost(participant.id)}
+                  onToggleVideoAllowed={() => setVideoAllowed(participant.id, !(participant.isVideoAllowed !== false))}
                   displayedRole={displayedRole}
+                  coHostCount={coHostCount}
+                  hostCount={hostCount}
                 />
               );
             })}
@@ -227,9 +270,12 @@ interface ParticipantItemProps {
   onMakeHost: () => void;
   onMakeCoHost: () => void;
   onRemove: () => void;
-  onRevokeHost?: () => void;
-  onRevokeCoHost?: () => void;
+  onRevokeHost: () => void;
+  onRevokeCoHost: () => void;
+  onToggleVideoAllowed: () => void;
   displayedRole?: Participant['role'];
+  coHostCount: number;
+  hostCount: number;
 }
 
 function ParticipantItem({
@@ -243,10 +289,13 @@ function ParticipantItem({
   onRemove,
   onRevokeHost,
   onRevokeCoHost,
+  onToggleVideoAllowed,
   isOriginalHost = false,
   displayedRole = participant.role,
+  coHostCount,
+  hostCount,
 }: ParticipantItemProps) {
-  const isCurrentUser = participant.id === 'participant-1';
+  const isCurrentUser = participant.id === 'participant-1'; // Mock user check, ideally from auth store but checking 'You' logic.
   const effectiveRole = displayedRole || participant.role;
 
   return (
@@ -321,40 +370,85 @@ function ParticipantItem({
                 {participant.isAudioMuted ? 'Unmute' : 'Mute'}
               </DropdownMenuItem>
 
-                {canChangeRoles && (
+              {/* Video Permission Control (Host Only) */}
+              {canChangeRoles && (
+                <DropdownMenuItem onClick={onToggleVideoAllowed}>
+                  {participant.isVideoAllowed === false ? (
+                    <>
+                      <Video className="w-4 h-4 mr-2 text-green-500" />
+                      Allow Video
+                    </>
+                  ) : (
+                    <>
+                      <VideoOff className="w-4 h-4 mr-2 text-red-500" />
+                      Stop Video
+                    </>
+                  )}
+                </DropdownMenuItem>
+              )}
+
+              {canChangeRoles && (
                 <>
-                  <DropdownMenuItem onClick={onMakeHost}>
-                    <Crown className="w-4 h-4 mr-2" />
-                    Make Host
-                  </DropdownMenuItem>
+                  {effectiveRole !== 'host' && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (hostCount >= 2) {
+                          alert('Cannot add host: Maximum 1 additional host allowed.');
+                          return;
+                        }
+                        onMakeHost();
+                      }}
+                    >
+                      <Crown className="w-4 h-4 mr-2" />
+                      Make Host
+                    </DropdownMenuItem>
+                  )}
 
-                  <DropdownMenuItem onClick={onMakeCoHost}>
-                    <Shield className="w-4 h-4 mr-2" />
-                    Make Co-Host
-                  </DropdownMenuItem>
+                  {effectiveRole === 'host' && (
+                    <DropdownMenuItem onClick={onRevokeHost} className="text-yellow-400">
+                      <Crown className="w-4 h-4 mr-2" />
+                      Remove Host
+                    </DropdownMenuItem>
+                  )}
+
+                  {effectiveRole !== 'co-host' && effectiveRole !== 'host' && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (coHostCount >= 2) {
+                          alert('Cannot add co-host: Maximum 2 co-hosts allowed.');
+                          return;
+                        }
+                        onMakeCoHost();
+                      }}
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      Make Co-Host
+                    </DropdownMenuItem>
+                  )}
+
+                  {effectiveRole === 'co-host' && (
+                    <DropdownMenuItem
+                      onClick={onRevokeCoHost}
+                      className="text-yellow-400"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      Remove Co-Host
+                    </DropdownMenuItem>
+                  )}
                 </>
-              )}
-
-              {/* Original host may revoke roles */}
-              {isOriginalHost && effectiveRole === 'host' && onRevokeHost && (
-                <DropdownMenuItem onClick={onRevokeHost} className="text-yellow-400">
-                  <Crown className="w-4 h-4 mr-2" />
-                  Remove Host
-                </DropdownMenuItem>
-              )}
-
-              {isOriginalHost && effectiveRole === 'co-host' && onRevokeCoHost && (
-                <DropdownMenuItem onClick={onRevokeCoHost} className="text-yellow-400">
-                  <Shield className="w-4 h-4 mr-2" />
-                  Remove Co-Host
-                </DropdownMenuItem>
               )}
 
               <DropdownMenuItem
                 onClick={() => {
-                  // Prevent removing the host via UI; store also protects this
+                  // Prevent removing the host via UI; store also protects this partially, but logically we shouldn't remove a host unless we revoke first?
+                  // "remove the newly assigned Host" -> This is "Remove Host" role, or "Remove Participant" entirely?
+                  // User request says "should still be able to remove the newly assigned Host". This could mean KICK them.
+                  // If they are a host, we probably shouldn't kick them without revoking host first? Or can we?
+                  // Let's assume KICK is allowed if distinct from Revoke Role. 
+                  // But usually you can't kick a Host.
+                  // I will leave the existing check blocking kick of host.
                   if (effectiveRole === 'host') {
-                    alert('Cannot remove the host. Transfer host role first.');
+                    alert('Cannot remove a participant with Host role. Revoke Host role first.');
                     return;
                   }
                   onRemove();

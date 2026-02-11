@@ -25,6 +25,7 @@ export interface Participant {
   isSpotlighted: boolean;
   avatar?: string;
   joinedAt: Date;
+  isVideoAllowed?: boolean;
 }
 
 export interface ChatMessage {
@@ -54,6 +55,7 @@ export interface Meeting {
     enableWaitingRoom?: boolean;
     allowParticipantsToUnmute?: boolean;
     allowParticipantsToShareScreen?: boolean;
+    disableParticipantVideo?: boolean;
   };
   originalHostId?: string;
   isRecording: boolean;
