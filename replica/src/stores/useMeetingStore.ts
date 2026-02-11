@@ -9,8 +9,6 @@ const INSTANCE_ID = eventBus.instanceId;
 interface MeetingState {
   meeting: Meeting | null;
   viewMode: ViewMode;
-  isAudioMuted: boolean;
-  isVideoOff: boolean;
   isScreenSharing: boolean;
   isRecording: boolean;
   isChatOpen: boolean;
@@ -31,8 +29,6 @@ interface MeetingState {
   setLocalStream: (stream: MediaStream | null) => void;
   extendMeetingTime: (minutes: number) => void;
   setViewMode: (mode: ViewMode) => void;
-  toggleAudio: () => void;
-  toggleVideo: () => void;
   toggleScreenShare: () => void;
   toggleRecording: () => void;
   toggleChat: () => void;
@@ -41,7 +37,7 @@ interface MeetingState {
   toggleSettings: () => void;
 
   addReaction: (reaction: Reaction) => void;
-  removeReaction: (id: string) => void;      // 🔥 ADDED
+  removeReaction: (id: string) => void;
   clearReactions: () => void;
 
   setVirtualBackground: (bg: string | null) => void;
@@ -59,8 +55,6 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   meeting: null,
 
   viewMode: 'gallery',
-  isAudioMuted: false,
-  isVideoOff: false,
   isScreenSharing: false,
   isRecording: false,
   isChatOpen: false,

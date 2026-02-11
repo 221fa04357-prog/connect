@@ -6,6 +6,11 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -66,8 +71,6 @@ export default function Landing() {
       ) : (
         <header className="border-b border-white/10 backdrop-blur-sm relative">
           <style>{`
-            .mobile-help-icon { display: none; }
-            .mobile-help-text { display: inline; }
             
             @media (max-width: 768px) {
               .mobile-header-inner {
@@ -109,8 +112,6 @@ export default function Landing() {
                 height: 2.25rem !important;
                 min-width: auto !important;
               }
-              .mobile-help-text { display: none !important; }
-              .mobile-help-icon { display: block !important; }
             }
           `}</style>
           <div className="container mx-auto px-4 py-4 flex items-center justify-between mobile-header-inner">
@@ -119,15 +120,21 @@ export default function Landing() {
               <span className="text-2xl font-bold text-white mobile-logo-text">ConnectPro</span>
             </div>
             <div className="flex items-center gap-4 mobile-nav-group">
-              <Button
-                variant="ghost"
-                onClick={() => navigate('/help')}
-                className="text-white hover:bg-white/10 mobile-nav-item"
-                title="Help"
-              >
-                <span className="mobile-help-text">Help</span>
-                <HelpCircle className="w-5 h-5 mobile-help-icon" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigate('/help')}
+                    className="text-white hover:bg-white/10 mobile-nav-item"
+                  >
+                    <HelpCircle className="w-5 h-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#1C1C1C] border-[#404040] text-white">
+                  <p>Help</p>
+                </TooltipContent>
+              </Tooltip>
               <Button
                 variant="ghost"
                 onClick={() => navigate('/login')}

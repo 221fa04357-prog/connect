@@ -16,7 +16,8 @@ export default function MeetingRoom() {
     waitingRoom,
     admitFromWaitingRoom,
     removeFromWaitingRoom,
-    setVideoRestriction
+    setVideoRestriction,
+    updateParticipant
   } = useParticipantsStore();
 
   const {
@@ -25,7 +26,6 @@ export default function MeetingRoom() {
     removeReaction,
     isRecording,
     recordingStartTime,
-    isVideoOff,
     localStream,
     setLocalStream
   } = useMeetingStore();
@@ -41,40 +41,63 @@ export default function MeetingRoom() {
 
   const user = useAuthStore((state) => state.user);
 
-  // Sync local media state to participant store for UI consistency
+  // Derived state for local participant
+  const myParticipant = participants.find(p => p.id === user?.id)
+    || participants.find(p => p.id === `participant-${user?.id}`)
+    || participants[0]; // fallback for mock
+
+  const isAudioMutedLocal = myParticipant?.isAudioMuted ?? true;
+  const isVideoOffLocal = myParticipant?.isVideoOff ?? true;
+
+  // Preserve preview states: One-time sync from localStream to ParticipantsStore on mount
   useEffect(() => {
-    const userId = user?.id; // Assuming user is available from useAuthStore
-    if (!userId) return;
+    if (localStream && myParticipant) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      const videoTrack = localStream.getVideoTracks()[0];
 
-    const myParticipant = participants.find(p => p.id === userId)
-      || participants.find(p => p.id === `participant-${userId}`);
+      const isMuted = audioTrack ? !audioTrack.enabled : true;
+      const isOff = videoTrack ? !videoTrack.enabled : true;
 
-    if (myParticipant) {
-      // Only update if different to avoid loops
-      if (myParticipant.isAudioMuted !== useMeetingStore.getState().isAudioMuted ||
-        myParticipant.isVideoOff !== useMeetingStore.getState().isVideoOff) {
-
-        // We need to import updateParticipant from the store hook if not already
-        useParticipantsStore.getState().updateParticipant(myParticipant.id, {
-          isAudioMuted: useMeetingStore.getState().isAudioMuted,
-          isVideoOff: useMeetingStore.getState().isVideoOff
+      // Only update if store is different from current track state
+      if (myParticipant.isAudioMuted !== isMuted || myParticipant.isVideoOff !== isOff) {
+        console.log("MeetingRoom: Syncing preview state to participant store...");
+        updateParticipant(myParticipant.id, {
+          isAudioMuted: isMuted,
+          isVideoOff: isOff
         });
       }
     }
-  }, [useMeetingStore.getState().isAudioMuted, useMeetingStore.getState().isVideoOff, participants, user]);
+  }, [localStream, myParticipant?.id]); // Run when stream or participant is ready
 
-  /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
+  // Sync track enablement with store state for local participant (Store wins during meeting)
+  useEffect(() => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach(t => {
+        if (t.enabled !== !isAudioMutedLocal) {
+          t.enabled = !isAudioMutedLocal;
+          console.log(`MeetingRoom: Audio track ${t.enabled ? 'enabled' : 'disabled'}`);
+        }
+      });
+      localStream.getVideoTracks().forEach(t => {
+        if (t.enabled !== !isVideoOffLocal) {
+          t.enabled = !isVideoOffLocal;
+          console.log(`MeetingRoom: Video track ${t.enabled ? 'enabled' : 'disabled'}`);
+        }
+      });
+    }
+  }, [isAudioMutedLocal, isVideoOffLocal, localStream]);
+
+  /* ---------------- CAMERA MANAGEMENT (Initial & Recovery) ---------------- */
   useEffect(() => {
     const initCamera = async () => {
-      // Only initialize if video is NOT explicitly off
-      if (!isVideoOff) {
+      // Only initialize if video is NOT explicitly off in the store
+      if (!isVideoOffLocal) {
         const needsStream =
           !localStream ||
           !localStream.active ||
           localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
         if (needsStream) {
-          // Check for API support first
           if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             console.error("MediaDevices API not supported.");
             return;
@@ -87,9 +110,9 @@ export default function MeetingRoom() {
               audio: true
             });
 
-            // Sync current state (mute/unmute) to new stream
-            const { isAudioMuted } = useMeetingStore.getState();
-            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+            // Set initial track states based on store
+            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMutedLocal);
+            stream.getVideoTracks().forEach(t => t.enabled = !isVideoOffLocal);
 
             setLocalStream(stream);
           } catch (err) {
@@ -99,8 +122,8 @@ export default function MeetingRoom() {
       }
     };
 
-    initCamera(); // Execute immediately
-  }, [isVideoOff, localStream, setLocalStream]);
+    initCamera();
+  }, [isVideoOffLocal, localStream, setLocalStream, isAudioMutedLocal]);
 
   // Cleanup on unmount
   useEffect(() => {

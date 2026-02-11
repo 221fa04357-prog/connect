@@ -30,15 +30,11 @@ export default function ControlBar() {
   // Store hooks
   const {
     meeting,
-    isAudioMuted,
-    isVideoOff,
     isScreenSharing,
     isRecording,
     isChatOpen,
     isParticipantsOpen,
     viewMode,
-    toggleAudio,
-    toggleVideo,
     toggleScreenShare,
     toggleRecording,
     toggleChat,
@@ -56,23 +52,26 @@ export default function ControlBar() {
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
-  const { participants, updateParticipant, toggleHandRaise } = useParticipantsStore();
+  const {
+    participants,
+    updateParticipant,
+    toggleHandRaise,
+    toggleParticipantAudio,
+    toggleParticipantVideo
+  } = useParticipantsStore();
+
   // Find current user participant
   const currentUserId = user?.id;
-  const currentParticipant = participants.find(p => p.id === currentUserId) || participants[0];
+  const currentParticipant = participants.find(p => p.id === currentUserId)
+    || participants.find(p => p.id === `participant-${currentUserId}`)
+    || participants[0];
+
+  const isAudioMuted = currentParticipant?.isAudioMuted ?? true;
+  const isVideoOff = currentParticipant?.isVideoOff ?? true;
   const isHandRaised = !!currentParticipant?.isHandRaised;
 
   const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
   const videoAllowed = isHostOrCoHost || currentParticipant?.isVideoAllowed !== false;
-
-  // Sync video state: If host forces video off (currentParticipant.isVideoOff became true), sync local state
-  useEffect(() => {
-    // If remote says video off, but local is on (false), turn it off
-    if (currentParticipant?.isVideoOff && !isVideoOff) {
-      toggleVideo();
-    }
-  }, [currentParticipant?.isVideoOff, isVideoOff, toggleVideo]); // removed currentParticipant from dep array to avoid loop, just property
-
 
   // Toggle hand for self
   const handleToggleHand = () => {
@@ -241,7 +240,7 @@ export default function ControlBar() {
   };
 
   const handleAudioToggle = async () => {
-    const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+    const currentIsMuted = isAudioMuted;
     const currentStream = useMeetingStore.getState().localStream;
 
     // Check if any audio tracks are 'ended'
@@ -281,7 +280,7 @@ export default function ControlBar() {
       alert("The host has disabled video for participants.");
       return;
     }
-    const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+    const currentIsVideoOff = isVideoOff;
     const currentStream = useMeetingStore.getState().localStream;
 
     // Check if any video tracks are 'ended'

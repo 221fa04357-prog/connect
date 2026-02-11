@@ -122,10 +122,14 @@ export default function ParticipantsPanel() {
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  /** 🔑 MUTE-ALL STATE */
+  /** 🔑 MUTE-ALL STATE (Only check manageable participants: regular and co-hosts) */
+  const manageableParticipants = participants.filter(p => {
+    const role = transientRoles[p.id] || p.role;
+    return role === 'participant' || role === 'co-host';
+  });
   const allMuted =
-    participants.length > 0 &&
-    participants.every(p => p.isAudioMuted === true);
+    manageableParticipants.length > 0 &&
+    manageableParticipants.every(p => p.isAudioMuted === true);
 
   return (
     <AnimatePresence>
@@ -161,73 +165,76 @@ export default function ParticipantsPanel() {
           </div>
 
           {/* SEARCH & HOST CONTROLS SIDE BY SIDE */}
-          <div className="p-4 border-b border-[#404040] flex flex-col gap-2 md:flex-row md:items-center md:gap-4 flex-shrink-0">
-            <div className="relative flex-1">
+          <div className="p-4 border-b border-[#404040] flex flex-col gap-3 md:flex-row md:items-center md:gap-2 flex-shrink-0">
+            <div className="relative flex-[2.5] min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search participants..."
-                className="pl-10 bg-[#232323] border-[#404040]"
+                placeholder="Search"
+                className="pl-9 h-9 bg-[#232323] border-[#404040] text-sm"
               />
             </div>
-            {canControl && (
-              <Button
-                onClick={() => {
-                  if (allMuted) {
-                    if (confirm('Unmute all participants?')) unmuteAll();
-                  } else {
-                    if (confirm('Mute all participants?')) muteAll();
-                  }
-                }}
-                variant="ghost"
-                className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-10 px-4"
-              >
-                {allMuted ? (
-                  <>
-                    <Mic className="w-4 h-4 mr-2 text-green-500" />
-                    Unmute All
-                  </>
-                ) : (
-                  <>
-                    <MicOff className="w-4 h-4 mr-2 text-red-500" />
-                    Mute All
-                  </>
-                )}
-              </Button>
-            )}
 
-            {isHost && (
-              <Button
-                onClick={() => {
-                  if (videoRestricted) {
-                    if (confirm('Allow participants to start video?')) {
-                      allowVideoAll();
-                      setVideoRestriction(false);
+            <div className="flex items-center gap-2 flex-none">
+              {canControl && (
+                <Button
+                  onClick={() => {
+                    if (allMuted) {
+                      if (confirm('Unmute all participants?')) unmuteAll();
+                    } else {
+                      if (confirm('Mute all participants?')) muteAll();
                     }
-                  } else {
-                    if (confirm('Stop all participant videos and restrict them?')) {
-                      stopVideoAll();
-                      setVideoRestriction(true);
+                  }}
+                  variant="ghost"
+                  className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-9 px-2 md:px-3 text-xs sm:text-sm"
+                >
+                  {allMuted ? (
+                    <>
+                      <Mic className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                      Unmute All
+                    </>
+                  ) : (
+                    <>
+                      <MicOff className="w-3.5 h-3.5 mr-1.5 text-red-500" />
+                      Mute All
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {isHost && (
+                <Button
+                  onClick={() => {
+                    if (videoRestricted) {
+                      if (confirm('Allow participants to start video?')) {
+                        allowVideoAll();
+                        setVideoRestriction(false);
+                      }
+                    } else {
+                      if (confirm('Stop all participant videos and restrict them?')) {
+                        stopVideoAll();
+                        setVideoRestriction(true);
+                      }
                     }
-                  }
-                }}
-                variant="outline"
-                className="min-w-[120px] border-[#404040] hover:bg-[#2D2D2D] ml-2"
-              >
-                {videoRestricted ? (
-                  <>
-                    <Video className="w-4 h-4 mr-2 text-green-500" />
-                    Enable All
-                  </>
-                ) : (
-                  <>
-                    <VideoOff className="w-4 h-4 mr-2 text-red-500" />
-                    Disable All
-                  </>
-                )}
-              </Button>
-            )}
+                  }}
+                  variant="outline"
+                  className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
+                >
+                  {videoRestricted ? (
+                    <>
+                      <Video className="w-3.5 h-3.5 mr-1 text-green-500" />
+                      Enable All
+                    </>
+                  ) : (
+                    <>
+                      <VideoOff className="w-3.5 h-3.5 mr-1 text-red-500" />
+                      Disable All
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* MAIN SCROLLABLE CONTENT: waiting room + participants list scroll together */}
@@ -274,10 +281,16 @@ export default function ParticipantsPanel() {
               const coHostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'co-host').length;
               const hostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'host').length;
 
+              const isCurrentUser =
+                participant.id === user?.id ||
+                participant.id === `participant-${user?.id}` ||
+                (user?.role === 'host' && participant.id === 'participant-1');
+
               return (
                 <ParticipantItem
                   key={participant.id}
                   participant={participant}
+                  isCurrentUser={isCurrentUser}
                   canControl={canControl}
                   canChangeRoles={canChangeRoles}
                   isOriginalHost={isOriginalHost}
@@ -313,6 +326,7 @@ export default function ParticipantsPanel() {
 
 interface ParticipantItemProps {
   participant: Participant;
+  isCurrentUser: boolean;
   canControl: boolean;
   canChangeRoles?: boolean;
   isOriginalHost?: boolean;
@@ -332,6 +346,7 @@ interface ParticipantItemProps {
 
 function ParticipantItem({
   participant,
+  isCurrentUser,
   canControl,
   canChangeRoles = false,
   onToggleHand,
@@ -348,7 +363,6 @@ function ParticipantItem({
   coHostCount,
   hostCount,
 }: ParticipantItemProps) {
-  const isCurrentUser = participant.id === 'participant-1'; // Mock user check, ideally from auth store but checking 'You' logic.
   const effectiveRole = displayedRole || participant.role;
 
   return (
@@ -434,13 +448,16 @@ function ParticipantItem({
               align="end"
               className="bg-[#232323] border-[#404040]"
             >
-              <DropdownMenuItem onClick={onToggleMute}>
-                <MicOff className="w-4 h-4 mr-2" />
-                {participant.isAudioMuted ? 'Unmute' : 'Mute'}
-              </DropdownMenuItem>
+              {/* Manageable roles: participants and co-hosts (only if manageable by current user) */}
+              {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && (
+                <DropdownMenuItem onClick={onToggleMute}>
+                  <MicOff className="w-4 h-4 mr-2" />
+                  {participant.isAudioMuted ? 'Unmute' : 'Mute'}
+                </DropdownMenuItem>
+              )}
 
-              {/* Video Permission Control (Host Only) */}
-              {canChangeRoles && (
+              {/* Video Permission Control (Host can manage both, Co-host can only manage participants if allowed) */}
+              {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && (
                 <DropdownMenuItem onClick={onToggleVideoAllowed}>
                   {participant.isVideoAllowed === false ? (
                     <>
