@@ -22,9 +22,13 @@ export default function VideoTile({
     onPin,
     className
 }: VideoTileProps) {
-    const { updateParticipant } = useParticipantsStore();
+    const {
+        updateParticipant,
+        toggleParticipantAudio,
+        toggleParticipantVideo
+    } = useParticipantsStore();
     const { user } = useAuthStore();
-    const { localStream, toggleAudio, toggleVideo } = useMeetingStore();
+    const { localStream } = useMeetingStore();
 
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
@@ -43,20 +47,12 @@ export default function VideoTile({
 
     const handleToggleMute = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isLocal) {
-            toggleAudio();
-        } else {
-            updateParticipant(participant.id, { isAudioMuted: !participant.isAudioMuted });
-        }
+        toggleParticipantAudio(participant.id);
     };
 
     const handleToggleVideo = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isLocal) {
-            toggleVideo();
-        } else {
-            updateParticipant(participant.id, { isVideoOff: !participant.isVideoOff });
-        }
+        toggleParticipantVideo(participant.id);
     };
 
     return (
@@ -137,33 +133,47 @@ export default function VideoTile({
 
                     {/* Interactive Controls */}
                     <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap">
-                        <button
-                            onClick={handleToggleMute}
-                            className={cn(
-                                "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                participant.isAudioMuted ? "bg-red-500/20 text-red-500" : "text-white"
-                            )}
-                        >
-                            {participant.isAudioMuted ? (
-                                <MicOff className="w-4 h-4" />
-                            ) : (
-                                <Mic className="w-4 h-4" />
-                            )}
-                        </button>
+                        {/* Only allow toggling if it's participant, co-host OR self */}
+                        {(participant.role === 'participant' || participant.role === 'co-host' || isLocal) ? (
+                            <>
+                                <button
+                                    onClick={handleToggleMute}
+                                    className={cn(
+                                        "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
+                                        participant.isAudioMuted ? "bg-red-500/20 text-red-500" : "text-white"
+                                    )}
+                                >
+                                    {participant.isAudioMuted ? (
+                                        <MicOff className="w-4 h-4" />
+                                    ) : (
+                                        <Mic className="w-4 h-4" />
+                                    )}
+                                </button>
 
-                        <button
-                            onClick={handleToggleVideo}
-                            className={cn(
-                                "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                participant.isVideoOff ? "bg-red-500/20 text-red-500" : "text-white"
-                            )}
-                        >
-                            {participant.isVideoOff ? (
-                                <VideoOff className="w-4 h-4" />
-                            ) : (
-                                <Video className="w-4 h-4" />
-                            )}
-                        </button>
+                                <button
+                                    onClick={handleToggleVideo}
+                                    className={cn(
+                                        "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
+                                        participant.isVideoOff ? "bg-red-500/20 text-red-500" : "text-white"
+                                    )}
+                                >
+                                    {participant.isVideoOff ? (
+                                        <VideoOff className="w-4 h-4" />
+                                    ) : (
+                                        <Video className="w-4 h-4" />
+                                    )}
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div className="p-1.5 text-white/40 flex-shrink-0">
+                                    {participant.isAudioMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                                </div>
+                                <div className="p-1.5 text-white/40 flex-shrink-0">
+                                    {participant.isVideoOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

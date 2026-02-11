@@ -49,6 +49,10 @@ interface ParticipantsState {
   setVideoAllowed: (id: string, allowed: boolean) => void;
   stopVideoAll: () => void;
   allowVideoAll: () => void;
+
+  // Unified Toggle Actions
+  toggleParticipantAudio: (id: string) => void;
+  toggleParticipantVideo: (id: string) => void;
 }
 
 // TODO: Connect to backend WebSocket for real-time participant updates
@@ -140,27 +144,59 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
 
   // TODO: Host control - mute participant
   // POST /api/meeting/{meetingId}/participants/{participantId}/mute
-  muteParticipant: (id: string) => set((state) => ({
-    participants: state.participants.map(p =>
-      p.id === id ? { ...p, isAudioMuted: true } : p
-    )
-  })),
+  muteParticipant: (id: string) => set((state) => {
+    const participants = state.participants.map(p => {
+      if (p.id === id) {
+        const role = state.transientRoles[p.id] || p.role;
+        // Only the Host's mic remains strictly independent and protected from others
+        if (role === 'host') return p;
+        return { ...p, isAudioMuted: true };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
 
-  unmuteParticipant: (id) => set((state) => ({
-    participants: state.participants.map(p =>
-      p.id === id ? { ...p, isAudioMuted: false } : p
-    )
-  })),
+  unmuteParticipant: (id) => set((state) => {
+    const participants = state.participants.map(p => {
+      if (p.id === id) {
+        const role = state.transientRoles[p.id] || p.role;
+        if (role === 'host') return p;
+        return { ...p, isAudioMuted: false };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
 
   // TODO: Host control - mute all
   // POST /api/meeting/{meetingId}/mute-all
-  muteAll: () => set((state) => ({
-    participants: state.participants.map(p => ({ ...p, isAudioMuted: true }))
-  })),
+  muteAll: () => set((state) => {
+    const participants = state.participants.map(p => {
+      const role = state.transientRoles[p.id] || p.role;
+      // Co-hosts are now included in "Mute All", only Host is excluded
+      if (role === 'participant' || role === 'co-host') {
+        return { ...p, isAudioMuted: true };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
 
-  unmuteAll: () => set((state) => ({
-    participants: state.participants.map(p => ({ ...p, isAudioMuted: false }))
-  })),
+  unmuteAll: () => set((state) => {
+    const participants = state.participants.map(p => {
+      const role = state.transientRoles[p.id] || p.role;
+      if (role === 'participant' || role === 'co-host') {
+        return { ...p, isAudioMuted: false };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
 
   // TODO: Host control - change role
   // PUT /api/meeting/{meetingId}/participants/{participantId}/role
@@ -310,21 +346,36 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
   }),
 
   // Video Controls Implementation
-  setVideoRestriction: (restricted) => set((state) => ({ videoRestricted: restricted })),
+  setVideoRestriction: (restricted) => set((state) => {
+    const res = { videoRestricted: restricted };
+    setTimeout(() => eventBus.publish('participants:update', {
+      participants: useParticipantsStore.getState().participants,
+      transientRoles: useParticipantsStore.getState().transientRoles,
+      videoRestricted: restricted
+    }, { source: INSTANCE_ID }));
+    return res;
+  }),
 
   setVideoAllowed: (id, allowed) => set((state) => {
-    const participants = state.participants.map(p =>
-      p.id === id ? { ...p, isVideoAllowed: allowed, isVideoOff: !allowed ? true : p.isVideoOff } : p
-    );
+    const participants = state.participants.map(p => {
+      if (p.id === id) {
+        const role = state.transientRoles[p.id] || p.role;
+        // Only the Host's video toggle remains independent
+        if (role === 'host') return p;
+        // When allowing video, we also attempt to turn it back on (isVideoOff: false)
+        return { ...p, isVideoAllowed: allowed, isVideoOff: !allowed };
+      }
+      return p;
+    });
     setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
     return { participants };
   }),
 
   stopVideoAll: () => set((state) => {
-    // "Video Off All" -> Disable video and disallow starting for regular participants
+    // "Video Off All" -> Disable video and force it OFF for participants and co-hosts
     const participants = state.participants.map(p => {
       const role = state.transientRoles[p.id] || p.role;
-      if (role === 'participant') {
+      if (role === 'participant' || role === 'co-host') {
         return { ...p, isVideoOff: true, isVideoAllowed: false };
       }
       return p;
@@ -334,11 +385,35 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
   }),
 
   allowVideoAll: () => set((state) => {
-    // "Video On All" -> Allow starting for regular participants (does not force ON, just unlocks)
+    // "Video On All" -> Allow starting and force it ON (isVideoOff: false) for participants and co-hosts
     const participants = state.participants.map(p => {
       const role = state.transientRoles[p.id] || p.role;
-      if (role === 'participant') {
-        return { ...p, isVideoAllowed: true };
+      if (role === 'participant' || role === 'co-host') {
+        return { ...p, isVideoAllowed: true, isVideoOff: false };
+      }
+      return p;
+    });
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
+
+  toggleParticipantAudio: (id) => set((state) => {
+    const participants = state.participants.map(p =>
+      p.id === id ? { ...p, isAudioMuted: !p.isAudioMuted } : p
+    );
+    setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+    return { participants };
+  }),
+
+  toggleParticipantVideo: (id) => set((state) => {
+    const participants = state.participants.map(p => {
+      if (p.id === id) {
+        const nextVideoOff = !p.isVideoOff;
+        // If host has disallowed video, you can't turn it on
+        if (!nextVideoOff && p.isVideoAllowed === false) {
+          return p;
+        }
+        return { ...p, isVideoOff: nextVideoOff };
       }
       return p;
     });
@@ -350,9 +425,19 @@ export const useParticipantsStore = create<ParticipantsState>((set) => ({
 // Subscribe to incoming participant updates from eventBus (ignore self-originated events)
 eventBus.subscribe('participants:update', (payload, meta) => {
   if (meta?.source === INSTANCE_ID) return; // ignore our own events
-  if (payload && payload.participants) {
-    useParticipantsStore.setState({ participants: payload.participants, transientRoles: payload.transientRoles || {} });
+  if (!payload || !payload.participants) {
+    return;
   }
+
+  const { participants, transientRoles, videoRestricted } = payload;
+  const updates: any = {
+    participants: participants,
+    transientRoles: transientRoles || {}
+  };
+  if (videoRestricted !== undefined) {
+    updates.videoRestricted = videoRestricted;
+  }
+  useParticipantsStore.setState(updates);
 });
 
 // Subscription helper
