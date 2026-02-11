@@ -56,15 +56,9 @@ export default function TopBar() {
             <div className="pointer-events-auto">
                 <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                     <DropdownMenuTrigger asChild>
-                        <div className="flex items-center gap-2 cursor-pointer group bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-transparent hover:border-white/10 transition-all">
-                            <div className="bg-green-500 rounded-full p-1">
-                                <Lock className="w-3 h-3 text-white" />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-white font-semibold text-sm leading-tight flex items-center gap-2">
-                                    {meeting?.title || 'Meeting'}
-                                    <Info className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
-                                </span>
+                        <div className="flex items-center gap-2 cursor-pointer group hover:bg-black/60 backdrop-blur-sm rounded-lg p-1.5 border border-transparent hover:border-white/10 transition-all">
+                            <div className="bg-green-500 rounded-full p-2">
+                                <Lock className="w-4 h-4 text-white" />
                             </div>
                         </div>
                     </DropdownMenuTrigger>
