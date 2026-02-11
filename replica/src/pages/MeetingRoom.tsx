@@ -11,18 +11,16 @@ import { useAuthStore } from '@/stores/useAuthStore';
 
 export default function MeetingRoom() {
   const {
-    participants,
+    participants, // Active participants list
     setActiveSpeaker,
     waitingRoom,
     admitFromWaitingRoom,
     removeFromWaitingRoom
   } = useParticipantsStore();
 
-  const user = useAuthStore((state) => state.user);
-
   const {
     reactions,
-    removeReaction,
+    removeReaction,   // 🔥 IMPORTANT
     isRecording,
     recordingStartTime,
     isVideoOff,
@@ -31,49 +29,69 @@ export default function MeetingRoom() {
   } = useMeetingStore();
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
+  /* ---------------- CAMERA MANAGEMENT ---------------- */
+  /* ---------------- CAMERA MANAGEMENT ---------------- */
+  const user = useAuthStore((state) => state.user);
+
+  // Sync local media state to participant store for UI consistency
+  useEffect(() => {
+    const userId = user?.id; // Assuming user is available from useAuthStore
+    if (!userId) return;
+
+    const myParticipant = participants.find(p => p.id === userId)
+      || participants.find(p => p.id === `participant-${userId}`);
+
+    if (myParticipant) {
+      // Only update if different to avoid loops
+      if (myParticipant.isAudioMuted !== useMeetingStore.getState().isAudioMuted ||
+        myParticipant.isVideoOff !== useMeetingStore.getState().isVideoOff) {
+
+        // We need to import updateParticipant from the store hook if not already
+        useParticipantsStore.getState().updateParticipant(myParticipant.id, {
+          isAudioMuted: useMeetingStore.getState().isAudioMuted,
+          isVideoOff: useMeetingStore.getState().isVideoOff
+        });
+      }
+    }
+  }, [useMeetingStore.getState().isAudioMuted, useMeetingStore.getState().isVideoOff, participants, user]);
+
+  /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
   useEffect(() => {
     const initCamera = async () => {
-      // Only initialize if video is NOT explicitly off and we don't have an active stream
+      // Only initialize if video is NOT explicitly off
       if (!isVideoOff) {
-        const needsStream = !localStream || !localStream.active || localStream.getVideoTracks().some(t => t.readyState === 'ended');
+        const needsStream =
+          !localStream ||
+          !localStream.active ||
+          localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
         if (needsStream) {
+          // Check for API support first
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error("MediaDevices API not supported.");
+            return;
+          }
+
           try {
             console.log("MeetingRoom: Initializing media stream...");
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: true
+            });
 
-            // Sync current state to new tracks
-            const { isAudioMuted, isVideoOff: videoOffState } = useMeetingStore.getState();
+            // Sync current state (mute/unmute) to new stream
+            const { isAudioMuted } = useMeetingStore.getState();
             stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-            stream.getVideoTracks().forEach(t => t.enabled = !videoOffState);
 
             setLocalStream(stream);
           } catch (err) {
-            console.error("MeetingRoom: Failed to access camera:", err);
+            console.error("Failed to access camera:", err);
           }
         }
       }
     };
 
-  /* ---------------- CAMERA MANAGEMENT (Store handles tracks now) ---------------- */
-  // Just ensure stream is active if video is supposed to be ON
-  useEffect(() => {
-    if (!isVideoOff && (!localStream || !localStream.active)) {
-      // Re-acquire if missing
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-          .then(stream => {
-            // Apply current state
-            const { isAudioMuted } = useMeetingStore.getState();
-            stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-            // Video is enabled by default in new stream
-            setLocalStream(stream);
-          })
-          .catch(e => console.error("Re-acquire camera failed", e));
-      } else {
-        console.error("MediaDevices API not supported.");
-      }
-    }
+    initCamera(); // Execute immediately
   }, [isVideoOff, localStream, setLocalStream]);
 
   // Cleanup on unmount
@@ -88,11 +106,13 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
+
   const [waiting, setWaiting] = useState(false);
   const isHost = user?.role === 'host';
   const [showHostWaitingOverlay, setShowHostWaitingOverlay] = useState(false);
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
+
   useEffect(() => {
     if (isHost && waitingRoom.length > 0) {
       setShowHostWaitingOverlay(true);
@@ -110,8 +130,9 @@ export default function MeetingRoom() {
   }, [user, waitingRoom]);
 
   /* ---------------- RECORDING TIMER ---------------- */
+
   useEffect(() => {
-    let interval: any;
+    let interval: NodeJS.Timeout;
     if (isRecording && recordingStartTime) {
       interval = setInterval(() => {
         const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -122,12 +143,11 @@ export default function MeetingRoom() {
     } else {
       setElapsedTime("00:00");
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [isRecording, recordingStartTime]);
 
-  /* ---------------- ACTIVE SPEAKER ---------------- */
+  /* ---------------- ACTIVE SPEAKER (SIMULATION) ---------------- */
+
   useEffect(() => {
     const interval = setInterval(() => {
       const randomParticipant =
@@ -152,6 +172,7 @@ export default function MeetingRoom() {
   }
 
   /* ---------------- HOST WAITING OVERLAY ---------------- */
+
   const HostWaitingRoomOverlay = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-white/10 backdrop-blur-md rounded-2xl px-8 py-8 w-full max-w-2xl">
@@ -185,10 +206,12 @@ export default function MeetingRoom() {
     <div className="flex flex-col h-screen bg-[#1C1C1C] pt-4">
       {showHostWaitingOverlay && <HostWaitingRoomOverlay />}
 
+      {/* MAIN CONTENT */}
       <div className="flex-1 min-h-0 relative">
         <TopBar />
         <VideoGrid />
 
+        {/* Global Reactions Overlay */}
         <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
           <AnimatePresence>
             {reactions.map((reaction) => {
