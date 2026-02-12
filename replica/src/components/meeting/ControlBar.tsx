@@ -5,7 +5,8 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -106,6 +107,25 @@ export default function ControlBar() {
     }
   }, [showMicConfirm, showVideoConfirm]);
   const { unreadCount } = useChatStore();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   // Whiteboard state
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
@@ -737,6 +757,13 @@ export default function ControlBar() {
               onClick={handleToggleValidRecording}
               active={isRecording}
               className={isRecording ? "text-red-500" : ""}
+            />
+
+            {/* Fullscreen Button */}
+            <ControlButton
+              icon={isFullscreen ? Minimize2 : Maximize2}
+              label="Fullscreen"
+              onClick={toggleFullscreen}
             />
 
             {/* More */}

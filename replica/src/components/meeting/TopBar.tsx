@@ -23,7 +23,6 @@ export default function TopBar() {
     const dragOffset = useRef({ x: 0, y: 0 });
     const rafRef = useRef<number | null>(null);
 
-    // Derive host name
     const host = participants.find(p => p.id === meeting?.hostId);
     const hostName = host ? host.name : 'Host';
 
@@ -183,13 +182,15 @@ export default function TopBar() {
                 </DropdownMenu>
             </div>
 
-            {/* Recording Indicator (Top Right) */}
-            {isRecording && (
-                <div className="absolute top-4 right-4 pointer-events-auto bg-red-600/90 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
-                    <div className="w-2 h-2 bg-white rounded-full" />
-                    <span className="font-semibold tracking-wide">REC</span>
-                </div>
-            )}
+            {/* Top Right Controls (Recording & Fullscreen) */}
+            <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-3">
+                {isRecording && (
+                    <div className="bg-red-600/90 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
+                        <div className="w-2 h-2 bg-white rounded-full" />
+                        <span className="font-semibold tracking-wide">REC</span>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
