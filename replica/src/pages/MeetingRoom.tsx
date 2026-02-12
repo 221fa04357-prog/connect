@@ -10,18 +10,20 @@ import SettingsModal from '@/components/meeting/SettingsModal';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function MeetingRoom() {
   const {
-    participants, // Active participants list
+    participants,
     setActiveSpeaker,
     waitingRoom,
     admitFromWaitingRoom,
     removeFromWaitingRoom,
     setVideoRestriction,
-    updateParticipant
+    updateParticipant,
+    activeSpeakerId
   } = useParticipantsStore();
 
   const {
@@ -266,12 +268,144 @@ export default function MeetingRoom() {
       const randomParticipant =
         participants[Math.floor(Math.random() * participants.length)];
       if (randomParticipant && !randomParticipant.isAudioMuted) {
-        setActiveSpeaker(randomParticipant.id);
-        setTimeout(() => setActiveSpeaker(null), 2000);
+        useParticipantsStore.getState().setActiveSpeaker(randomParticipant.id);
+        setTimeout(() => useParticipantsStore.getState().setActiveSpeaker(null), 2000);
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [participants, setActiveSpeaker]);
+  }, [participants]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        startPictureInPicture();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [participants, activeSpeakerId, localStream]);
+
+  /* ---------------- PICTURE IN PICTURE LOGIC ---------------- */
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const pipWindowRef = useRef<any>(null);
+
+  useEffect(() => {
+    const handleFirstInteraction = () => setHasInteracted(true);
+    window.addEventListener('click', handleFirstInteraction, { once: true });
+    window.addEventListener('keydown', handleFirstInteraction, { once: true });
+    return () => {
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+    };
+  }, []);
+
+  const startPictureInPicture = async () => {
+    if (!hasInteracted) {
+      console.warn("PiP: No user interaction detected yet.");
+      return;
+    }
+
+    // 1. Try Document Picture-in-Picture (Chromium)
+    if ('documentPictureInPicture' in window) {
+      try {
+        const pipWindow = await (window as any).documentPictureInPicture.requestWindow({
+          width: 320,
+          height: 180,
+        });
+        pipWindowRef.current = pipWindow;
+
+        // Setup PiP content
+        const activeParticipant = participants.find(p => p.id === activeSpeakerId) || participants[0];
+
+        // Basic styles for PiP
+        const style = pipWindow.document.createElement('style');
+        style.textContent = `
+          body { 
+            margin: 0; 
+            background: #1a1a1a; 
+            color: white; 
+            font-family: sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh;
+            cursor: pointer;
+            overflow: hidden;
+          }
+          .avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            background: ${activeParticipant?.avatar || '#333'};
+          }
+          .name { font-size: 14px; font-weight: 500; }
+          .live { 
+            position: absolute; top: 10px; left: 10px; 
+            font-size: 10px; background: red; padding: 2px 6px; border-radius: 4px;
+          }
+        `;
+        pipWindow.document.head.append(style);
+
+        const container = pipWindow.document.createElement('div');
+        container.innerHTML = `
+          <div class="live">LIVE</div>
+          <div class="avatar">${activeParticipant?.name?.charAt(0) || 'M'}</div>
+          <div class="name">${activeParticipant?.name || 'Meeting'}</div>
+        `;
+        pipWindow.document.body.append(container);
+
+        // Click to return
+        pipWindow.document.body.onclick = () => {
+          window.focus();
+          (window as any).documentPictureInPicture.window?.close();
+        };
+
+        pipWindow.addEventListener("pagehide", () => {
+          pipWindowRef.current = null;
+        });
+
+        return;
+      } catch (err) {
+        console.error("Document PiP failed, falling back:", err);
+      }
+    }
+
+    // 2. Fallback: Standard Video Picture-in-Picture
+    const video = document.getElementById('local-video') as HTMLVideoElement;
+    if (!video) {
+      // Search for any video element
+      const anyVideo = document.querySelector('video');
+      if (anyVideo) {
+        try {
+          await anyVideo.requestPictureInPicture();
+          anyVideo.addEventListener('leavepictureinpicture', () => window.focus(), { once: true });
+        } catch (err) {
+          console.error("Video PiP failed:", err);
+        }
+      }
+      return;
+    }
+
+    try {
+      if (document.pictureInPictureEnabled && !video.disablePictureInPicture) {
+        await video.requestPictureInPicture();
+        video.addEventListener('leavepictureinpicture', () => window.focus(), { once: true });
+      }
+    } catch (err) {
+      console.error("PiP failed:", err);
+    }
+  };
+
+  /* ---------------- WAITING ROOM LOGIC ---------------- */
+  const activeSpeaker = participants.find(p => p.id === activeSpeakerId) || participants[0];
 
   if (waiting) {
     return (
