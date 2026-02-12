@@ -92,6 +92,7 @@ export default function VideoTile({
                         {isLocal && localStream ? (
                             <video
                                 ref={videoRef}
+                                id="local-video"
                                 autoPlay
                                 playsInline
                                 muted
