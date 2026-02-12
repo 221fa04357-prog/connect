@@ -56,6 +56,7 @@ export interface Meeting {
     allowParticipantsToUnmute?: boolean;
     allowParticipantsToShareScreen?: boolean;
     disableParticipantVideo?: boolean;
+    whiteboardEditAccess?: 'hostOnly' | 'coHost' | 'everyone';
   };
   originalHostId?: string;
   isRecording: boolean;

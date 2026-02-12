@@ -1,5 +1,6 @@
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
@@ -22,6 +23,7 @@ import { Reaction } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import SubscriptionModal from '@/components/ui/SubscriptionModal';
 import ShareScreenModal from '@/components/meeting/ShareScreenModal';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const reactionEmojis = ['👍', '❤️', '😂', '👏', '🎉', '😮'];
 
@@ -52,7 +54,12 @@ export default function ControlBar() {
     setLocalStream,
     extendMeetingTime,
     showSelfView,
-    toggleSelfView
+    toggleSelfView,
+    setWhiteboardEditAccess,
+    showMicConfirm,
+    showVideoConfirm,
+    setMicConfirm,
+    setVideoConfirm
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
@@ -90,6 +97,16 @@ export default function ControlBar() {
   const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const yesButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Auto-focus Yes button when modals open
+  useEffect(() => {
+    if (showMicConfirm || showVideoConfirm) {
+      setTimeout(() => yesButtonRef.current?.focus(), 100);
+    }
+  }, [showMicConfirm, showVideoConfirm]);
+  const { unreadCount } = useChatStore();
+
   // Whiteboard state
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [whiteboardTool, setWhiteboardTool] = useState<'pen' | 'eraser'>('pen');
@@ -100,6 +117,17 @@ export default function ControlBar() {
   const [eraserPath, setEraserPath] = useState<number[][]>([]); // For eraser tool
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasDims, setCanvasDims] = useState({ w: 0, h: 0 });
+  const isMobile = useIsMobile();
+
+  // Chat Badge Logic
+  const displayUnreadCount = !isChatOpen ? (unreadCount > 99 ? '99+' : unreadCount) : 0;
+
+  // RBAC for Whiteboard
+  const whiteboardEditAccess = meeting?.settings?.whiteboardEditAccess || 'hostOnly';
+  const canEditWhiteboard =
+    currentParticipant?.role === 'host' ||
+    (whiteboardEditAccess === 'coHost' && currentParticipant?.role === 'co-host') ||
+    (whiteboardEditAccess === 'everyone');
 
   // Whiteboard handlers
   const openWhiteboard = () => setWhiteboardOpen(true);
@@ -109,6 +137,7 @@ export default function ControlBar() {
     setEraserPath([]);
   };
   const clearWhiteboard = () => {
+    if (!canEditWhiteboard) return;
     setWhiteboardStrokes([]);
     setWhiteboardDrawing(false);
     setEraserPath([]);
@@ -121,6 +150,7 @@ export default function ControlBar() {
 
   // Drawing logic (frontend only, no backend)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!canEditWhiteboard) return;
     setWhiteboardDrawing(true);
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -133,7 +163,7 @@ export default function ControlBar() {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!whiteboardDrawing) return;
+    if (!whiteboardDrawing || !canEditWhiteboard) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -244,7 +274,12 @@ export default function ControlBar() {
     setShowReactions(false);
   };
 
-  const handleAudioToggle = async () => {
+  const handleAudioToggle = () => {
+    setMicConfirm(true);
+  };
+
+  const confirmAudioToggle = async () => {
+    setMicConfirm(false);
     const currentIsMuted = isAudioMuted;
     const currentStream = useMeetingStore.getState().localStream;
 
@@ -261,8 +296,6 @@ export default function ControlBar() {
           video: !isVideoOff
         });
 
-        // If we already had a live video track, we might want to preserve it,
-        // but getting a fresh stream is often more reliable for sync.
         setLocalStream(stream);
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
@@ -286,11 +319,16 @@ export default function ControlBar() {
     }
   };
 
-  const handleVideoToggle = async () => {
+  const handleVideoToggle = () => {
     if (!videoAllowed) {
       alert("The host has disabled video for participants.");
       return;
     }
+    setVideoConfirm(true);
+  };
+
+  const confirmVideoToggle = async () => {
+    setVideoConfirm(false);
     const currentIsVideoOff = isVideoOff;
     const currentStream = useMeetingStore.getState().localStream;
 
@@ -301,10 +339,10 @@ export default function ControlBar() {
     if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
       try {
         console.log("Requesting video stream on user gesture...");
-        const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+        const isAudioMutedCurrent = useMeetingStore.getState().isAudioMuted;
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
-          audio: !isAudioMuted
+          audio: !isAudioMutedCurrent
         });
         setLocalStream(stream);
       } catch (err) {
@@ -424,12 +462,18 @@ export default function ControlBar() {
           return;
         }
 
+        // Check if both mic and camera are on
+        if (isAudioMuted || isVideoOff) {
+          alert("Please turn ON both your camera and microphone to start recording.");
+          return;
+        }
+
         // Use local stream (User Camera) to start instantly without Browser Picker Dialog
         const stream = useMeetingStore.getState().localStream;
 
         if (!stream) {
           console.error("No local camera stream available to record.");
-          alert("Please turn on your camera or microphone before recording.");
+          alert("Unable to access camera or microphone stream.");
           return;
         }
 
@@ -589,6 +633,7 @@ export default function ControlBar() {
               label="Chat"
               onClick={toggleChat}
               isActiveState={isChatOpen}
+              badge={displayUnreadCount}
             />
 
             {/* Reactions Button */}
@@ -758,37 +803,147 @@ export default function ControlBar() {
             {whiteboardOpen && (
               <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
                 {/* Controls overlay: ensure z-index and pointer-events */}
-                <div className="absolute top-0 left-0 w-full flex items-center justify-between px-6 py-4 bg-white/90 border-b border-[#e5e7eb] z-[102]" style={{ pointerEvents: 'auto' }}>
-                  <div className="flex gap-2 items-center">
-                    <Grid3x3 className="w-5 h-5 text-gray-900 mr-2" />
-                    <span className="text-lg font-bold text-gray-900">Whiteboard</span>
+                <div className={cn(
+                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] bg-white border-b",
+                  isMobile ? "px-4 py-3 border-gray-200" : "px-6 py-4 bg-white/90 border-[#e5e7eb]"
+                )} style={{ pointerEvents: 'auto' }}>
+                  <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                    {/* Fixed Icon Section - Removed as requested */}
+
+                    {/* Scrollable Content (Text + Permissions) */}
+                    <div className={cn("flex items-center gap-3 flex-1", isMobile ? "overflow-x-auto no-scrollbar" : "")}>
+                      <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-xl" : "text-lg")}>Whiteboard</span>
+                      {isHost && (
+                        <div className={cn("flex items-center gap-2 flex-none", isMobile ? "ml-2" : "ml-4")}>
+                          <span className={cn("text-gray-600 font-medium whitespace-nowrap", isMobile ? "hidden sm:inline text-sm" : "text-sm")}>
+                            Who can edit?
+                          </span>
+                          <select
+                            value={whiteboardEditAccess}
+                            onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
+                            className={cn(
+                              "bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm",
+                              isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 min-w-[100px]"
+                            )}
+                          >
+                            <option value="hostOnly">Only Host</option>
+                            <option value="coHost">Host + Co-host</option>
+                            <option value="everyone">Everyone</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2 items-center">
-                    <button type="button" onClick={() => { clearWhiteboard(); }} className="text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors">Clear</button>
-                    <button type="button" onClick={() => { closeWhiteboard(); }} className="text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors"><X className="w-5 h-5" /></button>
+                  <div className="flex gap-2 items-center flex-none">
+                    {canEditWhiteboard && (
+                      <button
+                        type="button"
+                        onClick={() => { clearWhiteboard(); }}
+                        className={cn(
+                          "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
+                          isMobile && "hidden"
+                        )}
+                      >
+                        Clear Canvas
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { closeWhiteboard(); }}
+                      className={cn(
+                        "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
+                        isMobile && "p-2 hover:bg-gray-100 rounded-full"
+                      )}
+                    >
+                      <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex flex-row items-center gap-4 absolute left-1/2 -translate-x-1/2 top-20 z-[102] bg-white/90 rounded-lg px-4 py-2 border border-[#e5e7eb] shadow" style={{ pointerEvents: 'auto' }}>
-                  {/* Pen/Eraser toggle */}
-                  <button onClick={() => setWhiteboardTool('pen')} className={cn("px-2 py-1 rounded", whiteboardTool === 'pen' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300')}>Pen</button>
-                  <button onClick={() => setWhiteboardTool('eraser')} className={cn("px-2 py-1 rounded", whiteboardTool === 'eraser' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300')}>Eraser</button>
-                  {/* Color picker */}
-                  <div className="flex gap-1 items-center">
-                    {['#111', '#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa'].map(c => (
-                      <button key={c} onClick={() => setWhiteboardColor(c)} className={cn("w-5 h-5 rounded-full border-2", whiteboardColor === c ? 'border-blue-600' : 'border-gray-300')} style={{ background: c }} />
-                    ))}
+
+                {canEditWhiteboard && (
+                  <div
+                    className={cn(
+                      "absolute left-1/2 -translate-x-1/2 z-[102] bg-white rounded-xl border border-gray-200 shadow-xl flex items-center gap-4 transition-all",
+                      isMobile ? "top-16 max-w-[95vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
+                    )}
+                    style={{ pointerEvents: 'auto' }}
+                  >
+                    <div className={cn("flex items-center gap-4", isMobile ? "min-w-max px-2" : "")}>
+                      {/* Pen/Eraser toggle */}
+                      <div className="flex bg-gray-100 p-1 rounded-lg flex-none">
+                        <button
+                          onClick={() => setWhiteboardTool('pen')}
+                          className={cn(
+                            "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
+                            whiteboardTool === 'pen' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
+                          )}
+                        >
+                          Pen
+                        </button>
+                        <button
+                          onClick={() => setWhiteboardTool('eraser')}
+                          className={cn(
+                            "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
+                            whiteboardTool === 'eraser' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
+                          )}
+                        >
+                          Eraser
+                        </button>
+                      </div>
+                      <div className="w-px h-6 bg-gray-200 flex-none" />
+                      {/* Color picker */}
+                      <div className="flex gap-2 items-center flex-none">
+                        {['#111111', '#EF4444', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'].map(c => (
+                          <button
+                            key={c}
+                            onClick={() => setWhiteboardColor(c)}
+                            className={cn(
+                              "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 flex-none",
+                              whiteboardColor === c ? 'border-blue-500 scale-110' : 'border-transparent'
+                            )}
+                            style={{ background: c }}
+                          />
+                        ))}
+                      </div>
+                      <div className="w-px h-6 bg-gray-200 flex-none" />
+                      {/* Size picker */}
+                      <div className="flex items-center gap-2 flex-none">
+                        <select
+                          value={whiteboardSize}
+                          onChange={e => setWhiteboardSize(Number(e.target.value))}
+                          className="bg-gray-50 text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {[2, 4, 8, 12, 16].map(s => <option key={s} value={s}>{s}px</option>)}
+                        </select>
+                      </div>
+                      {isMobile && (
+                        <>
+                          <div className="w-px h-6 bg-gray-200 flex-none" />
+                          <button
+                            type="button"
+                            onClick={() => { clearWhiteboard(); }}
+                            className="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold flex-none"
+                          >
+                            Clear
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  {/* Size picker */}
-                  <select value={whiteboardSize} onChange={e => setWhiteboardSize(Number(e.target.value))} className="bg-white text-gray-900 border border-gray-300 rounded px-2 py-1">
-                    {[2, 4, 8, 12].map(s => <option key={s} value={s}>{s}px</option>)}
-                  </select>
-                </div>
+                )}
 
                 {/* Canvas: ensure controls overlay is above canvas */}
                 <canvas
                   ref={canvasRef}
-                  className="absolute inset-0 w-full h-full cursor-crosshair z-[101]"
-                  style={{ zIndex: 101, pointerEvents: 'auto', touchAction: 'none' }}
+                  className={cn(
+                    "absolute inset-0 w-full h-full z-[101]",
+                    canEditWhiteboard ? "cursor-crosshair" : "cursor-default"
+                  )}
+                  style={{
+                    zIndex: 101,
+                    pointerEvents: canEditWhiteboard ? 'auto' : 'none',
+                    touchAction: 'none'
+                  }}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
@@ -827,7 +982,7 @@ export default function ControlBar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
             onClick={() => setShowLeaveConfirm(false)}
           >
             <motion.div
@@ -869,6 +1024,90 @@ export default function ControlBar() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mic Confirmation Modal */}
+      <AnimatePresence>
+        {showMicConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+            onClick={() => setMicConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white mb-2">Microphone</h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Are you sure you want to {isAudioMuted ? 'unmute' : 'mute'} your microphone?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="ghost"
+                  onClick={() => setMicConfirm(false)}
+                  className="text-gray-300 hover:text-white hover:bg-[#333]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  ref={yesButtonRef}
+                  onClick={confirmAudioToggle}
+                  className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                >
+                  Yes
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Video Confirmation Modal */}
+      <AnimatePresence>
+        {showVideoConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+            onClick={() => setVideoConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white mb-2">Camera</h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Are you sure you want to {isVideoOff ? 'turn on' : 'turn off'} your camera?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="ghost"
+                  onClick={() => setVideoConfirm(false)}
+                  className="text-gray-300 hover:text-white hover:bg-[#333]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  ref={yesButtonRef}
+                  onClick={confirmVideoToggle}
+                  className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                >
+                  Yes
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -881,7 +1120,7 @@ interface ControlButtonProps {
   active?: boolean; // Toggled state (e.g. mute is red)
   isActiveState?: boolean; // Active UI state (e.g. panel open is blue)
   className?: string;
-  badge?: number;
+  badge?: number | string;
 }
 
 // Remove ref usage from ControlButton, ensure no ref is passed to function component
@@ -902,7 +1141,7 @@ function ControlButton({ icon: Icon, label, onClick, active, isActiveState, clas
           className
         )}>
           <Icon className={cn("w-5 h-5", active && "fill-current")} strokeWidth={2} />
-          {badge !== undefined && badge > 0 && (
+          {badge !== undefined && (typeof badge === 'number' ? badge > 0 : badge.length > 0) && (
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] h-[16px] flex items-center justify-center">
               {badge}
             </span>

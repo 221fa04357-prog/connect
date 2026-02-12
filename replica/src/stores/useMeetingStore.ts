@@ -26,6 +26,10 @@ interface MeetingState {
   isAudioMuted: boolean;
   isVideoOff: boolean;
 
+  // Confirmation Modals
+  showMicConfirm: boolean;
+  showVideoConfirm: boolean;
+
   // Actions
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
@@ -40,6 +44,9 @@ interface MeetingState {
   toggleWhiteboard: () => void;
   toggleSettings: () => void;
 
+  setMicConfirm: (show: boolean) => void;
+  setVideoConfirm: (show: boolean) => void;
+
   addReaction: (reaction: Reaction) => void;
   removeReaction: (id: string) => void;
   clearReactions: () => void;
@@ -49,6 +56,7 @@ interface MeetingState {
   leaveMeeting: () => void;
   setScreenShareStream: (stream: MediaStream | null) => void;
   setRecordingStartTime: (time: number | null) => void;
+  setWhiteboardEditAccess: (access: 'hostOnly' | 'coHost' | 'everyone') => void;
 
   // View Settings
   showSelfView: boolean;
@@ -75,6 +83,8 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   localStream: null,
   isAudioMuted: false,
   isVideoOff: false,
+  showMicConfirm: false,
+  showVideoConfirm: false,
 
   setMeeting: (meeting) => set({ meeting }),
   setLocalStream: (stream) => set({ localStream: stream }),
@@ -114,6 +124,9 @@ export const useMeetingStore = create<MeetingState>((set) => ({
   toggleSettings: () =>
     set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
 
+  setMicConfirm: (show) => set({ showMicConfirm: show }),
+  setVideoConfirm: (show) => set({ showVideoConfirm: show }),
+
   // 🔥 Zoom-style reaction add + auto cleanup support
   addReaction: (reaction) =>
     set((state) => ({
@@ -152,6 +165,30 @@ export const useMeetingStore = create<MeetingState>((set) => ({
         eventBus.publish(
           'meeting:update',
           { meeting: useMeetingStore.getState().meeting },
+          { source: INSTANCE_ID }
+        )
+      );
+
+      return next;
+    }),
+  setWhiteboardEditAccess: (access) =>
+    set((state) => {
+      if (!state.meeting) return {} as any;
+      const m = state.meeting;
+      const next = {
+        meeting: {
+          ...m,
+          settings: {
+            ...m.settings,
+            whiteboardEditAccess: access,
+          },
+        },
+      } as any;
+
+      setTimeout(() =>
+        eventBus.publish(
+          'meeting:update',
+          { meeting: next.meeting },
           { source: INSTANCE_ID }
         )
       );
