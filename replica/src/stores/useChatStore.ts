@@ -12,7 +12,7 @@ interface ChatState {
 
   // Actions
   setMessages: (messages: ChatMessage[]) => void;
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
   addTypingUser: (userId: string) => void;
   removeTypingUser: (userId: string) => void;
@@ -23,20 +23,43 @@ interface ChatState {
 // TODO: Connect to backend WebSocket for real-time chat
 // WebSocket endpoint: ws://api.example.com/meeting/{meetingId}/chat
 
+const DEMO_MESSAGES: ChatMessage[] = [
+  {
+    id: '1',
+    senderId: 'user-1',
+    senderName: 'Alice Johnson',
+    content: 'Hello everyone 👋',
+    type: 'public',
+    timestamp: new Date(),
+  },
+  {
+    id: '2',
+    senderId: 'user-2',
+    senderName: 'Bob Smith',
+    content: 'Can you hear me?',
+    type: 'public',
+    timestamp: new Date(),
+  },
+];
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: [],
+  messages: DEMO_MESSAGES,
   activeTab: 'public',
   typingUsers: [],
   unreadCount: 0,
 
   setMessages: (messages) => set({ messages }),
 
-  // TODO: Receive messages via WebSocket
-  // WS message: { type: 'chat_message', data: message }
-  addMessage: (message) => set((state) => ({
-    messages: [...state.messages, message],
-    unreadCount: state.unreadCount + 1
-  })),
+  // Receive messages via eventBus (simulated frontend-only real-time)
+  addMessage: (message, isChatOpen) => set((state) => {
+    const isFromMe = message.senderId === 'current-user';
+    const shouldIncrement = !isChatOpen && !isFromMe;
+
+    return {
+      messages: [...state.messages, message],
+      unreadCount: shouldIncrement ? state.unreadCount + 1 : (isChatOpen ? 0 : state.unreadCount)
+    };
+  }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 

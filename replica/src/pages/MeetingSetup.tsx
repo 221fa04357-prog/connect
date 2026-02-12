@@ -394,7 +394,8 @@ export function CreateMeeting() {
         muteOnEntry: false,
         disableVideo: false,
         requirePassword: false,
-        password: ''
+        password: '',
+        whiteboardEditAccess: 'hostOnly' as 'hostOnly' | 'coHost' | 'everyone'
     });
 
     // Popover state
@@ -477,6 +478,7 @@ export function CreateMeeting() {
                 enableWaitingRoom: formData.waitingRoom,
                 muteOnEntry: formData.muteOnEntry,
                 disableParticipantVideo: formData.disableVideo,
+                whiteboardEditAccess: formData.whiteboardEditAccess,
                 // other settings can be mapped here
             }
         };
@@ -500,6 +502,7 @@ export function CreateMeeting() {
                 allowParticipantsToUnmute: true,
                 allowParticipantsToShareScreen: true,
                 disableParticipantVideo: false,
+                whiteboardEditAccess: 'hostOnly' as const,
             },
             isRecording: false,
             isScreenSharing: false,
@@ -905,6 +908,22 @@ export function CreateMeeting() {
                                         />
                                     </div>
                                 )}
+
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="whiteboardAccess" className="cursor-pointer">
+                                        Who can edit?
+                                    </Label>
+                                    <select
+                                        id="whiteboardAccess"
+                                        value={formData.whiteboardEditAccess}
+                                        onChange={(e) => setFormData({ ...formData, whiteboardEditAccess: e.target.value as any })}
+                                        className="bg-[#1C1C1C] border border-[#404040] rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5CFF]"
+                                    >
+                                        <option value="hostOnly">Only Host</option>
+                                        <option value="coHost">Host + Co-host</option>
+                                        <option value="everyone">Everyone</option>
+                                    </select>
+                                </div>
                             </div>
 
                             <Button
