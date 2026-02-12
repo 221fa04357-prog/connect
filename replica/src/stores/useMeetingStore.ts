@@ -27,6 +27,11 @@ interface MeetingState {
   isAudioMuted: boolean;
   isVideoOff: boolean;
 
+  // ✅ Confirmation Modals (from main branch)
+  showMicConfirm: boolean;
+  showVideoConfirm: boolean;
+
+  // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
   toggleAudio: () => void;
@@ -42,6 +47,9 @@ interface MeetingState {
   toggleAICompanion: () => void;
   toggleReactions: () => void;
 
+  setMicConfirm: (show: boolean) => void;
+  setVideoConfirm: (show: boolean) => void;
+
   addReaction: (reaction: Reaction) => void;
   removeReaction: (id: string) => void;
   clearReactions: () => void;
@@ -51,17 +59,25 @@ interface MeetingState {
   leaveMeeting: () => void;
   setScreenShareStream: (stream: MediaStream | null) => void;
   setRecordingStartTime: (time: number | null) => void;
+  setWhiteboardEditAccess: (
+    access: 'hostOnly' | 'coHost' | 'everyone'
+  ) => void;
 
   showSelfView: boolean;
   toggleSelfView: () => void;
+
   connectionQuality: 'excellent' | 'good' | 'poor' | 'offline';
-  setConnectionQuality: (quality: 'excellent' | 'good' | 'poor' | 'offline') => void;
+  setConnectionQuality: (
+    quality: 'excellent' | 'good' | 'poor' | 'offline'
+  ) => void;
 }
+
 
 export const useMeetingStore = create<MeetingState>()(
   persist(
     (set) => ({
       meeting: null,
+
       viewMode: 'gallery',
       isScreenSharing: false,
       isRecording: false,
@@ -70,8 +86,10 @@ export const useMeetingStore = create<MeetingState>()(
       isWhiteboardOpen: false,
       isSettingsOpen: false,
       isAICompanionOpen: false,
+
       showReactions: false,
       reactions: [],
+
       virtualBackground: null,
       isBackgroundBlurred: false,
       screenShareStream: null,
@@ -80,45 +98,132 @@ export const useMeetingStore = create<MeetingState>()(
       localStream: null,
       isAudioMuted: false,
       isVideoOff: false,
+
+      showMicConfirm: false,
+      showVideoConfirm: false,
+
       connectionQuality: 'excellent',
 
-      // Actions ...
+      // ================= ACTIONS =================
+
       setMeeting: (meeting) => set({ meeting }),
       setLocalStream: (stream) => set({ localStream: stream }),
       setViewMode: (mode) => set({ viewMode: mode }),
-      toggleSelfView: () => set((state) => ({ showSelfView: !state.showSelfView })),
-      toggleAudio: () => set((state) => ({ isAudioMuted: !state.isAudioMuted })),
-      toggleVideo: () => set((state) => ({ isVideoOff: !state.isVideoOff })),
-      toggleScreenShare: () => set((state) => ({ isScreenSharing: !state.isScreenSharing })),
-      toggleRecording: () => set((state) => ({ isRecording: !state.isRecording })),
-      toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
-      toggleParticipants: () => set((state) => ({ isParticipantsOpen: !state.isParticipantsOpen })),
-      toggleWhiteboard: () => set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
-      toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
-      toggleAICompanion: () => set((state) => ({ isAICompanionOpen: !state.isAICompanionOpen })),
-      toggleReactions: () => set((state) => ({ showReactions: !state.showReactions })),
-      addReaction: (reaction) => set((state) => ({ reactions: [...state.reactions, reaction] })),
-      removeReaction: (id) => set((state) => ({ reactions: state.reactions.filter((r) => r.id !== id) })),
+
+      toggleSelfView: () =>
+        set((state) => ({ showSelfView: !state.showSelfView })),
+
+      toggleAudio: () =>
+        set((state) => ({ isAudioMuted: !state.isAudioMuted })),
+
+      toggleVideo: () =>
+        set((state) => ({ isVideoOff: !state.isVideoOff })),
+
+      toggleScreenShare: () =>
+        set((state) => ({ isScreenSharing: !state.isScreenSharing })),
+
+      toggleRecording: () =>
+        set((state) => ({ isRecording: !state.isRecording })),
+
+      toggleChat: () =>
+        set((state) => ({ isChatOpen: !state.isChatOpen })),
+
+      toggleParticipants: () =>
+        set((state) => ({ isParticipantsOpen: !state.isParticipantsOpen })),
+
+      toggleWhiteboard: () =>
+        set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
+
+      toggleSettings: () =>
+        set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+
+      toggleAICompanion: () =>
+        set((state) => ({ isAICompanionOpen: !state.isAICompanionOpen })),
+
+      toggleReactions: () =>
+        set((state) => ({ showReactions: !state.showReactions })),
+
+      setMicConfirm: (show) => set({ showMicConfirm: show }),
+      setVideoConfirm: (show) => set({ showVideoConfirm: show }),
+
+      addReaction: (reaction) =>
+        set((state) => ({
+          reactions: [...state.reactions, reaction],
+        })),
+
+      removeReaction: (id) =>
+        set((state) => ({
+          reactions: state.reactions.filter((r) => r.id !== id),
+        })),
+
       clearReactions: () => set({ reactions: [] }),
+
       setVirtualBackground: (bg) => set({ virtualBackground: bg }),
-      toggleBackgroundBlur: () => set((state) => ({ isBackgroundBlurred: !state.isBackgroundBlurred })),
+
+      toggleBackgroundBlur: () =>
+        set((state) => ({ isBackgroundBlurred: !state.isBackgroundBlurred })),
+
       leaveMeeting: () => set({ meeting: null }),
-      setScreenShareStream: (stream) => set({ screenShareStream: stream }),
-      setRecordingStartTime: (time) => set({ recordingStartTime: time }),
-      setConnectionQuality: (quality) => set({ connectionQuality: quality }),
-      extendMeetingTime: (minutes: number) => set((state) => {
-        if (!state.meeting) return {} as any;
-        const m = state.meeting;
-        const newDuration = (m.duration || 0) + minutes;
-        const next = { meeting: { ...m, duration: newDuration } } as any;
-        setTimeout(() => eventBus.publish('meeting:update', { meeting: useMeetingStore.getState().meeting }, { source: INSTANCE_ID }));
-        return next;
-      }),
+
+      setScreenShareStream: (stream) =>
+        set({ screenShareStream: stream }),
+
+      setRecordingStartTime: (time) =>
+        set({ recordingStartTime: time }),
+
+      setConnectionQuality: (quality) =>
+        set({ connectionQuality: quality }),
+
+      extendMeetingTime: (minutes: number) =>
+        set((state) => {
+          if (!state.meeting) return {} as any;
+          const m = state.meeting;
+          const newDuration = (m.duration || 0) + minutes;
+
+          const next = {
+            meeting: { ...m, duration: newDuration },
+          } as any;
+
+          setTimeout(() =>
+            eventBus.publish(
+              'meeting:update',
+              { meeting: next.meeting },
+              { source: INSTANCE_ID }
+            )
+          );
+
+          return next;
+        }),
+
+      setWhiteboardEditAccess: (access) =>
+        set((state) => {
+          if (!state.meeting) return {} as any;
+          const m = state.meeting;
+
+          const next = {
+            meeting: {
+              ...m,
+              settings: {
+                ...m.settings,
+                whiteboardEditAccess: access,
+              },
+            },
+          } as any;
+
+          setTimeout(() =>
+            eventBus.publish(
+              'meeting:update',
+              { meeting: next.meeting },
+              { source: INSTANCE_ID }
+            )
+          );
+
+          return next;
+        }),
     }),
     {
       name: 'meeting-store',
       storage: createJSONStorage(() => sessionStorage),
-      // Don't persist streams as they can't be serialized
       partialize: (state) => {
         const { localStream, screenShareStream, ...rest } = state;
         return rest;
@@ -126,6 +231,7 @@ export const useMeetingStore = create<MeetingState>()(
     }
   )
 );
+
 
 // Subscribe to remote meeting updates
 eventBus.subscribe('meeting:update', (payload, meta) => {

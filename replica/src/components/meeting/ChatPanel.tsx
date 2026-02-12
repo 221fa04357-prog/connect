@@ -7,39 +7,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
+import { useChatStore } from '@/stores/useChatStore';
+import { eventBus } from '@/lib/eventBus';
+import { ChatMessage } from '@/types';
 
 /* ---------------- TYPES ---------------- */
 
-interface ChatMessage {
-  id: string;
-  senderId: string;
-  senderName: string;
-  content: string;
-  type: 'public' | 'private';
-  timestamp: Date;
-  privateTo?: string;
-}
 
-/* ---------------- DEMO MESSAGES ---------------- */
 
-const DEMO_MESSAGES: ChatMessage[] = [
-  {
-    id: '1',
-    senderId: 'user-1',
-    senderName: 'Alice Johnson',
-    content: 'Hello everyone 👋',
-    type: 'public',
-    timestamp: new Date(),
-  },
-  {
-    id: '2',
-    senderId: 'user-2',
-    senderName: 'Bob Smith',
-    content: 'Can you hear me?',
-    type: 'public',
-    timestamp: new Date(),
-  },
-];
+
 
 const EMOJIS = ['😀', '😂', '😍', '👍', '🔥', '🎉', '😮', '❤️'];
 
@@ -56,8 +32,8 @@ import {
 export default function ChatPanel() {
   const { isChatOpen, toggleChat } = useMeetingStore();
   const { participants } = useParticipantsStore();
+  const { messages, addMessage, markAsRead } = useChatStore();
 
-  const [messages, setMessages] = useState<ChatMessage[]>(DEMO_MESSAGES);
   const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
   const [input, setInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -72,15 +48,15 @@ export default function ChatPanel() {
   // Count ALL private messages for user for the badge
   const totalPrivateMessages = messages.filter(m =>
     m.type === 'private' &&
-    (m.senderId === 'current-user' || m.privateTo === 'current-user')
+    (m.senderId === 'current-user' || m.recipientId === 'current-user')
   ).length;
 
   // Filter private messages for the selected recipient
   const privateMessages = messages.filter(m =>
     m.type === 'private' &&
     (selectedRecipientId ? (
-      (m.senderId === 'current-user' && m.privateTo === selectedRecipientId) ||
-      (m.senderId === selectedRecipientId && m.privateTo === 'current-user')
+      (m.senderId === 'current-user' && m.recipientId === selectedRecipientId) ||
+      (m.senderId === selectedRecipientId && m.recipientId === 'current-user')
     ) : false)
   );
 
@@ -95,7 +71,21 @@ export default function ChatPanel() {
   }, [activeTab]);
 
 
-  /* ---------------- AUTO SCROLL ---------------- */
+  /* ---------------- AUTO SCROLL & MARK AS READ ---------------- */
+
+  useEffect(() => {
+    if (isChatOpen) {
+      markAsRead();
+    }
+  }, [isChatOpen, markAsRead]);
+
+  // Listen for incoming messages
+  useEffect(() => {
+    const unsubscribe = eventBus.subscribe('chat:message', (msg: ChatMessage) => {
+      addMessage(msg, isChatOpen);
+    });
+    return unsubscribe;
+  }, [addMessage, isChatOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,10 +103,14 @@ export default function ChatPanel() {
       content: input,
       type: activeTab,
       timestamp: new Date(),
-      privateTo: activeTab === 'private' ? selectedRecipientId : undefined,
+      recipientId: activeTab === 'private' ? selectedRecipientId : undefined,
     };
 
-    setMessages(prev => [...prev, newMessage]);
+    addMessage(newMessage, true); // Direct send, always "read"
+
+    // Broadcast message to others
+    eventBus.publish('chat:message', newMessage, { source: eventBus.instanceId });
+
     setInput('');
     setShowEmojiPicker(false);
   };

@@ -5,7 +5,8 @@ import { cn } from '@/lib/utils';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 
 interface VideoTileProps {
     participant: Participant;
@@ -28,7 +29,16 @@ export default function VideoTile({
         toggleParticipantVideo
     } = useParticipantsStore();
     const { user } = useAuthStore();
-    const { localStream, toggleAudio, toggleVideo, setLocalStream } = useMeetingStore();
+    const {
+        localStream,
+        toggleAudio,
+        toggleVideo,
+        setLocalStream,
+        setMicConfirm,
+        setVideoConfirm,
+        showMicConfirm,
+        showVideoConfirm
+    } = useMeetingStore();
 
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
@@ -45,56 +55,16 @@ export default function VideoTile({
         }
     }, [isLocal, localStream, participant.isVideoOff]);
 
-    const handleToggleMute = async (e: React.MouseEvent) => {
+    const handleToggleMuteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isLocal) {
-            const currentIsMuted = useMeetingStore.getState().isAudioMuted;
-            const currentStream = useMeetingStore.getState().localStream;
-            const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
-
-            if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
-                try {
-                    const isVideoOff = useMeetingStore.getState().isVideoOff;
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        audio: true,
-                        video: !isVideoOff
-                    });
-                    setLocalStream(stream);
-                } catch (err) {
-                    console.error("Failed to get audio stream:", err);
-                }
-            }
-            toggleAudio();
-            updateParticipant(participant.id, { isAudioMuted: !currentIsMuted });
-        } else {
-            updateParticipant(participant.id, { isAudioMuted: !participant.isAudioMuted });
-        }
+        if (showMicConfirm || showVideoConfirm) return;
+        setMicConfirm(true);
     };
 
-    const handleToggleVideo = async (e: React.MouseEvent) => {
+    const handleToggleVideoClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isLocal) {
-            const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
-            const currentStream = useMeetingStore.getState().localStream;
-            const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
-
-            if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
-                try {
-                    const isAudioMuted = useMeetingStore.getState().isAudioMuted;
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: !isAudioMuted
-                    });
-                    setLocalStream(stream);
-                } catch (err) {
-                    console.error("Failed to get video stream:", err);
-                }
-            }
-            toggleVideo();
-            updateParticipant(participant.id, { isVideoOff: !currentIsVideoOff });
-        } else {
-            updateParticipant(participant.id, { isVideoOff: !participant.isVideoOff });
-        }
+        if (showMicConfirm || showVideoConfirm) return;
+        setVideoConfirm(true);
     };
 
     return (
@@ -178,33 +148,37 @@ export default function VideoTile({
                         {/* Only allow toggling if it's participant, co-host OR self */}
                         {(participant.role === 'participant' || participant.role === 'co-host' || isLocal) ? (
                             <>
-                                <button
-                                    onClick={handleToggleMute}
-                                    className={cn(
-                                        "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                        participant.isAudioMuted ? "bg-red-500/20 text-red-500" : "text-white"
-                                    )}
-                                >
-                                    {participant.isAudioMuted ? (
-                                        <MicOff className="w-4 h-4" />
-                                    ) : (
-                                        <Mic className="w-4 h-4" />
-                                    )}
-                                </button>
+                                <div className="relative">
+                                    <button
+                                        onClick={handleToggleMuteClick}
+                                        className={cn(
+                                            "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
+                                            participant.isAudioMuted ? "bg-red-500/20 text-red-500" : "text-white"
+                                        )}
+                                    >
+                                        {participant.isAudioMuted ? (
+                                            <MicOff className="w-4 h-4" />
+                                        ) : (
+                                            <Mic className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
 
-                                <button
-                                    onClick={handleToggleVideo}
-                                    className={cn(
-                                        "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                        participant.isVideoOff ? "bg-red-500/20 text-red-500" : "text-white"
-                                    )}
-                                >
-                                    {participant.isVideoOff ? (
-                                        <VideoOff className="w-4 h-4" />
-                                    ) : (
-                                        <Video className="w-4 h-4" />
-                                    )}
-                                </button>
+                                <div className="relative">
+                                    <button
+                                        onClick={handleToggleVideoClick}
+                                        className={cn(
+                                            "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
+                                            participant.isVideoOff ? "bg-red-500/20 text-red-500" : "text-white"
+                                        )}
+                                    >
+                                        {participant.isVideoOff ? (
+                                            <VideoOff className="w-4 h-4" />
+                                        ) : (
+                                            <Video className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
                             </>
                         ) : (
                             <>
@@ -222,3 +196,5 @@ export default function VideoTile({
         </motion.div>
     );
 }
+
+

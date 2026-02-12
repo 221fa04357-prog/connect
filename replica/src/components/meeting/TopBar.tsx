@@ -1,5 +1,5 @@
 import { Info, Copy, Check, Lock, Wifi, WifiOff } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect} from 'react';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
@@ -38,6 +38,11 @@ export default function TopBar() {
     };
 
     // ... (rest of the helper functions)
+    // Draggable State
+    const [pos, setPos] = useState({ x: 16, y: 16 });
+    const [isDragging, setIsDragging] = useState(false);
+    const dragOffset = useRef({ x: 0, y: 0 });
+    const rafRef = useRef<number | null>(null);
 
     // Derive host name
     const host = participants.find(p => p.id === meeting?.hostId);
@@ -72,14 +77,67 @@ export default function TopBar() {
         }
     };
 
+    const handlePointerDown = (e: React.PointerEvent) => {
+        // Only trigger drag on the lock icon, not when dropdown is clicking items (though items are not in trigger)
+        setIsDragging(true);
+        const rect = e.currentTarget.getBoundingClientRect();
+        dragOffset.current = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isDragging) return;
+        if (rafRef.current) return;
+
+        rafRef.current = requestAnimationFrame(() => {
+            const iconWidth = 44; // Approx size of the lock button
+            const iconHeight = 44;
+
+            let nextX = e.clientX - dragOffset.current.x;
+            let nextY = e.clientY - dragOffset.current.y;
+
+            // Clamping to screen boundaries
+            nextX = Math.max(0, Math.min(nextX, window.innerWidth - iconWidth));
+            nextY = Math.max(0, Math.min(nextY, window.innerHeight - iconHeight));
+
+            setPos({ x: nextX, y: nextY });
+            rafRef.current = null;
+        });
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        setIsDragging(false);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+    };
+
     return (
-        <div className="absolute top-0 left-0 right-0 z-50 p-4 pointer-events-none flex justify-between items-start">
-            {/* Meeting Info Dropdown (Left aligned) - Pointer events auto to allow interaction */}
-            <div className="pointer-events-auto">
+        <div className="fixed inset-0 z-50 pointer-events-none">
+            {/* Meeting Info Dropdown - Fixed position makes it draggable anywhere */}
+            <div
+                className="absolute pointer-events-auto touch-none select-none"
+                style={{
+                    left: `${pos.x}px`,
+                    top: `${pos.y}px`,
+                    zIndex: 51
+                }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+            >
                 <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                     <DropdownMenuTrigger asChild>
-                        <div className="flex items-center gap-2 cursor-pointer group hover:bg-black/60 backdrop-blur-sm rounded-lg p-1.5 border border-transparent hover:border-white/10 transition-all">
-                            <div className="bg-green-500 rounded-full p-2">
+                        <div className={cn(
+                            "flex items-center gap-2 cursor-grab group transition-all",
+                            isDragging && "cursor-grabbing scale-110"
+                        )}>
+                            <div className="bg-green-500 rounded-full p-2 flex items-center justify-center shadow-lg">
                                 <Lock className="w-4 h-4 text-white" />
                             </div>
                         </div>
@@ -87,7 +145,7 @@ export default function TopBar() {
                     <DropdownMenuContent
                         align="start"
                         sideOffset={10}
-                        className="w-[320px] bg-[#1C1C1C] border-[#333] text-white p-0 shadow-xl overflow-hidden"
+                        className="w-[320px] bg-[#1C1C1C] border-[#333] text-white p-0 shadow-xl overflow-hidden pointer-events-auto"
                     >
                         <div className="p-4 border-b border-[#333]">
                             <h3 className="font-semibold text-lg">{meeting?.title || 'Meeting Topic'}</h3>
@@ -133,7 +191,6 @@ export default function TopBar() {
                                         {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                                     </Button>
                                 </div>
-                                {/* Explicit Copy Link Button as per user description might be beneficial to be more visible */}
                                 <div
                                     className="flex items-center gap-2 text-blue-400 cursor-pointer hover:underline text-sm mt-1"
                                     onClick={handleCopyLink}
@@ -143,38 +200,48 @@ export default function TopBar() {
                                 </div>
                             </div>
                         </div>
-
-
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
 
-            {/* Indicators Area */}
-            <div className="flex items-center gap-3">
-                {/* Connection Indicator - Only show if poor or offline */}
-                {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
-                    <div className={cn(
-                        "bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg pointer-events-auto transition-all animate-pulse border-red-500/50"
-                    )}>
-                        {connectionQuality === 'offline' ? (
-                            <WifiOff className="w-4 h-4 text-red-500" />
-                        ) : (
-                            <Wifi className={cn("w-4 h-4", getConnectionColor())} />
-                        )}
-                        <span className={cn("text-[10px] font-bold tracking-tight uppercase", getConnectionColor())}>
-                            {getConnectionLabel()}
-                        </span>
-                    </div>
-                )}
+            {/* Top Right Controls (Connection + Recording + Future Controls) */}
+<div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-3">
 
-                {/* Recording Indicator - Synchronized with isRecording state */}
-                {isRecording && (
-                    <div className="bg-red-600/90 backdrop-blur text-white text-[10px] px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse pointer-events-auto">
-                        <div className="w-1.5 h-1.5 bg-white rounded-full" />
-                        <span className="font-bold tracking-wider uppercase">REC</span>
-                    </div>
+    {/* Connection Indicator - Only show if poor or offline */}
+    {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
+        <div
+            className={cn(
+                "bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg transition-all animate-pulse border-red-500/50"
+            )}
+        >
+            {connectionQuality === 'offline' ? (
+                <WifiOff className="w-4 h-4 text-red-500" />
+            ) : (
+                <Wifi className={cn("w-4 h-4", getConnectionColor())} />
+            )}
+            <span
+                className={cn(
+                    "text-[10px] font-bold tracking-tight uppercase",
+                    getConnectionColor()
                 )}
-            </div>
+            >
+                {getConnectionLabel()}
+            </span>
+        </div>
+    )}
+
+    {/* Recording Indicator */}
+    {isRecording && (
+        <div className="bg-red-600/90 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
+            <div className="w-2 h-2 bg-white rounded-full" />
+            <span className="font-semibold tracking-wide uppercase">
+                REC
+            </span>
+        </div>
+    )}
+
+</div>
+
         </div>
     );
 }
