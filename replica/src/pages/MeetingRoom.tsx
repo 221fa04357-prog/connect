@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import VideoGrid from '@/components/meeting/VideoGrid';
 import ControlBar from '@/components/meeting/ControlBar';
 import TopBar from '@/components/meeting/TopBar';
 import ChatPanel from '@/components/meeting/ChatPanel';
 import ParticipantsPanel from '@/components/meeting/ParticipantsPanel';
+import AICompanionPanel from '@/components/meeting/AICompanionPanel';
+import SettingsModal from '@/components/meeting/SettingsModal';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export default function MeetingRoom() {
   const {
@@ -29,8 +33,91 @@ export default function MeetingRoom() {
     localStream,
     setLocalStream,
     isAudioMuted: meetingStoreAudioMuted,
-    isVideoOff: meetingStoreVideoOff
+    isVideoOff: meetingStoreVideoOff,
+    connectionQuality,
+    setConnectionQuality
   } = useMeetingStore();
+
+  /* ---------------- CONNECTION MONITORING ---------------- */
+  const checkConnection = useCallback(() => {
+    if (!window.navigator.onLine) {
+      setConnectionQuality('offline');
+      return;
+    }
+
+    // @ts-ignore - Network Information API
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+
+    if (conn) {
+      const { effectiveType, downlink, rtt } = conn;
+      if (effectiveType === '2g' || effectiveType === '3g' || downlink < 1 || rtt > 1000) {
+        setConnectionQuality('poor');
+      } else if (downlink > 5 && rtt < 200) {
+        setConnectionQuality('excellent');
+      } else {
+        setConnectionQuality('good');
+      }
+    } else {
+      // Fallback for browsers without Network Information API
+      setConnectionQuality('good');
+    }
+  }, [setConnectionQuality]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      checkConnection();
+      import('sonner').then(({ toast }) => {
+        toast.success('You are back online', {
+          description: 'Connection restored successfully.',
+          duration: 3000,
+          position: 'top-center'
+        });
+      });
+    };
+
+    const handleOffline = () => {
+      setConnectionQuality('offline');
+      import('sonner').then(({ toast }) => {
+        toast.error('You are offline', {
+          description: 'Please check your internet connection.',
+          duration: 5000,
+          position: 'top-center'
+        });
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial check
+    checkConnection();
+
+    // @ts-ignore
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      conn.addEventListener('change', checkConnection);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      if (conn) conn.removeEventListener('change', checkConnection);
+    };
+  }, [checkConnection, setConnectionQuality]);
+
+  // Toast for poor connection
+  useEffect(() => {
+    if (connectionQuality === 'poor') {
+      import('sonner').then(({ toast }) => {
+        toast.warning('Poor Connection Detected', {
+          description: 'Your internet connection is unstable. Video quality may be reduced.',
+          duration: 5000,
+          id: 'poor-connection-toast', // prevent duplicates
+          position: 'top-center'
+        });
+      });
+    }
+  }, [connectionQuality]);
 
   // Sync initial video restriction from meeting settings
   useEffect(() => {
@@ -239,11 +326,57 @@ export default function MeetingRoom() {
             })}
           </AnimatePresence>
         </div>
+
+        {/* Connection Reconnecting Overlay */}
+        <AnimatePresence>
+          {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md"
+            >
+              <div className="bg-[#232323] border border-[#404040] rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl text-center space-y-6">
+                <div className="flex justify-center">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
+                    <div className="relative bg-[#1C1C1C] p-4 rounded-full border border-[#404040]">
+                      {connectionQuality === 'offline' ? (
+                        <WifiOff className="w-8 h-8 text-red-500 animate-bounce" />
+                      ) : (
+                        <Wifi className="w-8 h-8 text-blue-400 animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-white">Connection unstable</h3>
+                  <p className="text-gray-400 text-sm">
+                    Reconnecting to the meeting... please wait.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    onClick={checkConnection}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2 h-11"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Reconnect
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <ControlBar />
       <ChatPanel />
       <ParticipantsPanel />
+      <AICompanionPanel />
+      <SettingsModal />
     </div>
   );
 }

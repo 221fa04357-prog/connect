@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,7 +52,13 @@ export default function ControlBar() {
     setLocalStream,
     extendMeetingTime,
     showSelfView,
-    toggleSelfView
+    toggleSelfView,
+    toggleAICompanion,
+    isAICompanionOpen,
+    showReactions,
+    toggleReactions,
+    isWhiteboardOpen,
+    toggleWhiteboard
   } = useMeetingStore();
   const { user, isSubscribed } = useAuthStore();
 
@@ -84,14 +90,12 @@ export default function ControlBar() {
   };
 
   // Local state
-  const [showReactions, setShowReactions] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
   const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   // Whiteboard state
-  const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [whiteboardTool, setWhiteboardTool] = useState<'pen' | 'eraser'>('pen');
   const [whiteboardColor, setWhiteboardColor] = useState('#111');
   const [whiteboardSize, setWhiteboardSize] = useState(4);
@@ -102,9 +106,9 @@ export default function ControlBar() {
   const [canvasDims, setCanvasDims] = useState({ w: 0, h: 0 });
 
   // Whiteboard handlers
-  const openWhiteboard = () => setWhiteboardOpen(true);
+  const openWhiteboard = () => { if (!isWhiteboardOpen) toggleWhiteboard(); };
   const closeWhiteboard = () => {
-    setWhiteboardOpen(false);
+    if (isWhiteboardOpen) toggleWhiteboard();
     setWhiteboardDrawing(false);
     setEraserPath([]);
   };
@@ -198,7 +202,7 @@ export default function ControlBar() {
 
   // Resize canvas on open and window resize
   useEffect(() => {
-    if (!whiteboardOpen) return;
+    if (!isWhiteboardOpen) return;
     const updateDims = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
@@ -207,12 +211,13 @@ export default function ControlBar() {
     updateDims();
     window.addEventListener('resize', updateDims);
     return () => window.removeEventListener('resize', updateDims);
-  }, [whiteboardOpen]);
+  }, [isWhiteboardOpen]);
 
   // Resize canvas on open
+
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShowReactions(false);
+      if (e.key === 'Escape' && showReactions) toggleReactions();
     }
     function handleDocClick(e: MouseEvent) {
       // ...existing code or leave empty if not needed...
@@ -241,7 +246,7 @@ export default function ControlBar() {
       timestamp: new Date()
     };
     addReaction(reaction);
-    setShowReactions(false);
+    toggleReactions();
   };
 
   const handleAudioToggle = async () => {
@@ -500,6 +505,92 @@ export default function ControlBar() {
     extendMeetingTime(minutes);
   };
 
+  // Keyboard Shortcuts (Alt + Letter)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey) return;
+
+      const key = e.key.toLowerCase();
+
+      // Don't trigger if user is typing in an input/textarea
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      switch (key) {
+        case 'a':
+          e.preventDefault();
+          handleAudioToggle();
+          break;
+        case 'v':
+          e.preventDefault();
+          handleVideoToggle();
+          break;
+        case 's':
+          e.preventDefault();
+          handleShareClick();
+          break;
+        case 'd':
+          e.preventDefault();
+          handleToggleValidRecording();
+          break;
+        case 'c':
+          e.preventDefault();
+          toggleChat();
+          break;
+        case 'p':
+          e.preventDefault();
+          toggleParticipants();
+          break;
+        case 'r':
+          e.preventDefault();
+          toggleReactions();
+          break;
+        case 'h':
+          e.preventDefault();
+          handleToggleHand();
+          break;
+        case 'w':
+          e.preventDefault();
+          if (isWhiteboardOpen) closeWhiteboard();
+          else openWhiteboard();
+          break;
+        case 'i':
+          e.preventDefault();
+          toggleAICompanion();
+          break;
+        case 'g':
+          e.preventDefault();
+          setViewMode(viewMode === 'gallery' ? 'speaker' : 'gallery');
+          break;
+        case 't':
+          e.preventDefault();
+          toggleSettings();
+          break;
+        case 'o':
+          e.preventDefault();
+          toggleSelfView();
+          break;
+        case 'l':
+          e.preventDefault();
+          handleLeave();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isAudioMuted, isVideoOff, isScreenSharing, isRecording, isChatOpen,
+    isParticipantsOpen, showReactions, isWhiteboardOpen, isAICompanionOpen,
+    viewMode, showSelfView, handleAudioToggle, handleVideoToggle, handleShareClick,
+    handleToggleValidRecording, toggleChat, toggleParticipants, toggleReactions,
+    handleToggleHand, toggleAICompanion, setViewMode, toggleSettings, toggleSelfView,
+    handleLeave
+  ]);
+
   return (
     <>
       {/* Bottom Control Bar */}
@@ -595,7 +686,7 @@ export default function ControlBar() {
             <ControlButton
               icon={Smile}
               label="Reactions"
-              onClick={() => setShowReactions(!showReactions)}
+              onClick={toggleReactions}
             />
 
             {/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
@@ -711,8 +802,12 @@ export default function ControlBar() {
                   <Grid3x3 className="w-4 h-4 mr-2" />
                   Whiteboard
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  AI Companion
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleToggleHand} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                  <Hand className={cn("w-4 h-4 mr-2", isHandRaised ? 'text-yellow-400' : 'text-gray-400')} />
+                  <Hand className={cn("w-4 h-4 mr-2", isHandRaised ? 'text-yellow-400' : '')} />
                   {isHandRaised ? 'Lower Hand' : 'Raise Hand'}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setViewMode(viewMode === 'gallery' ? 'speaker' : 'gallery')} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
@@ -723,31 +818,31 @@ export default function ControlBar() {
                   {showSelfView ? <Check className="w-4 h-4 mr-2" /> : <div className="w-4 h-4 mr-2" />}
                   Show Self View
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/settings')} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                <DropdownMenuItem onClick={toggleSettings} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
                 {isHost && !isSubscribed && (
-                  <DropdownMenuItem onClick={() => setShowUpgradeModal(true)} className="cursor-pointer flex items-center gap-2 text-gray-400 hover:bg-[#232323]">
-                    <span className="w-4 h-4 mr-2" />
+                  <DropdownMenuItem onClick={() => setShowUpgradeModal(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                    <Clock className="w-4 h-4 mr-2" />
                     Extend Meeting
                   </DropdownMenuItem>
                 )}
                 {isHost && isSubscribed && (
                   <DropdownMenuItem onClick={() => handleExtendMeeting(15)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                    <span className="w-4 h-4 mr-2" />
+                    <Clock className="w-4 h-4 mr-2" />
                     Extend Meeting +15 min
                   </DropdownMenuItem>
                 )}
                 {isHost && isSubscribed && (
                   <DropdownMenuItem onClick={() => handleExtendMeeting(30)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                    <span className="w-4 h-4 mr-2" />
+                    <Clock className="w-4 h-4 mr-2" />
                     Extend Meeting +30 min
                   </DropdownMenuItem>
                 )}
                 {isHost && isSubscribed && (
                   <DropdownMenuItem onClick={() => handleExtendMeeting(60)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                    <span className="w-4 h-4 mr-2" />
+                    <Clock className="w-4 h-4 mr-2" />
                     Extend Meeting +60 min
                   </DropdownMenuItem>
                 )}
@@ -755,7 +850,7 @@ export default function ControlBar() {
             </DropdownMenu>
 
             {/* Whiteboard Overlay (must be outside DropdownMenuContent) */}
-            {whiteboardOpen && (
+            {isWhiteboardOpen && (
               <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
                 {/* Controls overlay: ensure z-index and pointer-events */}
                 <div className="absolute top-0 left-0 w-full flex items-center justify-between px-6 py-4 bg-white/90 border-b border-[#e5e7eb] z-[102]" style={{ pointerEvents: 'auto' }}>

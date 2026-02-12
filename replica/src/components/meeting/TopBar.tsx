@@ -1,4 +1,4 @@
-import { Info, Copy, Check, Lock } from 'lucide-react';
+import { Info, Copy, Check, Lock, Wifi, WifiOff } from 'lucide-react';
 import { useState } from 'react';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -12,10 +12,32 @@ import { cn } from '@/lib/utils';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 
 export default function TopBar() {
-    const { meeting, isRecording } = useMeetingStore();
+    const { meeting, isRecording, connectionQuality } = useMeetingStore();
     const { participants } = useParticipantsStore();
     const [copied, setCopied] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
+
+    const getConnectionColor = () => {
+        switch (connectionQuality) {
+            case 'excellent': return 'text-green-400';
+            case 'good': return 'text-green-500';
+            case 'poor': return 'text-yellow-500';
+            case 'offline': return 'text-red-500';
+            default: return 'text-gray-400';
+        }
+    };
+
+    const getConnectionLabel = () => {
+        switch (connectionQuality) {
+            case 'excellent': return 'Excellent';
+            case 'good': return 'Good';
+            case 'poor': return 'Poor';
+            case 'offline': return 'Offline';
+            default: return 'Unknown';
+        }
+    };
+
+    // ... (rest of the helper functions)
 
     // Derive host name
     const host = participants.find(p => p.id === meeting?.hostId);
@@ -127,13 +149,32 @@ export default function TopBar() {
                 </DropdownMenu>
             </div>
 
-            {/* Recording Indicator - Synchronized with isRecording state */}
-            {isRecording && (
-                <div className="bg-red-600/90 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
-                    <div className="w-2 h-2 bg-white rounded-full" />
-                    <span className="font-semibold tracking-wide">REC</span>
-                </div>
-            )}
+            {/* Indicators Area */}
+            <div className="flex items-center gap-3">
+                {/* Connection Indicator - Only show if poor or offline */}
+                {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
+                    <div className={cn(
+                        "bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg pointer-events-auto transition-all animate-pulse border-red-500/50"
+                    )}>
+                        {connectionQuality === 'offline' ? (
+                            <WifiOff className="w-4 h-4 text-red-500" />
+                        ) : (
+                            <Wifi className={cn("w-4 h-4", getConnectionColor())} />
+                        )}
+                        <span className={cn("text-[10px] font-bold tracking-tight uppercase", getConnectionColor())}>
+                            {getConnectionLabel()}
+                        </span>
+                    </div>
+                )}
+
+                {/* Recording Indicator - Synchronized with isRecording state */}
+                {isRecording && (
+                    <div className="bg-red-600/90 backdrop-blur text-white text-[10px] px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse pointer-events-auto">
+                        <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        <span className="font-bold tracking-wider uppercase">REC</span>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

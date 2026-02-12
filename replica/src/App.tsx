@@ -9,6 +9,8 @@ import MeetingRoom from './pages/MeetingRoom';
 import Settings from './pages/Settings';
 import Help from './pages/Help';
 import NotFound from './pages/NotFound';
+import MeetingRecap from './pages/MeetingRecap';
+import RecapsList from './pages/RecapsList';
 import { useAuthStore } from './stores/useAuthStore';
 import { useGuestSessionStore } from './stores/useGuestSessionStore';
 import { useEffect } from 'react';
@@ -69,6 +71,8 @@ const App = () => (
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/help" element={<Help />} />
+          <Route path="/recap/:meetingId" element={<MeetingRecap />} />
+          <Route path="/recaps" element={<RecapsList />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </HashRouter>
