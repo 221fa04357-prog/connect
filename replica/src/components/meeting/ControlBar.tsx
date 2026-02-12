@@ -844,7 +844,7 @@ export default function ControlBar() {
                           isMobile && "hidden"
                         )}
                       >
-                        Clear Canvas
+                        Clear
                       </button>
                     )}
                     <button
