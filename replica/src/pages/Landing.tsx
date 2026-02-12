@@ -31,6 +31,7 @@ export default function Landing() {
 
   // Timer state for countdown
   const [remaining, setRemaining] = useState<number | null>(null);
+
   useEffect(() => {
     if (guestSessionActive && guestSessionExpiresAt) {
       const update = () => setRemaining(Math.max(0, guestSessionExpiresAt - Date.now()));
@@ -41,6 +42,13 @@ export default function Landing() {
       setRemaining(null);
     }
   }, [guestSessionActive, guestSessionExpiresAt]);
+
+  // Redirect to login if guest session expires and not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && guestSessionActive && remaining === 0) {
+      navigate('/login');
+    }
+  }, [isAuthenticated, guestSessionActive, remaining, navigate]);
 
   const features = [
     {
@@ -215,66 +223,69 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Recent Recaps Section */}
-      <section className="w-full max-w-7xl mx-auto px-4 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Recent Meeting Recaps</h2>
-            <p className="text-gray-400 text-sm">Stay caught up with meetings you missed or attended</p>
-          </div>
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/recaps')}
-            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 group"
-          >
-            View All <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-          </Button>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[
-            { id: 'mock-1', title: 'Product Roadmap Q3 Sync', date: 'Feb 12, 2026', host: 'Alex Rivera' },
-            { id: 'mock-2', title: 'Design System Review', date: 'Feb 11, 2026', host: 'Sarah Chen' },
-            { id: 'mock-3', title: 'Weekly Engineering Standup', date: 'Feb 10, 2026', host: 'Jordan Smith' },
-          ].map((meeting, i) => (
-            <motion.div
-              key={meeting.id}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              onClick={() => navigate(`/recap/${meeting.id}`)}
-              className="group cursor-pointer bg-[#1C1C1C]/50 border border-[#333] rounded-2xl p-5 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all"
+      {/* Recent Recaps Section (only show if authenticated) */}
+      {isAuthenticated && (
+        <section className="w-full max-w-7xl mx-auto px-4 py-12">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-2">Recent Meeting Recaps</h2>
+              <p className="text-gray-400 text-sm">Stay caught up with meetings you missed or attended</p>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => navigate('/recaps')}
+              className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 group"
             >
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                  <FileText className="w-5 h-5" />
+              View All <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              { id: 'mock-1', title: 'Product Roadmap Q3 Sync', date: 'Feb 12, 2026', host: 'Alex Rivera' },
+              { id: 'mock-2', title: 'Design System Review', date: 'Feb 11, 2026', host: 'Sarah Chen' },
+              { id: 'mock-3', title: 'Weekly Engineering Standup', date: 'Feb 10, 2026', host: 'Jordan Smith' },
+            ].map((meeting, i) => (
+              <motion.div
+                key={meeting.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                onClick={() => navigate(`/recap/${meeting.id}`)}
+                className="group cursor-pointer bg-[#1C1C1C]/50 border border-[#333] rounded-2xl p-5 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <Badge variant="secondary" className="bg-[#2A2A2A] text-gray-400 border-[#404040]">
+                    RECAP
+                  </Badge>
                 </div>
-                <Badge variant="secondary" className="bg-[#2A2A2A] text-gray-400 border-[#404040]">
-                  RECAP
-                </Badge>
-              </div>
-              <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-blue-400 transition-colors">
-                {meeting.title}
-              </h3>
-              <div className="flex items-center gap-3 text-sm text-gray-500">
-                <span className="flex items-center gap-1.5 line-clamp-1">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {meeting.date}
-                </span>
-                <span className="flex items-center gap-1.5 line-clamp-1">
-                  <Users className="w-3.5 h-3.5" />
-                  {meeting.host}
-                </span>
-              </div>
-              <div className="mt-4 pt-4 border-t border-[#333] flex items-center justify-between transition-opacity">
-                <span className="text-xs font-medium text-blue-400">View Details</span>
-                <ArrowRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-blue-400 transition-colors">
+                  {meeting.title}
+                </h3>
+                <div className="flex items-center gap-3 text-sm text-gray-500">
+                  <span className="flex items-center gap-1.5 line-clamp-1">
+                    <Calendar className="w-3.5 h-3.5" />
+                    {meeting.date}
+                  </span>
+                  <span className="flex items-center gap-1.5 line-clamp-1">
+                    <Users className="w-3.5 h-3.5" />
+                    {meeting.host}
+                  </span>
+                </div>
+                <div className="mt-4 pt-4 border-t border-[#333] flex items-center justify-between transition-opacity">
+                  <span className="text-xs font-medium text-blue-400">View Details</span>
+                  <ArrowRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Features Section */}
       <section className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-10 sm:py-16 md:py-20">
