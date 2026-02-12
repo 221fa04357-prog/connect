@@ -191,7 +191,7 @@ export default function Settings() {
             <TabsContent value="general" className="space-y-6">
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Meeting Preferences</h3>
-                
+
                 <div className="space-y-4">
                   <div className="p-4 bg-[#1C1C1C] rounded-lg">
                     <p className="text-sm text-gray-400">
@@ -215,26 +215,32 @@ export default function Settings() {
               </div>
             </TabsContent>
 
-            {/* Keyboard Shortcuts */}
             <TabsContent value="shortcuts" className="space-y-4">
               <h3 className="font-semibold text-lg mb-4">Keyboard Shortcuts</h3>
-              
-              <div className="space-y-3">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { action: 'Mute/Unmute Audio', shortcut: 'Alt + A' },
-                  { action: 'Start/Stop Video', shortcut: 'Alt + V' },
+                  { action: 'Mute/Unmute', shortcut: 'Alt + A' },
+                  { action: 'Video On/Off', shortcut: 'Alt + V' },
                   { action: 'Share Screen', shortcut: 'Alt + S' },
-                  { action: 'Open Chat', shortcut: 'Alt + H' },
-                  { action: 'Open Participants', shortcut: 'Alt + U' },
-                  { action: 'Raise/Lower Hand', shortcut: 'Alt + Y' },
-                  { action: 'Leave Meeting', shortcut: 'Alt + Q' }
+                  { action: 'Recording', shortcut: 'Alt + D' },
+                  { action: 'Chat', shortcut: 'Alt + C' },
+                  { action: 'Participants', shortcut: 'Alt + P' },
+                  { action: 'Reactions', shortcut: 'Alt + R' },
+                  { action: 'Raise/Lower Hand', shortcut: 'Alt + H' },
+                  { action: 'Whiteboard', shortcut: 'Alt + W' },
+                  { action: 'AI Companion', shortcut: 'Alt + I' },
+                  { action: 'Toggle View', shortcut: 'Alt + G' },
+                  { action: 'Settings', shortcut: 'Alt + T' },
+                  { action: 'Self View', shortcut: 'Alt + O' },
+                  { action: 'Leave Meeting', shortcut: 'Alt + L' }
                 ].map((item) => (
                   <div
                     key={item.action}
-                    className="flex items-center justify-between p-3 bg-[#1C1C1C] rounded-lg"
+                    className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-xl border border-[#404040]/50"
                   >
-                    <span className="text-sm">{item.action}</span>
-                    <kbd className="px-3 py-1 bg-[#232323] border border-[#404040] rounded text-sm font-mono">
+                    <span className="text-sm text-gray-300">{item.action}</span>
+                    <kbd className="px-3 py-1 bg-[#232323] border border-[#404040] rounded text-xs font-mono text-blue-400">
                       {item.shortcut}
                     </kbd>
                   </div>
