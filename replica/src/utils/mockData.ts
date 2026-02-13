@@ -21,6 +21,7 @@ export const generateMockParticipants = (count: number = 8): Participant[] => {
     isAudioMuted: Math.random() > 0.5,
     isVideoOff: Math.random() > 0.7,
     isHandRaised: false,
+    isScreenSharing: false,
     isSpeaking: false,
     isPinned: false,
     isSpotlighted: false,
