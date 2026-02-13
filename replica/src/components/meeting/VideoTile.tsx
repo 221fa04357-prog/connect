@@ -76,6 +76,15 @@ export default function VideoTile({
         if (isLocal) setVideoConfirm(true);
     };
 
+
+    // Responsive logic for button visibility/layout
+    // md = 768px (Tailwind)
+    // Use window.innerWidth for SSR-safe check (or use a hook in real app)
+    const isMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+
+    // Show both buttons always on mobile and fullscreen, only pin on hover in grid
+    const showBothButtons = isMobile || fullscreen;
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -91,18 +100,44 @@ export default function VideoTile({
         >
             {/* Main Content (Video/Avatar) */}
             <div className="absolute inset-0 flex items-center justify-center bg-black">
-                {/* Cross button always visible in top-right */}
-                {fullscreen && onExitFullscreen && (
-                    <button
-                        className="absolute top-3 right-3 z-20 w-8 h-8 flex items-center justify-center bg-neutral-800 bg-opacity-80 rounded-full hover:bg-neutral-700 transition-colors border border-neutral-700"
-                        onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
-                        aria-label="Exit fullscreen"
+                {/* Pin + Close buttons container (top-right) */}
+                {(onPin || (fullscreen && onExitFullscreen)) && (
+                    <div
+                        className={cn(
+                            'absolute top-2 right-2 z-20 flex gap-2',
+                            showBothButtons ? '' : 'pointer-events-none'
+                        )}
                     >
-                        <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white">
-                            <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                        </svg>
-                    </button>
+                        {/* Pin Button */}
+                        {onPin && (
+                            <button
+                                onClick={e => { e.stopPropagation(); onPin(); }}
+                                className={cn(
+                                    'p-1.5 bg-black/50 rounded-md transition-opacity hover:bg-black/70',
+                                    showBothButtons ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 pointer-events-auto',
+                                    'focus:outline-none'
+                                )}
+                                tabIndex={showBothButtons ? 0 : -1}
+                                aria-label={isPinned ? 'Unpin participant' : 'Pin participant'}
+                            >
+                                <Pin className={cn('w-4 h-4', isPinned ? 'text-blue-500' : 'text-white')} />
+                            </button>
+                        )}
+                        {/* Close (X) Button */}
+                        {((fullscreen && onExitFullscreen) || isMobile) && onExitFullscreen && (
+                            <button
+                                className="p-1.5 bg-black/50 rounded-md hover:bg-black/70 focus:outline-none"
+                                onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
+                                aria-label="Exit fullscreen"
+                            >
+                                <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white">
+                                    <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                </svg>
+                            </button>
+                        )}
+                    </div>
                 )}
+
                 {participant.isVideoOff ? (
                     <div
                         className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-semibold"
@@ -129,32 +164,6 @@ export default function VideoTile({
                         )}
                     </div>
                 )}
-
-                    {/* Top-right controls: pin & cross button side by side in fullscreen, always visible */}
-                    {fullscreen && (
-                        <div className="absolute top-3 right-3 z-20 flex gap-2">
-                            {onPin && (
-                                <button
-                                    onClick={onPin}
-                                    className="w-8 h-8 flex items-center justify-center bg-black/50 rounded-full border border-neutral-700"
-                                    aria-label="Pin participant"
-                                >
-                                    <Pin className={cn('w-5 h-5', isPinned ? 'text-blue-500' : 'text-white')} />
-                                </button>
-                            )}
-                            {onExitFullscreen && (
-                                <button
-                                    className="w-8 h-8 flex items-center justify-center bg-neutral-800 bg-opacity-80 rounded-full hover:bg-neutral-700 transition-colors border border-neutral-700"
-                                    onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
-                                    aria-label="Exit fullscreen"
-                                >
-                                    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white">
-                                        <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
-                                </button>
-                            )}
-                        </div>
-                    )}
 
                 {/* Hand Raised Indicator - top right, next to pin */}
                 {participant.isHandRaised && (
