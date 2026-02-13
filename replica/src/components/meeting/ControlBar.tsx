@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock,  Maximize2, Minimize2
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock, Maximize2, Minimize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -333,12 +333,6 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
       }
-    } else if (!currentIsMuted && currentStream) {
-      // If we are muting, stop the audio tracks to fully release the microphone
-      currentStream.getAudioTracks().forEach(track => {
-        track.stop();
-        console.log("ControlBar: Stopped audio track (muting)");
-      });
     }
 
     toggleAudio();
@@ -381,12 +375,6 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get video stream on toggle:", err);
       }
-    } else if (!currentIsVideoOff && currentStream) {
-      // If we are turning video OFF, stop the video tracks to turn off the camera LED
-      currentStream.getVideoTracks().forEach(track => {
-        track.stop();
-        console.log("ControlBar: Stopped video track (turning off video)");
-      });
     }
 
     toggleVideo();
@@ -934,18 +922,81 @@ export default function ControlBar() {
               <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
                 {/* Controls overlay: ensure z-index and pointer-events */}
                 <div className={cn(
-                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] bg-white border-b",
-                  isMobile ? "px-4 py-3 border-gray-200" : "px-6 py-4 bg-white/90 border-[#e5e7eb]"
-                )} style={{ pointerEvents: 'auto' }}>
-                  <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                    {/* Fixed Icon Section - Removed as requested */}
+                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] pointer-events-auto",
+                  isMobile ? "px-4 py-3 bg-white border-b border-gray-200" : "px-6 py-4 bg-white/90 border-b border-[#e5e7eb]"
+                )}>
+                  {/* Left Group: Title */}
+                  <div className="flex items-center gap-3">
+                    <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-lg" : "text-lg")}>Whiteboard</span>
+                  </div>
 
-                    {/* Scrollable Content (Text + Permissions) */}
-                    <div className={cn("flex items-center gap-3 flex-1", isMobile ? "overflow-x-auto no-scrollbar" : "")}>
-                      <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-xl" : "text-lg")}>Whiteboard</span>
+                  {/* Restored & Persistent Draggable Lock Icon */}
+                  {isHost && (
+                    <motion.div
+                      drag={isMobile}
+                      dragMomentum={false}
+                      initial={
+                        // Read from localStorage synchronously or default to { x: 0, y: 0 }
+                        (() => {
+                          try {
+                            const saved = localStorage.getItem('wb_lock_pos');
+                            return saved ? JSON.parse(saved) : { x: 0, y: 0 };
+                          } catch { return { x: 0, y: 0 }; }
+                        })()
+                      }
+                      onDragEnd={(_, info) => {
+                        // We need to calculate the new absolute position if we want strict persistence
+                        // But for simple offset persistence:
+                        const current = {
+                          x: info.point.x - (info.point.x - info.offset.x), // logic might be complex with offsets
+                          // Simplest way: just read the *final* transform style? 
+                          // Framer motion 'drag' applies transform. 
+                          // Let's just save the offset if we rely on initial={savedOffset}
+                          // BUT: initial only sets the starting transform.
+                        };
+
+                        // Better approach: Since it's a small icon, let's just use the offset ref provided by Framer Motion logic isn't trivial for "absolute" persistence without controlled state.
+                        // However, simplest 'good enough' for this context:
+                        // 1. Get current saved pos
+                        const saved = localStorage.getItem('wb_lock_pos');
+                        const prev = saved ? JSON.parse(saved) : { x: 0, y: 0 };
+
+                        // 2. Add delta
+                        const next = { x: prev.x + info.offset.x, y: prev.y + info.offset.y };
+
+                        // 3. Save
+                        localStorage.setItem('wb_lock_pos', JSON.stringify(next));
+                      }}
+                      // We need to Force the visual position to match the 'initial' on mount?
+                      // Actually, 'initial' sets the starting X/Y translate.
+                      // So if we save constraints correctly, it should work.
+
+                      className={cn(
+                        "bg-green-500 rounded-full p-1.5 flex items-center justify-center shadow-sm cursor-grab active:cursor-grabbing",
+                        isMobile ? "fixed z-[103] touch-none" : "hidden"
+                      )}
+                      style={{
+                        // Check if we have a saved position to set 'top/left' or just rely on translate
+                        // Relying on fixed positioning + translate is safer.
+                        // Let's position it essentially relative to the viewport top-left?
+                        // Or just put it back in the header flow but RELATIVE?
+                        // User said "Wherever I put it". Fixed positioning is best.
+                        top: '16px', // Default anchor
+                        left: '110px', // Default anchor (next to title)
+                      }}
+                      title="Drag to move permissions"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-white" />
+                    </motion.div>
+                  )}
+
+                  {/* Right Group: Dropdown + Cose */}
+                  <div className="flex items-center gap-2">
+                    {/* ... (rest of the code) */}
+                    <div className="flex items-center gap-2">
                       {isHost && (
-                        <div className={cn("flex items-center gap-2 flex-none", isMobile ? "ml-2" : "ml-4")}>
-                          <span className={cn("text-gray-600 font-medium whitespace-nowrap", isMobile ? "hidden sm:inline text-sm" : "text-sm")}>
+                        <div className={cn(!isMobile && "flex items-center gap-2")}>
+                          <span className={cn("text-gray-600 font-medium whitespace-nowrap hidden", !isMobile && "inline text-sm")}>
                             Who can edit?
                           </span>
                           <select
@@ -953,7 +1004,7 @@ export default function ControlBar() {
                             onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
                             className={cn(
                               "bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm",
-                              isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 min-w-[100px]"
+                              isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 w-[110px] text-sm"
                             )}
                           >
                             <option value="hostOnly">Only Host</option>
@@ -962,325 +1013,325 @@ export default function ControlBar() {
                           </select>
                         </div>
                       )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 items-center flex-none">
-                    {canEditWhiteboard && (
-                      <button
-                        type="button"
-                        onClick={() => { clearWhiteboard(); }}
-                        className={cn(
-                          "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
-                          isMobile && "hidden"
-                        )}
-                      >
-                        Clear
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => { closeWhiteboard(); }}
-                      className={cn(
-                        "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
-                        isMobile && "p-2 hover:bg-gray-100 rounded-full"
-                      )}
-                    >
-                      <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
-                    </button>
-                  </div>
-                </div>
 
-                {canEditWhiteboard && (
-                  <div
-                    className={cn(
-                      "absolute left-1/2 -translate-x-1/2 z-[102] bg-white rounded-xl border border-gray-200 shadow-xl flex items-center gap-4 transition-all",
-                      isMobile ? "top-16 max-w-[95vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
-                    )}
-                    style={{ pointerEvents: 'auto' }}
-                  >
-                    <div className={cn("flex items-center gap-4", isMobile ? "min-w-max px-2" : "")}>
-                      {/* Pen/Eraser toggle */}
-                      <div className="flex bg-gray-100 p-1 rounded-lg flex-none">
-                        <button
-                          onClick={() => setWhiteboardTool('pen')}
-                          className={cn(
-                            "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
-                            whiteboardTool === 'pen' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
-                          )}
-                        >
-                          Pen
-                        </button>
-                        <button
-                          onClick={() => setWhiteboardTool('eraser')}
-                          className={cn(
-                            "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
-                            whiteboardTool === 'eraser' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
-                          )}
-                        >
-                          Eraser
-                        </button>
-                      </div>
-                      <div className="w-px h-6 bg-gray-200 flex-none" />
-                      {/* Color picker */}
                       <div className="flex gap-2 items-center flex-none">
-                        {['#111111', '#EF4444', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'].map(c => (
-                          <button
-                            key={c}
-                            onClick={() => setWhiteboardColor(c)}
-                            className={cn(
-                              "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 flex-none",
-                              whiteboardColor === c ? 'border-blue-500 scale-110' : 'border-transparent'
-                            )}
-                            style={{ background: c }}
-                          />
-                        ))}
-                      </div>
-                      <div className="w-px h-6 bg-gray-200 flex-none" />
-                      {/* Size picker */}
-                      <div className="flex items-center gap-2 flex-none">
-                        <select
-                          value={whiteboardSize}
-                          onChange={e => setWhiteboardSize(Number(e.target.value))}
-                          className="bg-gray-50 text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          {[2, 4, 8, 12, 16].map(s => <option key={s} value={s}>{s}px</option>)}
-                        </select>
-                      </div>
-                      {isMobile && (
-                        <>
-                          <div className="w-px h-6 bg-gray-200 flex-none" />
+                        {canEditWhiteboard && (
                           <button
                             type="button"
                             onClick={() => { clearWhiteboard(); }}
-                            className="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold flex-none"
+                            className={cn(
+                              "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
+                              isMobile && "hidden"
+                            )}
                           >
                             Clear
                           </button>
-                        </>
-                      )}
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { closeWhiteboard(); }}
+                          className={cn(
+                            "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
+                            isMobile && "p-1"
+                          )}
+                        >
+                          <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Canvas: ensure controls overlay is above canvas */}
-                <canvas
-                  ref={canvasRef}
-                  className={cn(
-                    "absolute inset-0 w-full h-full z-[101]",
-                    canEditWhiteboard ? "cursor-crosshair" : "cursor-default"
+                  {canEditWhiteboard && (
+                    <div
+                      className={cn(
+                        "absolute left-1/2 -translate-x-1/2 z-[102] bg-white rounded-xl border border-gray-200 shadow-xl flex items-center gap-4 transition-all",
+                        isMobile ? "top-16 max-w-[90vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
+                      )}
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      <div className={cn("flex items-center gap-4", isMobile ? "min-w-max px-2" : "")}>
+                        {/* Pen/Eraser toggle */}
+                        <div className="flex bg-gray-100 p-1 rounded-lg flex-none">
+                          <button
+                            onClick={() => setWhiteboardTool('pen')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
+                              whiteboardTool === 'pen' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
+                            )}
+                          >
+                            Pen
+                          </button>
+                          <button
+                            onClick={() => setWhiteboardTool('eraser')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
+                              whiteboardTool === 'eraser' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
+                            )}
+                          >
+                            Eraser
+                          </button>
+                        </div>
+                        <div className="w-px h-6 bg-gray-200 flex-none" />
+                        {/* Color picker */}
+                        <div className="flex gap-2 items-center flex-none">
+                          {['#111111', '#EF4444', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'].map(c => (
+                            <button
+                              key={c}
+                              onClick={() => setWhiteboardColor(c)}
+                              className={cn(
+                                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 flex-none",
+                                whiteboardColor === c ? 'border-blue-500 scale-110' : 'border-transparent'
+                              )}
+                              style={{ background: c }}
+                            />
+                          ))}
+                        </div>
+                        <div className="w-px h-6 bg-gray-200 flex-none" />
+                        {/* Size picker */}
+                        <div className="flex items-center gap-2 flex-none">
+                          <select
+                            value={whiteboardSize}
+                            onChange={e => setWhiteboardSize(Number(e.target.value))}
+                            className="bg-gray-50 text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            {[2, 4, 8, 12, 16].map(s => <option key={s} value={s}>{s}px</option>)}
+                          </select>
+                        </div>
+                        {isMobile && (
+                          <>
+                            <div className="w-px h-6 bg-gray-200 flex-none" />
+                            <button
+                              type="button"
+                              onClick={() => { clearWhiteboard(); }}
+                              className="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold flex-none"
+                            >
+                              Clear
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   )}
-                  style={{
-                    zIndex: 101,
-                    pointerEvents: canEditWhiteboard ? 'auto' : 'none',
-                    touchAction: 'none'
-                  }}
-                  onPointerDown={handlePointerDown}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                  onPointerLeave={handlePointerUp}
-                />
-              </div>
+
+                  {/* Canvas: ensure controls overlay is above canvas */}
+                  <canvas
+                    ref={canvasRef}
+                    className={cn(
+                      "absolute inset-0 w-full h-full z-[101]",
+                      canEditWhiteboard ? "cursor-crosshair" : "cursor-default"
+                    )}
+                    style={{
+                      zIndex: 101,
+                      pointerEvents: canEditWhiteboard ? 'auto' : 'none',
+                      touchAction: 'none'
+                    }}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerLeave={handlePointerUp}
+                  />
+                </div>
             )}
 
-          </div>
+              </div>
 
           {/* End Button - Far Right */}
-          <div className="flex-none ml-4">
-            <Button
-              onClick={() => setShowLeaveConfirm(true)}
-              className="bg-[#E53935] hover:bg-[#D32F2F] text-white font-semibold rounded-lg px-4 py-1.5 h-auto text-sm"
-            >
-              End
-            </Button>
+            <div className="flex-none ml-4">
+              <Button
+                onClick={() => setShowLeaveConfirm(true)}
+                className="bg-[#E53935] hover:bg-[#D32F2F] text-white font-semibold rounded-lg px-4 py-1.5 h-auto text-sm"
+              >
+                End
+              </Button>
+            </div>
+
           </div>
-
         </div>
-      </div>
 
-      <SubscriptionModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
+        <SubscriptionModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
 
-      <ShareScreenModal
-        open={showShareModal}
-        onOpenChange={setShowShareModal}
-        onConfirm={handleStartScreenShare}
-      />
+        <ShareScreenModal
+          open={showShareModal}
+          onOpenChange={setShowShareModal}
+          onConfirm={handleStartScreenShare}
+        />
 
-      {/* Leave Confirmation Modal */}
-      <AnimatePresence>
-        {showLeaveConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
-            onClick={() => setShowLeaveConfirm(false)}
-          >
+        {/* Leave Confirmation Modal */}
+        <AnimatePresence>
+          {showLeaveConfirm && (
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#232323] border border-[#333] rounded-xl p-6 max-w-sm w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+              onClick={() => setShowLeaveConfirm(false)}
             >
-              <h3 className="text-xl font-bold text-white mb-2">End Meeting?</h3>
-              <p className="text-gray-400 mb-6">
-                Are you sure you want to end or leave this meeting?
-              </p>
-              <div className="flex flex-col gap-3">
-                {isHost && (
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[#232323] border border-[#333] rounded-xl p-6 max-w-sm w-full shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-xl font-bold text-white mb-2">End Meeting?</h3>
+                <p className="text-gray-400 mb-6">
+                  Are you sure you want to end or leave this meeting?
+                </p>
+                <div className="flex flex-col gap-3">
+                  {isHost && (
+                    <Button
+                      onClick={handleLeave}
+                      className="w-full bg-[#E53935] hover:bg-[#D32F2F] text-white py-6"
+                    >
+                      End Meeting for All
+                    </Button>
+                  )}
                   <Button
                     onClick={handleLeave}
-                    className="w-full bg-[#E53935] hover:bg-[#D32F2F] text-white py-6"
+                    variant={isHost ? "secondary" : "destructive"}
+                    className={cn("w-full py-6", !isHost && "bg-[#E53935] hover:bg-[#D32F2F] text-white")}
                   >
-                    End Meeting for All
+                    Leave Meeting
                   </Button>
-                )}
-                <Button
-                  onClick={handleLeave}
-                  variant={isHost ? "secondary" : "destructive"}
-                  className={cn("w-full py-6", !isHost && "bg-[#E53935] hover:bg-[#D32F2F] text-white")}
-                >
-                  Leave Meeting
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => setShowLeaveConfirm(false)}
-                  className="mt-2 text-gray-300 hover:text-white hover:bg-[#333]"
-                >
-                  Cancel
-                </Button>
-              </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowLeaveConfirm(false)}
+                    className="mt-2 text-gray-300 hover:text-white hover:bg-[#333]"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Mic Confirmation Modal */}
-      <AnimatePresence>
-        {showMicConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
-            onClick={() => setMicConfirm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold text-white mb-2">Microphone</h3>
-              <p className="text-gray-400 text-sm mb-6">
-                Are you sure you want to {isAudioMuted ? 'unmute' : 'mute'} your microphone?
-              </p>
-              <div className="flex gap-3 justify-end">
-                <Button
-                  variant="ghost"
-                  onClick={() => setMicConfirm(false)}
-                  className="text-gray-300 hover:text-white hover:bg-[#333]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  ref={yesButtonRef}
-                  onClick={confirmAudioToggle}
-                  className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
-                >
-                  Yes
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Video Confirmation Modal */}
-      <AnimatePresence>
-        {showVideoConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
-            onClick={() => setVideoConfirm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold text-white mb-2">Camera</h3>
-              <p className="text-gray-400 text-sm mb-6">
-                Are you sure you want to {isVideoOff ? 'turn on' : 'turn off'} your camera?
-              </p>
-              <div className="flex gap-3 justify-end">
-                <Button
-                  variant="ghost"
-                  onClick={() => setVideoConfirm(false)}
-                  className="text-gray-300 hover:text-white hover:bg-[#333]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  ref={yesButtonRef}
-                  onClick={confirmVideoToggle}
-                  className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
-                >
-                  Yes
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
-
-// Helper Component for consistent button styling
-interface ControlButtonProps {
-  icon: any;
-  label: string;
-  onClick: () => void;
-  active?: boolean; // Toggled state (e.g. mute is red)
-  isActiveState?: boolean; // Active UI state (e.g. panel open is blue)
-  className?: string;
-  badge?: number | string;
-}
-
-// Remove ref usage from ControlButton, ensure no ref is passed to function component
-function ControlButton({ icon: Icon, label, onClick, active, isActiveState, className, badge }: ControlButtonProps) {
-  return (
-    <div
-      className={cn("group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem] flex-none", className)}
-      onClick={onClick}
-      tabIndex={0}
-      role="button"
-      aria-label={label}
-    >
-      <div className="relative">
-        <div className={cn(
-          "relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
-          isActiveState ? "bg-[#333] text-[#0B5CFF]" : "hover:bg-[#333] text-gray-200",
-          active && "text-red-500",
-          className
-        )}>
-          <Icon className={cn("w-5 h-5", active && "fill-current")} strokeWidth={2} />
-          {badge !== undefined && (typeof badge === 'number' ? badge > 0 : badge.length > 0) && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] h-[16px] flex items-center justify-center">
-              {badge}
-            </span>
           )}
+        </AnimatePresence>
+
+        {/* Mic Confirmation Modal */}
+        <AnimatePresence>
+          {showMicConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+              onClick={() => setMicConfirm(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-lg font-bold text-white mb-2">Microphone</h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Are you sure you want to {isAudioMuted ? 'unmute' : 'mute'} your microphone?
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setMicConfirm(false)}
+                    className="text-gray-300 hover:text-white hover:bg-[#333]"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    ref={yesButtonRef}
+                    onClick={confirmAudioToggle}
+                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                  >
+                    Yes
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Video Confirmation Modal */}
+        <AnimatePresence>
+          {showVideoConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+              onClick={() => setVideoConfirm(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-lg font-bold text-white mb-2">Camera</h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Are you sure you want to {isVideoOff ? 'turn on' : 'turn off'} your camera?
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setVideoConfirm(false)}
+                    className="text-gray-300 hover:text-white hover:bg-[#333]"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    ref={yesButtonRef}
+                    onClick={confirmVideoToggle}
+                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                  >
+                    Yes
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
+      );
+}
+
+      // Helper Component for consistent button styling
+      interface ControlButtonProps {
+        icon: any;
+      label: string;
+  onClick: () => void;
+      active?: boolean; // Toggled state (e.g. mute is red)
+      isActiveState?: boolean; // Active UI state (e.g. panel open is blue)
+      className?: string;
+      badge?: number | string;
+}
+
+      // Remove ref usage from ControlButton, ensure no ref is passed to function component
+      function ControlButton({icon: Icon, label, onClick, active, isActiveState, className, badge }: ControlButtonProps) {
+  return (
+      <div
+        className={cn("group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem] flex-none", className)}
+        onClick={onClick}
+        tabIndex={0}
+        role="button"
+        aria-label={label}
+      >
+        <div className="relative">
+          <div className={cn(
+            "relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
+            isActiveState ? "bg-[#333] text-[#0B5CFF]" : "hover:bg-[#333] text-gray-200",
+            active && "text-red-500",
+            className
+          )}>
+            <Icon className={cn("w-5 h-5", active && "fill-current")} strokeWidth={2} />
+            {badge !== undefined && (typeof badge === 'number' ? badge > 0 : badge.length > 0) && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] h-[16px] flex items-center justify-center">
+                {badge}
+              </span>
+            )}
+          </div>
         </div>
+        <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 group-hover:text-white whitespace-nowrap">
+          {label}
+        </span>
       </div>
-      <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 group-hover:text-white whitespace-nowrap">
-        {label}
-      </span>
-    </div>
-  );
+      );
 }

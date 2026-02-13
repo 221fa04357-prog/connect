@@ -31,6 +31,13 @@ interface MeetingState {
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
 
+  isMiniVisible: boolean;
+  meetingJoined: boolean;
+  isInsideMeeting: boolean;
+  setMiniVisible: (visible: boolean) => void;
+  setMeetingJoined: (joined: boolean) => void;
+  setIsInsideMeeting: (inside: boolean) => void;
+
   // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
@@ -102,6 +109,13 @@ export const useMeetingStore = create<MeetingState>()(
       showMicConfirm: false,
       showVideoConfirm: false,
 
+      isMiniVisible: false,
+      meetingJoined: false,
+      isInsideMeeting: false,
+      setMiniVisible: (visible) => set({ isMiniVisible: visible }),
+      setMeetingJoined: (joined) => set({ meetingJoined: joined }),
+      setIsInsideMeeting: (inside) => set({ isInsideMeeting: inside }),
+
       connectionQuality: 'excellent',
 
       // ================= ACTIONS =================
@@ -114,10 +128,22 @@ export const useMeetingStore = create<MeetingState>()(
         set((state) => ({ showSelfView: !state.showSelfView })),
 
       toggleAudio: () =>
-        set((state) => ({ isAudioMuted: !state.isAudioMuted })),
+        set((state) => {
+          const nextMuted = !state.isAudioMuted;
+          if (state.localStream) {
+            state.localStream.getAudioTracks().forEach((t) => (t.enabled = !nextMuted));
+          }
+          return { isAudioMuted: nextMuted };
+        }),
 
       toggleVideo: () =>
-        set((state) => ({ isVideoOff: !state.isVideoOff })),
+        set((state) => {
+          const nextVideoOff = !state.isVideoOff;
+          if (state.localStream) {
+            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !nextVideoOff));
+          }
+          return { isVideoOff: nextVideoOff };
+        }),
 
       toggleScreenShare: () =>
         set((state) => ({ isScreenSharing: !state.isScreenSharing })),
@@ -163,7 +189,22 @@ export const useMeetingStore = create<MeetingState>()(
       toggleBackgroundBlur: () =>
         set((state) => ({ isBackgroundBlurred: !state.isBackgroundBlurred })),
 
-      leaveMeeting: () => set({ meeting: null }),
+      leaveMeeting: () => {
+        const state = useMeetingStore.getState();
+        if (state.localStream) {
+          state.localStream.getTracks().forEach((track) => track.stop());
+        }
+        set({
+          meeting: null,
+          localStream: null,
+          isScreenSharing: false,
+          isRecording: false,
+          recordingStartTime: null,
+          meetingJoined: false,
+          isInsideMeeting: false,
+          isMiniVisible: false,
+        });
+      },
 
       setScreenShareStream: (stream) =>
         set({ screenShareStream: stream }),
