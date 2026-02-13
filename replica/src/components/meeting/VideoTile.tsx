@@ -16,6 +16,7 @@ interface VideoTileProps {
     className?: string;
     onClick?: () => void;
     fullscreen?: boolean;
+    onExitFullscreen?: () => void;
 }
 
 export default function VideoTile({
@@ -25,7 +26,8 @@ export default function VideoTile({
     onPin,
     className,
     onClick,
-    fullscreen
+    fullscreen,
+    onExitFullscreen
 }: VideoTileProps) {
     const {
         updateParticipant,
@@ -82,13 +84,25 @@ export default function VideoTile({
             className={cn(
                 'relative aspect-video bg-[#232323] rounded-lg overflow-hidden group min-h-[180px] cursor-pointer',
                 isPinned && 'ring-2 ring-blue-500',
-                fullscreen && 'w-[80vw] h-[80vh] max-w-4xl max-h-[90vh] mx-auto shadow-2xl z-50',
+                fullscreen && 'w-full h-full',
                 className
             )}
             onClick={onClick}
         >
             {/* Main Content (Video/Avatar) */}
             <div className="absolute inset-0 flex items-center justify-center bg-black">
+                {/* Cross button always visible in top-right */}
+                {fullscreen && onExitFullscreen && (
+                    <button
+                        className="absolute top-3 right-3 z-20 w-8 h-8 flex items-center justify-center bg-neutral-800 bg-opacity-80 rounded-full hover:bg-neutral-700 transition-colors border border-neutral-700"
+                        onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
+                        aria-label="Exit fullscreen"
+                    >
+                        <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white">
+                            <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                    </button>
+                )}
                 {participant.isVideoOff ? (
                     <div
                         className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-semibold"
@@ -116,15 +130,31 @@ export default function VideoTile({
                     </div>
                 )}
 
-                {/* Pin Button */}
-                {onPin && (
-                    <button
-                        onClick={onPin}
-                        className="absolute top-2 right-2 p-1.5 bg-black/50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70 z-10"
-                    >
-                        <Pin className={cn('w-4 h-4', isPinned ? 'text-blue-500' : 'text-white')} />
-                    </button>
-                )}
+                    {/* Top-right controls: pin & cross button side by side in fullscreen, always visible */}
+                    {fullscreen && (
+                        <div className="absolute top-3 right-3 z-20 flex gap-2">
+                            {onPin && (
+                                <button
+                                    onClick={onPin}
+                                    className="w-8 h-8 flex items-center justify-center bg-black/50 rounded-full border border-neutral-700"
+                                    aria-label="Pin participant"
+                                >
+                                    <Pin className={cn('w-5 h-5', isPinned ? 'text-blue-500' : 'text-white')} />
+                                </button>
+                            )}
+                            {onExitFullscreen && (
+                                <button
+                                    className="w-8 h-8 flex items-center justify-center bg-neutral-800 bg-opacity-80 rounded-full hover:bg-neutral-700 transition-colors border border-neutral-700"
+                                    onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
+                                    aria-label="Exit fullscreen"
+                                >
+                                    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white">
+                                        <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                 {/* Hand Raised Indicator - top right, next to pin */}
                 {participant.isHandRaised && (

@@ -44,55 +44,19 @@ export default function VideoGrid() {
     const participant = participants.find(p => p.id === focusedParticipantId);
     if (!participant) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 transition-all">
-        <VideoTile
-          participant={participant}
-          isActive={participant.id === activeSpeakerId}
-          isPinned={pinnedParticipantId === participant.id}
-          onPin={() => handlePin(participant.id)}
-          onClick={() => setFocusedParticipant(null)}
-          fullscreen
-        />
-        <button
-          className="absolute top-4 right-4 bg-white bg-opacity-80 rounded-full px-4 py-2 text-black font-semibold shadow-lg hover:bg-opacity-100 transition"
-          onClick={() => setFocusedParticipant(null)}
-        >
-          Exit Fullscreen
-        </button>
-      </div>
-    );
-  }
-  if (viewMode === 'speaker') {
-    const speaker = visibleParticipants.find(p => p.id === activeSpeakerId) || visibleParticipants[0];
-    const others = visibleParticipants.filter(p => p.id !== speaker?.id);
-
-    return (
-      <div className="h-full flex flex-col gap-2 p-4">
-        {/* Main Speaker */}
-        <div className="flex-1">
-          {speaker && (
+      <div className="relative h-dvh overflow-hidden">
+        <div className="h-full pt-[30px] pb-[105px] flex items-center justify-center">
+          <div className="w-full h-full bg-black rounded-xl overflow-hidden">
             <VideoTile
-              participant={speaker}
-              isActive={true}
-              isPinned={pinnedParticipantId === speaker.id}
-              onPin={() => handlePin(speaker.id)}
-              className="h-full"
-            />
-          )}
-        </div>
-
-        {/* Thumbnails */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {others.map((participant) => (
-            <VideoTile
-              key={participant.id}
               participant={participant}
               isActive={participant.id === activeSpeakerId}
               isPinned={pinnedParticipantId === participant.id}
               onPin={() => handlePin(participant.id)}
-              className="w-32 flex-shrink-0"
+              onClick={() => setFocusedParticipant(null)}
+              fullscreen
+              onExitFullscreen={() => setFocusedParticipant(null)}
             />
-          ))}
+          </div>
         </div>
       </div>
     );
