@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock,  Maximize2, Minimize2
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock, Maximize2, Minimize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -333,12 +333,6 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get audio stream on toggle:", err);
       }
-    } else if (!currentIsMuted && currentStream) {
-      // If we are muting, stop the audio tracks to fully release the microphone
-      currentStream.getAudioTracks().forEach(track => {
-        track.stop();
-        console.log("ControlBar: Stopped audio track (muting)");
-      });
     }
 
     toggleAudio();
@@ -381,12 +375,6 @@ export default function ControlBar() {
       } catch (err) {
         console.error("Failed to get video stream on toggle:", err);
       }
-    } else if (!currentIsVideoOff && currentStream) {
-      // If we are turning video OFF, stop the video tracks to turn off the camera LED
-      currentStream.getVideoTracks().forEach(track => {
-        track.stop();
-        console.log("ControlBar: Stopped video track (turning off video)");
-      });
     }
 
     toggleVideo();
@@ -934,59 +922,60 @@ export default function ControlBar() {
               <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
                 {/* Controls overlay: ensure z-index and pointer-events */}
                 <div className={cn(
-                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] bg-white border-b",
-                  isMobile ? "px-4 py-3 border-gray-200" : "px-6 py-4 bg-white/90 border-[#e5e7eb]"
-                )} style={{ pointerEvents: 'auto' }}>
-                  <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                    {/* Fixed Icon Section - Removed as requested */}
-
-                    {/* Scrollable Content (Text + Permissions) */}
-                    <div className={cn("flex items-center gap-3 flex-1", isMobile ? "overflow-x-auto no-scrollbar" : "")}>
-                      <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-xl" : "text-lg")}>Whiteboard</span>
-                      {isHost && (
-                        <div className={cn("flex items-center gap-2 flex-none", isMobile ? "ml-2" : "ml-4")}>
-                          <span className={cn("text-gray-600 font-medium whitespace-nowrap", isMobile ? "hidden sm:inline text-sm" : "text-sm")}>
-                            Who can edit?
-                          </span>
-                          <select
-                            value={whiteboardEditAccess}
-                            onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
-                            className={cn(
-                              "bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm",
-                              isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 min-w-[100px]"
-                            )}
-                          >
-                            <option value="hostOnly">Only Host</option>
-                            <option value="coHost">Host + Co-host</option>
-                            <option value="everyone">Everyone</option>
-                          </select>
-                        </div>
-                      )}
-                    </div>
+                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] pointer-events-auto",
+                  isMobile ? "px-4 py-3 bg-white border-b border-gray-200" : "px-6 py-4 bg-white/90 border-b border-[#e5e7eb]"
+                )}>
+                  {/* Left Group: Title */}
+                  <div className="flex items-center gap-3">
+                    <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-lg" : "text-lg")}>Whiteboard</span>
                   </div>
-                  <div className="flex gap-2 items-center flex-none">
-                    {canEditWhiteboard && (
+
+                  {/* Right Group: Dropdown + Cose */}
+                  <div className="flex items-center gap-2">
+                    {isHost && (
+                      <div className={cn(!isMobile && "flex items-center gap-2")}>
+                        <span className={cn("text-gray-600 font-medium whitespace-nowrap hidden", !isMobile && "inline text-sm")}>
+                          Who can edit?
+                        </span>
+                        <select
+                          value={whiteboardEditAccess}
+                          onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
+                          className={cn(
+                            "bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm",
+                            isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 w-[110px] text-sm"
+                          )}
+                        >
+                          <option value="hostOnly">Only Host</option>
+                          <option value="coHost">Host + Co-host</option>
+                          <option value="everyone">Everyone</option>
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 items-center flex-none">
+                      {canEditWhiteboard && (
+                        <button
+                          type="button"
+                          onClick={() => { clearWhiteboard(); }}
+                          className={cn(
+                            "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
+                            isMobile && "hidden"
+                          )}
+                        >
+                          Clear
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => { clearWhiteboard(); }}
+                        onClick={() => { closeWhiteboard(); }}
                         className={cn(
-                          "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
-                          isMobile && "hidden"
+                          "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
+                          isMobile && "p-1"
                         )}
                       >
-                        Clear
+                        <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => { closeWhiteboard(); }}
-                      className={cn(
-                        "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
-                        isMobile && "p-2 hover:bg-gray-100 rounded-full"
-                      )}
-                    >
-                      <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
-                    </button>
+                    </div>
                   </div>
                 </div>
 
@@ -994,7 +983,7 @@ export default function ControlBar() {
                   <div
                     className={cn(
                       "absolute left-1/2 -translate-x-1/2 z-[102] bg-white rounded-xl border border-gray-200 shadow-xl flex items-center gap-4 transition-all",
-                      isMobile ? "top-16 max-w-[95vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
+                      isMobile ? "top-16 max-w-[90vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
                     )}
                     style={{ pointerEvents: 'auto' }}
                   >

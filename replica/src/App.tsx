@@ -13,86 +13,268 @@ import MeetingRecap from './pages/MeetingRecap';
 import RecapsList from './pages/RecapsList';
 import { useAuthStore } from './stores/useAuthStore';
 import { useGuestSessionStore } from './stores/useGuestSessionStore';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMeetingStore } from './stores/useMeetingStore';
 import { useParticipantsStore } from './stores/useParticipantsStore';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Maximize2, Move, User as UserIcon } from 'lucide-react';
+import { Maximize2, Move, User as UserIcon, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 const GlobalMiniPreview = () => {
-  const { meeting } = useMeetingStore();
-  const { participants, activeSpeakerId } = useParticipantsStore();
+  const {
+    localStream,
+    isAudioMuted,
+    isVideoOff,
+    toggleAudio,
+    toggleVideo,
+    isMiniVisible,
+    setMiniVisible,
+    meetingJoined,
+    isInsideMeeting,
+    setIsInsideMeeting
+  } = useMeetingStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const miniVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Ensure we are fully joined to a meeting and NOT on the main room page
-  const isOnMeetingPage = location.pathname.startsWith('/meeting');
-  const showPreview = !!meeting && !isOnMeetingPage;
+  // 1. SYNC ROUTE STATE: Automatic route-based visibility
+  useEffect(() => {
+    const isMeetingPage = location.pathname.startsWith("/meeting");
+    const isJoinPage = location.pathname.startsWith("/join-meeting");
+    const isCreatePage = location.pathname.startsWith("/create-meeting");
+    const isLandingPage = location.pathname === "/";
+    const insideMeetingContext = isMeetingPage || isJoinPage || isCreatePage || isLandingPage;
 
-  if (!showPreview) return null;
+    setIsInsideMeeting(insideMeetingContext);
 
-  const activeSpeaker = participants?.find(p => p.id === activeSpeakerId) || participants?.[0];
+    if (insideMeetingContext) {
+      setMiniVisible(false); // Hide mini when actively inside meeting room
+    } else if (meetingJoined) {
+      setMiniVisible(true); // Automatically show mini if meeting joined and navigated away
+    }
+  }, [location.pathname, meetingJoined, setIsInsideMeeting, setMiniVisible]);
+
+  // 2. MULTI-LAYER TAB-LEAVE DETECTION (Visibility, Blur, PageHide)
+  useEffect(() => {
+    if (!meetingJoined) return;
+
+    const showMini = () => {
+      // Force mini visible if meeting is active but focus is lost
+      if (useMeetingStore.getState().isInsideMeeting) {
+        setIsInsideMeeting(false);
+        setMiniVisible(true);
+      }
+    };
+
+    const hideMiniIfReturned = () => {
+      // User is back to the app
+      if (meetingJoined) {
+        const isMeetingPage = location.pathname.startsWith("/meeting");
+        const isJoinPage = location.pathname.startsWith("/join-meeting");
+        const isCreatePage = location.pathname.startsWith("/create-meeting");
+        const isLandingPage = location.pathname === "/";
+
+        if (isMeetingPage || isJoinPage || isCreatePage || isLandingPage) {
+          setIsInsideMeeting(true);
+          setMiniVisible(false); // 🚨 FORCE HIDE
+        }
+      }
+    };
+
+    // TAB HIDDEN (MOST IMPORTANT)
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        showMini();
+      } else if (document.visibilityState === "visible") {
+        hideMiniIfReturned();
+      }
+    };
+
+    // WINDOW LOST FOCUS (Alt+Tab)
+    const handleBlur = () => {
+      showMini();
+    };
+
+    // MOBILE APP SWITCH / BROWSER MINIMIZE
+    const handlePageHide = () => {
+      showMini();
+    };
+
+    const handleFocus = () => {
+      hideMiniIfReturned();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [meetingJoined, setIsInsideMeeting, setMiniVisible, location.pathname]);
+
+  // 3. TRACK SYNC: Ensure hardware tracks match toggle state
+  useEffect(() => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach((t) => (t.enabled = !isAudioMuted));
+      localStream.getVideoTracks().forEach((t) => (t.enabled = !isVideoOff));
+    }
+  }, [isAudioMuted, isVideoOff, localStream]);
+
+  // 4. BIND STREAM: Attach live stream to the mini video reference
+  useEffect(() => {
+    if (miniVideoRef.current && localStream) {
+      // Ensure PiP is explicitly allowed on the video element
+      miniVideoRef.current.disablePictureInPicture = false;
+      miniVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, isVideoOff]);
+
+  // 5. PICTURE-IN-PICTURE (PiP) ENGINE: WhatsApp/Meet Pro logic
+  useEffect(() => {
+    const handleVisibility = async () => {
+      // Trigger PiP ONLY when meeting is active and user leaves the tab/app
+      if (document.hidden && meetingJoined) {
+        const video = miniVideoRef.current;
+        if (video && document.pictureInPictureEnabled) {
+          try {
+            // Only request if not already in PiP
+            if (document.pictureInPictureElement !== video && video.readyState >= 2) {
+              await video.requestPictureInPicture();
+            }
+          } catch (err) {
+            console.warn("PiP request failed:", err);
+          }
+        }
+      }
+    };
+
+    const handleFocus = async () => {
+      // Automatically exit PiP when user returns to the app
+      if (document.pictureInPictureElement) {
+        try {
+          await document.exitPictureInPicture();
+        } catch (err) {
+          console.warn("Exit PiP failed:", err);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [meetingJoined, isInsideMeeting]);
+
+  // FINAL RENDERING RULE: Show ONLY if meeting is active but user is NOT viewing it
+  // Path check is ADDED to prevent duplicate mini-preview while in the meeting room
+  // FINAL RENDERING RULE: Show ONLY if meeting is active but user is NOT viewing it
+  // Path check is ADDED to prevent duplicate mini-preview while in the meeting room
+  const isMeetingPage = location.pathname.startsWith("/meeting");
+  const isJoinPage = location.pathname.startsWith("/join-meeting");
+  const isCreatePage = location.pathname.startsWith("/create-meeting");
+  const isLandingPage = location.pathname === "/";
+
+  const shouldBeVisible = meetingJoined && !isInsideMeeting && isMiniVisible && !isMeetingPage && !isJoinPage && !isCreatePage && !isLandingPage;
 
   return (
     <AnimatePresence>
       <motion.div
         drag
         dragMomentum={false}
-        initial={{ opacity: 0, scale: 0.8, x: 20, y: 20 }}
-        animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-        exit={{ opacity: 0, scale: 0.8 }}
+        initial={false}
+        animate={{
+          opacity: shouldBeVisible ? 1 : 0,
+          scale: shouldBeVisible ? 1 : 0.8,
+          y: shouldBeVisible ? 0 : 20
+        }}
+        transition={{ duration: 0.2 }}
         className={cn(
-          "fixed bottom-20 right-6 z-[10000] overflow-hidden rounded-xl bg-[#1A1A1A] border border-white/10 shadow-2xl transition-shadow hover:shadow-blue-500/20 group cursor-pointer",
-          isMobile ? "w-[140px] h-[85px]" : "w-[240px] h-[135px]"
+          "fixed bottom-5 right-5 z-[99999] overflow-hidden rounded-[14px] bg-black shadow-[0_10px_40px_rgba(0,0,0,0.5)] cursor-pointer group",
+          "w-[220px] h-[130px]"
         )}
-        onClick={() => navigate('/meeting')}
+        style={{
+          opacity: shouldBeVisible ? 1 : 0,
+          pointerEvents: shouldBeVisible ? 'auto' : 'none',
+          position: 'fixed'
+        }}
+        onClick={() => {
+          setMiniVisible(false);
+          navigate('/meeting');
+        }}
       >
-        <div className="absolute inset-0 bg-[#0A0A0A] flex items-center justify-center">
-          {activeSpeaker ? (
-            activeSpeaker.isVideoOff ? (
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white text-lg font-bold"
-                style={{ backgroundColor: activeSpeaker.avatar || '#333' }}
-              >
-                {activeSpeaker.name?.charAt(0) || 'M'}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-1">
-                <UserIcon className="w-8 h-8 text-gray-600" />
-              </div>
-            )
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-lg font-bold">
-              ?
-            </div>
+        {/* Priority 1: Live Video (Always Mounted to prevent restart) */}
+        <video
+          ref={miniVideoRef}
+          autoPlay
+          muted
+          playsInline
+          className={cn(
+            "w-full h-full object-cover transform -scale-x-100 transition-opacity duration-300",
+            isVideoOff || !localStream ? "opacity-0 invisible" : "opacity-100 visible"
           )}
-        </div>
-        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2 pointer-events-none">
-          <div className="flex justify-between items-start">
-            <div className="bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px] text-white font-medium flex items-center gap-1">
-              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-              LIVE
-            </div>
-            <Move className="w-3 h-3 text-white/50" />
-          </div>
-          <div className="flex justify-between items-end">
-            <span className="text-[10px] text-white font-medium truncate max-w-[60px]">
-              {activeSpeaker?.name}
-            </span>
-            <div className="bg-blue-600 p-1 rounded-md">
-              <Maximize2 className="w-3 h-3 text-white" />
-            </div>
+        />
+
+        {/* Priority 2: Avatar (Always Mounted - Fallback when Camera is OFF) */}
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-[#1a1a1a] transition-opacity duration-300",
+            !isVideoOff && localStream ? "opacity-0 invisible" : "opacity-100 visible"
+          )}
+        >
+          <div className="w-12 h-12 rounded-full bg-[#333] flex items-center justify-center text-white text-xl font-bold border border-white/10">
+            <UserIcon className="w-6 h-6 text-gray-400" />
           </div>
         </div>
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity">
-          <div className="flex flex-col items-center gap-1">
-            <Maximize2 className="w-5 h-5 text-white" />
-            <span className="text-[10px] text-white font-bold uppercase tracking-wider">Expand Meeting</span>
+
+        {/* HUD Overlay - Status / LIVE Badge */}
+        <div className="absolute top-2 left-2 z-[2] pointer-events-none">
+          <div className="bg-red-600 px-1.5 py-0.5 rounded text-[9px] text-white font-bold flex items-center gap-1 shadow-lg">
+            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+            LIVE
           </div>
+        </div>
+
+        {/* Sync Controls: Toggles update both Hardware AND global meeting state */}
+        <div className="absolute bottom-[6px] left-[6px] z-[3] flex gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleAudio();
+            }}
+            className={cn(
+              "p-1.5 rounded-full backdrop-blur-md transition-colors",
+              isAudioMuted ? "bg-red-500/80 text-white" : "bg-black/60 text-white hover:bg-black/80"
+            )}
+          >
+            {isAudioMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleVideo();
+            }}
+            className={cn(
+              "p-1.5 rounded-full backdrop-blur-md transition-colors",
+              isVideoOff ? "bg-red-500/80 text-white" : "bg-black/60 text-white hover:bg-black/80"
+            )}
+          >
+            {isVideoOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* Expand Meeting Interaction */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 transition-opacity pointer-events-none">
+          <Maximize2 className="w-8 h-8 text-white/40" />
         </div>
       </motion.div>
     </AnimatePresence>

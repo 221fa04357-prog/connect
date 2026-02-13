@@ -53,7 +53,8 @@ export function JoinMeeting() {
         isAudioMuted,
         isVideoOff,
         toggleAudio,
-        toggleVideo
+        toggleVideo,
+        setMeetingJoined
     } = useMeetingStore();
 
     const isMobile = useIsMobile();
@@ -107,16 +108,8 @@ export function JoinMeeting() {
         };
         initCamera();
 
-        // Cleanup: Stop stream ONLY if NOT joining the meeting
-        return () => {
-            if (!isJoiningRef.current) {
-                const currentStream = useMeetingStore.getState().localStream;
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                    useMeetingStore.getState().setLocalStream(null);
-                }
-            }
-        };
+        // Cleanup: Managed globally by MeetingStore
+        return () => { };
     }, []);
 
     // Bind stream to video element
@@ -142,9 +135,6 @@ export function JoinMeeting() {
             } catch (err) {
                 console.error("Failed to get audio stream:", err);
             }
-        } else if (!currentIsMuted && currentStream) {
-            // Muting: Stop tracks to release hardware
-            currentStream.getAudioTracks().forEach(track => track.stop());
         }
         toggleAudio();
     };
@@ -165,9 +155,6 @@ export function JoinMeeting() {
             } catch (err) {
                 console.error("Failed to get video stream:", err);
             }
-        } else if (!currentIsVideoOff && currentStream) {
-            // Turning Video OFF: Stop tracks to release hardware (turn off LED)
-            currentStream.getVideoTracks().forEach(track => track.stop());
         }
         toggleVideo();
     };
@@ -217,6 +204,24 @@ export function JoinMeeting() {
 
         // Allow join if authenticated or guest session is active
         if (isAuthenticated || guestSessionActive) {
+            // Trigger Fullscreen
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Error attempting to enable fullscreen:", err);
+                });
+            }
+
+            setMeetingJoined(true);
+
+            // Professional UX: Inform user about floating video
+            import('sonner').then(({ toast }) => {
+                toast.info("Floating video active", {
+                    description: "Video will automatically float if you switch apps or minimize the browser.",
+                    duration: 5000,
+                    position: 'top-center'
+                });
+            });
+
             navigate('/meeting');
         } else {
             alert('Guest session expired. Please sign in to continue.');
@@ -405,7 +410,7 @@ export function CreateMeeting() {
     const navigate = useNavigate();
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const user = useAuthStore((state) => state.user);
-    const { setMeeting, meeting: defaultMeeting } = useMeetingStore(); // Access store
+    const { setMeeting, meeting: defaultMeeting, setMeetingJoined } = useMeetingStore(); // Access store
     const [isScheduled, setIsScheduled] = useState(false);
 
     const [formData, setFormData] = useState({
@@ -507,6 +512,17 @@ export function CreateMeeting() {
         };
 
         setMeeting(newMeeting);
+        setMeetingJoined(true);
+
+        // Professional UX: Inform user about floating video
+        import('sonner').then(({ toast }) => {
+            toast.info("Floating video active", {
+                description: "Video will automatically float if you switch apps or minimize the browser.",
+                duration: 5000,
+                position: 'top-center'
+            });
+        });
+
         navigate('/meeting');
     };
 
@@ -542,6 +558,17 @@ export function CreateMeeting() {
         };
 
         setMeeting(newMeeting);
+        setMeetingJoined(true);
+
+        // Professional UX: Inform user about floating video
+        import('sonner').then(({ toast }) => {
+            toast.info("Floating video active", {
+                description: "Video will automatically float if you switch apps or minimize the browser.",
+                duration: 5000,
+                position: 'top-center'
+            });
+        });
+
         navigate('/meeting');
     };
 
