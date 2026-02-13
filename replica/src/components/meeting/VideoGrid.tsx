@@ -3,9 +3,19 @@ import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import VideoTile from './VideoTile';
 import { cn } from '@/lib/utils';
+import { useEffect } from 'react';
 
 export default function VideoGrid() {
-  const { participants, activeSpeakerId, pinnedParticipantId, pinParticipant, unpinParticipant } = useParticipantsStore();
+  const { participants, activeSpeakerId, pinnedParticipantId, pinParticipant, unpinParticipant, focusedParticipantId, setFocusedParticipant } = useParticipantsStore();
+  // ESC key handler for exiting fullscreen
+  useEffect(() => {
+    if (!focusedParticipantId) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFocusedParticipant(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [focusedParticipantId]);
   const { viewMode, showSelfView } = useMeetingStore();
   const { user } = useAuthStore();
 
@@ -19,18 +29,39 @@ export default function VideoGrid() {
 
   // Filter participants based on Self View setting
   const visibleParticipants = participants.filter(p => {
-    // Robust check for "isLocal" matching VideoTile logic
     const isLocal =
       p.id === user?.id ||
       p.id === `participant-${user?.id}` ||
       (user?.role === 'host' && p.id === 'participant-1');
-
     if (isLocal) {
       return showSelfView;
     }
     return true;
   });
 
+  // Fullscreen logic
+  if (focusedParticipantId) {
+    const participant = participants.find(p => p.id === focusedParticipantId);
+    if (!participant) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 transition-all">
+        <VideoTile
+          participant={participant}
+          isActive={participant.id === activeSpeakerId}
+          isPinned={pinnedParticipantId === participant.id}
+          onPin={() => handlePin(participant.id)}
+          onClick={() => setFocusedParticipant(null)}
+          fullscreen
+        />
+        <button
+          className="absolute top-4 right-4 bg-white bg-opacity-80 rounded-full px-4 py-2 text-black font-semibold shadow-lg hover:bg-opacity-100 transition"
+          onClick={() => setFocusedParticipant(null)}
+        >
+          Exit Fullscreen
+        </button>
+      </div>
+    );
+  }
   if (viewMode === 'speaker') {
     const speaker = visibleParticipants.find(p => p.id === activeSpeakerId) || visibleParticipants[0];
     const others = visibleParticipants.filter(p => p.id !== speaker?.id);
@@ -90,6 +121,7 @@ export default function VideoGrid() {
             isActive={participant.id === activeSpeakerId}
             isPinned={pinnedParticipantId === participant.id}
             onPin={() => handlePin(participant.id)}
+            onClick={() => setFocusedParticipant(participant.id)}
           />
         ))}
       </div>

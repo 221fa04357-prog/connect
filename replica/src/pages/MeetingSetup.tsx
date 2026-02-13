@@ -10,6 +10,7 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 // Helper for formatting date
+
 function formatDate(date: Date | null) {
     if (!date) return '';
     const d = date;
@@ -30,12 +31,15 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export function JoinMeeting() {
     const navigate = useNavigate();
+    // Add participants store
+    const addParticipant = useParticipantsStore((state) => state.addParticipant);
     const [meetingId, setMeetingId] = useState('');
     const [name, setName] = useState('');
     const [permissionDenied, setPermissionDenied] = useState(false);
@@ -43,6 +47,7 @@ export function JoinMeeting() {
     // Use global store for media state
     const {
         localStream,
+        
         setLocalStream,
         setMeeting,
         isAudioMuted,
@@ -191,6 +196,24 @@ export function JoinMeeting() {
             isScreenSharing: false,
             viewMode: 'gallery'
         });
+
+        // Create participant for guest
+        if (!isAuthenticated && guestSessionActive) {
+            const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
+            addParticipant({
+                id: guestId,
+                name,
+                role: 'participant',
+                isAudioMuted,
+                isVideoOff,
+                isHandRaised: false,
+                isSpeaking: false,
+                isPinned: false,
+                isSpotlighted: false,
+                joinedAt: new Date(),
+                avatar: undefined
+            });
+        }
 
         // Allow join if authenticated or guest session is active
         if (isAuthenticated || guestSessionActive) {

@@ -10,6 +10,8 @@ import { eventBus } from '@/lib/eventBus';
 const INSTANCE_ID = eventBus.instanceId;
 
 interface ParticipantsState {
+    focusedParticipantId: string | null;
+    setFocusedParticipant: (id: string | null) => void;
   participants: Participant[];
   waitingRoom: WaitingRoomParticipant[];
   transientRoles: Record<string, Participant['role'] | undefined>;
@@ -60,6 +62,8 @@ export const useParticipantsStore = create<ParticipantsState>()(
   persist(
     (set) => ({
       participants: generateMockParticipants(8).map(p => ({ ...p, isVideoAllowed: true })),
+      focusedParticipantId: null,
+        setFocusedParticipant: (id) => set({ focusedParticipantId: id }),
       waitingRoom: generateWaitingRoomParticipants(),
       transientRoles: {},
       waitingRoomEnabled: true,

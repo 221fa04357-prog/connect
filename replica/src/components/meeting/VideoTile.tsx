@@ -14,6 +14,8 @@ interface VideoTileProps {
     isPinned?: boolean;
     onPin?: () => void;
     className?: string;
+    onClick?: () => void;
+    fullscreen?: boolean;
 }
 
 export default function VideoTile({
@@ -21,7 +23,9 @@ export default function VideoTile({
     isActive,
     isPinned,
     onPin,
-    className
+    className,
+    onClick,
+    fullscreen
 }: VideoTileProps) {
     const {
         updateParticipant,
@@ -50,6 +54,7 @@ export default function VideoTile({
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
+        // Show real local stream for the current user/guest only
         if (isLocal && videoRef.current && localStream) {
             videoRef.current.srcObject = localStream;
         }
@@ -58,25 +63,29 @@ export default function VideoTile({
     const handleToggleMuteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (showMicConfirm || showVideoConfirm) return;
-        setMicConfirm(true);
+        // Only allow local user to toggle their own mic
+        if (isLocal) setMicConfirm(true);
     };
 
     const handleToggleVideoClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (showMicConfirm || showVideoConfirm) return;
-        setVideoConfirm(true);
+        // Only allow local user to toggle their own video
+        if (isLocal) setVideoConfirm(true);
     };
 
     return (
         <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: fullscreen ? 1 : 0.95 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             className={cn(
-                'relative aspect-video bg-[#232323] rounded-lg overflow-hidden group min-h-[180px]',
+                'relative aspect-video bg-[#232323] rounded-lg overflow-hidden group min-h-[180px] cursor-pointer',
                 isPinned && 'ring-2 ring-blue-500',
+                fullscreen && 'w-[80vw] h-[80vh] max-w-4xl max-h-[90vh] mx-auto shadow-2xl z-50',
                 className
             )}
+            onClick={onClick}
         >
             {/* Main Content (Video/Avatar) */}
             <div className="absolute inset-0 flex items-center justify-center bg-black">
