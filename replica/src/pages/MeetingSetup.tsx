@@ -154,6 +154,25 @@ export function JoinMeeting() {
         toggleVideo();
     };
 
+    // Keyboard shortcuts for Mic (Alt+A) and Video (Alt+V) in Preview
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Alt+A for Audio
+            if (e.altKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                handleAudioToggle();
+            }
+            // Alt+V for Video
+            if (e.altKey && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                handleVideoToggle();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleAudioToggle, handleVideoToggle]);
+
     const handleJoin = () => {
         if (!meetingId || !name) {
             alert('Please enter meeting ID and your name');
@@ -190,14 +209,7 @@ export function JoinMeeting() {
 
             setMeetingJoined(true);
 
-            // Professional UX: Inform user about floating video
-            import('sonner').then(({ toast }) => {
-                toast.info("Floating video active", {
-                    description: "Video will automatically float if you switch apps or minimize the browser.",
-                    duration: 5000,
-                    position: 'top-center'
-                });
-            });
+
 
             navigate('/meeting');
         } else {
@@ -491,14 +503,12 @@ export function CreateMeeting() {
         setMeeting(newMeeting);
         setMeetingJoined(true);
 
-        // Professional UX: Inform user about floating video
-        import('sonner').then(({ toast }) => {
-            toast.info("Floating video active", {
-                description: "Video will automatically float if you switch apps or minimize the browser.",
-                duration: 5000,
-                position: 'top-center'
+        // Trigger Fullscreen
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn("Error attempting to enable fullscreen:", err);
             });
-        });
+        }
 
         navigate('/meeting');
     };
@@ -537,14 +547,12 @@ export function CreateMeeting() {
         setMeeting(newMeeting);
         setMeetingJoined(true);
 
-        // Professional UX: Inform user about floating video
-        import('sonner').then(({ toast }) => {
-            toast.info("Floating video active", {
-                description: "Video will automatically float if you switch apps or minimize the browser.",
-                duration: 5000,
-                position: 'top-center'
+        // Trigger Fullscreen
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn("Error attempting to enable fullscreen:", err);
             });
-        });
+        }
 
         navigate('/meeting');
     };
