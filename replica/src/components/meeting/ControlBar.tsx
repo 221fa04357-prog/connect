@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   Mic, MicOff, Video, VideoOff, MessageSquare,
   Users, MoreVertical, Grid3x3,
-  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock, Maximize2, Minimize2
+  User, Settings, ChevronUp, Share2, Circle, Smile, X, Check, Hand, Lock, Sparkles, Clock, Maximize2, Minimize2, Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -922,60 +922,108 @@ export default function ControlBar() {
               <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
                 {/* Controls overlay: ensure z-index and pointer-events */}
                 <div className={cn(
-                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] pointer-events-auto",
-                  isMobile ? "px-4 py-3 bg-white border-b border-gray-200" : "px-6 py-4 bg-white/90 border-b border-[#e5e7eb]"
-                )}>
-                  {/* Left Group: Title */}
-                  <div className="flex items-center gap-3">
-                    <span className={cn("font-bold text-gray-900 flex-none", isMobile ? "text-lg" : "text-lg")}>Whiteboard</span>
+                  "absolute top-0 left-0 w-full flex items-center justify-between z-[102] bg-white border-b px-6 py-4",
+                  isMobile ? "px-4 py-3 border-gray-200" : "bg-white/90 border-[#e5e7eb]"
+                )} style={{ pointerEvents: 'auto' }}>
+
+                  {/* Left Side: Title & Permissions Dropdown */}
+                  <div className="flex items-center gap-4">
+                    <span className={cn("font-bold text-gray-900", isMobile ? "text-xl" : "text-lg")}>
+                      Whiteboard
+                    </span>
+
+                    {isHost && (
+                      <select
+                        value={whiteboardEditAccess}
+                        onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
+                        className="bg-gray-100 border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor:pointer hover:bg-gray-200 transition-colors"
+                      >
+                        <option value="hostOnly">Only Host</option>
+                        <option value="coHost">Host + Co-host</option>
+                        <option value="everyone">Everyone</option>
+                      </select>
+                    )}
                   </div>
 
-                  {/* Right Group: Dropdown + Cose */}
-                  <div className="flex items-center gap-2">
-                    {isHost && (
-                      <div className={cn(!isMobile && "flex items-center gap-2")}>
-                        <span className={cn("text-gray-600 font-medium whitespace-nowrap hidden", !isMobile && "inline text-sm")}>
-                          Who can edit?
-                        </span>
-                        <select
-                          value={whiteboardEditAccess}
-                          onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
-                          className={cn(
-                            "bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm",
-                            isMobile && "bg-gray-50 border-gray-200 rounded-lg py-1.5 w-[110px] text-sm"
-                          )}
-                        >
-                          <option value="hostOnly">Only Host</option>
-                          <option value="coHost">Host + Co-host</option>
-                          <option value="everyone">Everyone</option>
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 items-center flex-none">
-                      {canEditWhiteboard && (
-                        <button
-                          type="button"
-                          onClick={() => { clearWhiteboard(); }}
-                          className={cn(
-                            "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors font-medium",
-                            isMobile && "hidden"
-                          )}
-                        >
-                          Clear
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { closeWhiteboard(); }}
-                        className={cn(
-                          "text-gray-600 hover:text-gray-900 px-3 py-1 rounded transition-colors ml-2",
-                          isMobile && "p-1"
-                        )}
+                  {/* Right Side: Lock Icon & Close Button */}
+                  {/* Right Side: Lock Icon & Close Button */}
+                  <div className="flex items-center gap-3">
+                    {/* Meeting Info Dropdown (Duplicate for Whiteboard Context) */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <div className="bg-green-500 rounded-full p-2 flex items-center justify-center shadow-lg cursor-pointer hover:bg-green-600 transition-colors">
+                          <Lock className="w-4 h-4 text-white" />
+                        </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        sideOffset={10}
+                        className="w-[320px] bg-[#1C1C1C] border-[#333] text-white p-0 shadow-xl overflow-hidden pointer-events-auto z-[200]"
                       >
-                        <X className={isMobile ? "w-6 h-6" : "w-5 h-5"} />
-                      </button>
-                    </div>
+                        <div className="p-4 border-b border-[#333]">
+                          <h3 className="font-semibold text-lg">{meeting?.title || 'Meeting Topic'}</h3>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Hosted by {participants.find(p => p.id === meeting?.hostId)?.name || 'Host'}
+                          </p>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                          {/* Meeting ID */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-400">Meeting ID</span>
+                            <span className="text-sm font-medium">{meeting?.id || '--- --- ---'}</span>
+                          </div>
+
+                          {/* Host */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-400">Host</span>
+                            <span className="text-sm font-medium">{participants.find(p => p.id === meeting?.hostId)?.name || 'Host'}</span>
+                          </div>
+
+                          {/* Passcode */}
+                          {meeting?.password && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-400">Passcode</span>
+                              <span className="text-sm font-medium">{meeting.password}</span>
+                            </div>
+                          )}
+
+                          {/* Invite Link */}
+                          <div className="space-y-2">
+                            <span className="text-sm text-gray-400">Invite Link</span>
+                            <div className="flex items-center gap-2 bg-[#2A2A2A] rounded p-2">
+                              <span className="text-xs text-gray-300 truncate flex-1 select-all">
+                                {meeting?.id ? `${window.location.origin}/join/${meeting.id}` : window.location.href}
+                              </span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 hover:bg-[#3A3A3A] hover:text-white"
+                                onClick={handleCopyMeetingLink}
+                              >
+                                {copiedMeetingLink ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                              </Button>
+                            </div>
+                            <div
+                              className="flex items-center gap-2 text-blue-400 cursor-pointer hover:underline text-sm mt-1"
+                              onClick={handleCopyMeetingLink}
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>Copy Link</span>
+                            </div>
+                          </div>
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Close Button */}
+                    <button
+                      type="button"
+                      onClick={() => { closeWhiteboard(); }}
+                      className="text-gray-500 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
                   </div>
                 </div>
 
@@ -983,7 +1031,7 @@ export default function ControlBar() {
                   <div
                     className={cn(
                       "absolute left-1/2 -translate-x-1/2 z-[102] bg-white rounded-xl border border-gray-200 shadow-xl flex items-center gap-4 transition-all",
-                      isMobile ? "top-16 max-w-[90vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
+                      isMobile ? "top-16 max-w-[95vw] overflow-x-auto no-scrollbar scroll-smooth p-2" : "top-20 px-4 py-2"
                     )}
                     style={{ pointerEvents: 'auto' }}
                   >
