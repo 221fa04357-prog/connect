@@ -21,6 +21,8 @@ interface ChatState {
   reset: () => void;
 }
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   activeTab: 'public',
@@ -66,7 +68,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ socket, meetingId });
 
     // Fetch initial messages
-    fetch(`/api/messages/${meetingId}`)
+    fetch(`${API}/api/messages/${meetingId}`)
       .then(res => res.json())
       .then(messages => {
         set({

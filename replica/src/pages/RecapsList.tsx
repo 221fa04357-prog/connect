@@ -25,6 +25,8 @@ import {
 } from "@/components/ui";
 import { cn } from '@/lib/utils';
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export default function RecapsList() {
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
@@ -34,7 +36,7 @@ export default function RecapsList() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/recaps')
+        fetch(`${API}/api/recaps`)
             .then(res => res.json())
             .then(data => {
                 setRecaps(data.map((r: any) => ({

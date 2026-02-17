@@ -36,6 +36,8 @@ import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useIsMobile } from '@/hooks';
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export function JoinMeeting() {
     const navigate = useNavigate();
     // Add participants store
@@ -185,7 +187,7 @@ export function JoinMeeting() {
         }
 
         try {
-            const response = await fetch(`/api/meetings/${meetingId}`);
+            const response = await fetch(`${API}/api/meetings/${meetingId}`);
             if (!response.ok) {
                 if (response.status === 404) {
                     alert('Meeting not found. Please check the ID.');
@@ -510,7 +512,7 @@ export function CreateMeeting() {
         };
 
         try {
-            const response = await fetch('/api/meetings', {
+            const response = await fetch(`${API}/api/meetings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newMeeting),
@@ -567,7 +569,7 @@ export function CreateMeeting() {
         };
 
         try {
-            const response = await fetch('/api/meetings', {
+            const response = await fetch(`${API}/api/meetings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newMeeting),

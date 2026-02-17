@@ -36,6 +36,8 @@ function loadAuth(): { user: User | null; isAuthenticated: boolean } {
     }
 }
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export const useAuthStore = create<AuthState>((set, get) => {
     const initial = loadAuth();
 
@@ -50,7 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
             if (!user) return;
 
             try {
-                const response = await fetch('/api/auth/me', {
+                const response = await fetch(`${API}/api/auth/me`, {
                     headers: { 'x-user-id': user.id }
                 });
                 if (response.ok) {
@@ -72,7 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         login: async (credentials) => {
             set({ isLoading: true });
             try {
-                const response = await fetch('/api/auth/login', {
+                const response = await fetch(`${API}/api/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(credentials)
@@ -101,7 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         register: async (userData) => {
             set({ isLoading: true });
             try {
-                const response = await fetch('/api/auth/register', {
+                const response = await fetch(`${API}/api/auth/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(userData)
@@ -130,7 +132,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
         logout: async () => {
             try {
-                await fetch('/api/auth/logout', { method: 'POST' });
+                await fetch(`${API}/api/auth/logout`, { method: 'POST' });
             } catch (err) {
                 console.error('Logout API call failed:', err);
             }
