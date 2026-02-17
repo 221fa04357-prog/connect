@@ -32,6 +32,8 @@ interface RecapData {
     transcript: { speaker: string; text: string; time: string }[];
 }
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export default function MeetingRecap() {
     const { meetingId } = useParams();
     const navigate = useNavigate();
@@ -49,7 +51,7 @@ export default function MeetingRecap() {
         setIsLoading(true);
         setError(null);
 
-        fetch(`/api/recaps/${meetingId}`)
+        fetch(`${API}/api/recaps/${meetingId}`)
             .then(res => {
                 if (!res.ok) throw new Error('Recap not found');
                 return res.json();

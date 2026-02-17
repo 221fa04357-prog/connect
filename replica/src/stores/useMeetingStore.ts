@@ -7,6 +7,7 @@ import { eventBus } from '@/lib/eventBus';
 import { useChatStore } from './useChatStore';
 
 const INSTANCE_ID = eventBus.instanceId;
+const API = import.meta.env.VITE_API_URL || '';
 
 interface MeetingState {
   meeting: Meeting | null;
@@ -228,7 +229,7 @@ export const useMeetingStore = create<MeetingState>()(
         const newDuration = (m.duration || 0) + minutes;
 
         try {
-          const response = await fetch(`/api/meetings/${m.id}`, {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ duration: newDuration }),
@@ -265,7 +266,7 @@ export const useMeetingStore = create<MeetingState>()(
         };
 
         try {
-          const response = await fetch(`/api/meetings/${m.id}`, {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ settings: nextSettings }),

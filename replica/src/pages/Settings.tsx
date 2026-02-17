@@ -14,6 +14,8 @@ import { Video, Mic, Monitor, Keyboard, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
+const API = import.meta.env.VITE_API_URL || '';
+
 export default function Settings() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState({
@@ -34,7 +36,7 @@ export default function Settings() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch('/api/user/settings', {
+        const res = await fetch(`${API}/api/user/settings`, {
           headers: { 'x-user-id': 'default-user' } // Mock auth
         });
         if (res.ok) {
@@ -57,7 +59,7 @@ export default function Settings() {
   const handleSave = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/user/settings', {
+      const res = await fetch(`${API}/api/user/settings`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
