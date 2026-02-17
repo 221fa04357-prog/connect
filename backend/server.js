@@ -12,6 +12,75 @@ const server = http.createServer(app);
 // Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
 const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
 
+// Database Initialization Logic
+async function initializeDatabase() {
+    try {
+        console.log('Verifying/Creating database tables...');
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id VARCHAR(255) PRIMARY KEY,
+                settings JSONB NOT NULL DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                sender_id VARCHAR(255) NOT NULL,
+                sender_name VARCHAR(255) NOT NULL,
+                content TEXT NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                meeting_id VARCHAR(255),
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS recaps (
+                id VARCHAR(255) PRIMARY KEY,
+                title TEXT NOT NULL,
+                date VARCHAR(100),
+                timestamp BIGINT,
+                host VARCHAR(255),
+                duration VARCHAR(50),
+                participants JSONB DEFAULT '[]',
+                summary JSONB DEFAULT '[]',
+                action_items JSONB DEFAULT '[]',
+                transcript JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS meetings (
+                id VARCHAR(255) PRIMARY KEY,
+                title TEXT NOT NULL,
+                host_id VARCHAR(255) NOT NULL,
+                start_time TIMESTAMP NOT NULL,
+                duration INTEGER DEFAULT 60,
+                status VARCHAR(50) DEFAULT 'scheduled',
+                settings JSONB DEFAULT '{}',
+                password VARCHAR(255),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                avatar TEXT,
+                subscription_plan VARCHAR(50) DEFAULT 'free',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        console.log('Database initialization successful: all tables ready.');
+    } catch (err) {
+        console.error('Database initialization failed:', err);
+    }
+}
+
+// Start database initialization
+initializeDatabase();
+
 const io = new Server(server, {
     cors: {
         origin: frontendOrigin,
@@ -158,10 +227,19 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/health', async (req, res) => {
     try {
         const result = await db.query('SELECT NOW()');
-        res.json({ status: 'ok', time: result.rows[0].now, message: 'Backend connected to Database' });
+        // Check if users table exists
+        const userTableCheck = await db.query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')");
+
+        res.json({
+            status: 'ok',
+            database: 'connected',
+            users_table: userTableCheck.rows[0].exists,
+            time: result.rows[0].now,
+            message: 'Backend is fully operational'
+        });
     } catch (err) {
         console.error('Health check failed', err);
-        res.status(500).json({ status: 'error', message: 'Database connection failed', error: err.message });
+        res.status(500).json({ status: 'error', message: 'Diagnostics failed', error: err.message });
     }
 });
 
