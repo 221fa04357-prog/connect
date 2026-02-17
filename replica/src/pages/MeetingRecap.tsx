@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,8 +16,8 @@ import {
     Share2,
     ArrowRight
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 
@@ -32,50 +32,50 @@ interface RecapData {
     transcript: { speaker: string; text: string; time: string }[];
 }
 
-const MOCK_RECAP: RecapData = {
-    id: 'mock-1',
-    title: 'Product Roadmap Q3 Sync',
-    date: 'February 12, 2026',
-    duration: '45 mins',
-    participants: ['Alex Rivera', 'Sarah Chen', 'Jordan Smith', 'Maria Garcia'],
-    summary: [
-        'Confirmed Q3 Roadmap priorities focusing on AI integration.',
-        'Agreed to delay the legacy database refactor to Q4.',
-        'Identified critical mobile responsiveness issues on iOS devices.',
-        'Proposed a new design for the user settings panel and permissions.',
-        'Decided to increase server capacity by 20% for the upcoming beta event.'
-    ],
-    actionItems: [
-        { id: 'a1', text: 'Create high-fidelity mockups for new settings panel', completed: true },
-        { id: 'a2', text: 'Schedule follow-up meeting with Infra team about server capacity', completed: false },
-        { id: 'a3', text: 'Audit iOS media stream handling for orientation changes', completed: false },
-        { id: 'a4', text: 'Update stakeholder deck with revised Q3 timeline', completed: true }
-    ],
-    transcript: [
-        { speaker: 'Alex Rivera', time: '10:02 AM', text: "Welcome everyone. Let's start with the Q3 roadmap updates." },
-        { speaker: 'Sarah Chen', time: '10:05 AM', text: "The AI companion feature is progressing well, but we might need more time for the core engine refactor." },
-        { speaker: 'Jordan Smith', time: '10:12 AM', text: "I suggest we prioritize the AI features since they have higher stakeholder visibility." },
-        { speaker: 'Maria Garcia', time: '10:15 AM', text: "Agreed. Let's shift the database refactor to Q4 then." }
-    ]
-};
-
 export default function MeetingRecap() {
     const { meetingId } = useParams();
     const navigate = useNavigate();
+    const [recap, setRecap] = useState<RecapData | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'summary' | 'transcript'>('summary');
     const [copiedSummary, setCopiedSummary] = useState(false);
     const [copiedLink, setCopiedLink] = useState(false);
     const [copiedTranscript, setCopiedTranscript] = useState(false);
 
+    useEffect(() => {
+        if (!meetingId) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        fetch(`/api/recaps/${meetingId}`)
+            .then(res => {
+                if (!res.ok) throw new Error('Recap not found');
+                return res.json();
+            })
+            .then(data => {
+                setRecap(data);
+                setIsLoading(false);
+            })
+            .catch(err => {
+                console.error('Error fetching recap:', err);
+                setError(err.message);
+                setIsLoading(false);
+            });
+    }, [meetingId]);
+
     const handleCopySummary = async () => {
-        const text = MOCK_RECAP.summary.join('\n');
+        if (!recap) return;
+        const text = recap.summary.join('\n');
         await navigator.clipboard.writeText(text);
         setCopiedSummary(true);
         setTimeout(() => setCopiedSummary(false), 2000);
     };
 
     const handleCopyTranscript = async () => {
-        const text = MOCK_RECAP.transcript.map(line => `[${line.time}] ${line.speaker}: ${line.text}`).join('\n');
+        if (!recap) return;
+        const text = recap.transcript.map(line => `[${line.time}] ${line.speaker}: ${line.text}`).join('\n');
         await navigator.clipboard.writeText(text);
         setCopiedTranscript(true);
         setTimeout(() => setCopiedTranscript(false), 2000);
@@ -88,6 +88,7 @@ export default function MeetingRecap() {
     };
 
     const handleDownload = () => {
+        if (!recap) return;
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const margin = 20;
@@ -102,14 +103,14 @@ export default function MeetingRecap() {
         // Meeting Metadata
         doc.setFontSize(16);
         doc.setTextColor(0, 0, 0);
-        doc.text(MOCK_RECAP.title, margin, yPos);
+        doc.text(recap.title, margin, yPos);
         yPos += 10;
 
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);
-        doc.text(`Date: ${MOCK_RECAP.date} | Duration: ${MOCK_RECAP.duration}`, margin, yPos);
+        doc.text(`Date: ${recap.date} | Duration: ${recap.duration}`, margin, yPos);
         yPos += 6;
-        doc.text(`Participants: ${MOCK_RECAP.participants.join(', ')}`, margin, yPos);
+        doc.text(`Participants: ${recap.participants.join(', ')}`, margin, yPos);
         yPos += 15;
 
         // Summary Section
@@ -120,7 +121,7 @@ export default function MeetingRecap() {
 
         doc.setFontSize(11);
         doc.setTextColor(50, 50, 50);
-        MOCK_RECAP.summary.forEach(point => {
+        recap.summary.forEach(point => {
             const lines = doc.splitTextToSize(`• ${point}`, pageWidth - (margin * 2));
             doc.text(lines, margin, yPos);
             yPos += (lines.length * 6) + 2;
@@ -134,7 +135,8 @@ export default function MeetingRecap() {
         yPos += 8;
 
         doc.setFontSize(11);
-        MOCK_RECAP.actionItems.forEach(item => {
+        doc.setTextColor(50, 50, 50);
+        recap.actionItems.forEach(item => {
             const status = item.completed ? "[Done] " : "[Todo] ";
             const lines = doc.splitTextToSize(`${status}${item.text}`, pageWidth - (margin * 2));
             doc.text(lines, margin, yPos);
@@ -156,7 +158,7 @@ export default function MeetingRecap() {
 
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        MOCK_RECAP.transcript.forEach(line => {
+        recap.transcript.forEach(line => {
             doc.setTextColor(11, 92, 255);
             doc.text(`${line.time} - ${line.speaker}:`, margin, yPos);
             yPos += 5;
@@ -173,8 +175,43 @@ export default function MeetingRecap() {
             }
         });
 
-        doc.save(`${MOCK_RECAP.title.toLowerCase().replace(/\s+/g, '_')}_recap.pdf`);
+        doc.save(`${recap.title.toLowerCase().replace(/\s+/g, '_')}_recap.pdf`);
     };
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-[#121212] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <Sparkles className="w-12 h-12 text-blue-500 animate-pulse" />
+                    <p className="text-gray-400 font-medium">Loading Recap...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !recap) {
+        return (
+            <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">
+                <div className="bg-[#1C1C1C] border border-[#333] rounded-2xl p-8 max-w-md w-full text-center space-y-6 shadow-2xl">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
+                        <FileText className="w-8 h-8 text-red-500" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold mb-2">Recap Not Found</h3>
+                        <p className="text-gray-400 text-sm">
+                            The meeting recap you're looking for might have been deleted or never existed.
+                        </p>
+                    </div>
+                    <Button
+                        onClick={() => navigate('/recaps')}
+                        className="w-full bg-[#333] hover:bg-[#444] text-white"
+                    >
+                        Return to Archives
+                    </Button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#121212] text-white">
@@ -235,19 +272,19 @@ export default function MeetingRecap() {
                     <Badge variant="outline" className="mb-4 border-blue-500/30 text-blue-400 bg-blue-500/5 px-3 py-1">
                         AI Generated Recap
                     </Badge>
-                    <h2 className="text-3xl md:text-4xl font-bold mb-4">{MOCK_RECAP.title}</h2>
+                    <h2 className="text-3xl md:text-4xl font-bold mb-4">{recap.title}</h2>
                     <div className="flex flex-wrap gap-4 text-sm text-gray-400">
                         <div className="flex items-center gap-1.5">
                             <Calendar className="w-4 h-4" />
-                            {MOCK_RECAP.date}
+                            {recap.date}
                         </div>
                         <div className="flex items-center gap-1.5">
                             <Clock className="w-4 h-4" />
-                            {MOCK_RECAP.duration}
+                            {recap.duration}
                         </div>
                         <div className="flex items-center gap-1.5">
                             <Users className="w-4 h-4" />
-                            {MOCK_RECAP.participants.length} Participants
+                            {recap.participants.length} Participants
                         </div>
                     </div>
                 </div>
@@ -316,7 +353,7 @@ export default function MeetingRecap() {
                                                 </Button>
                                             </div>
                                             <div className="space-y-5">
-                                                {MOCK_RECAP.summary.map((point, i) => (
+                                                {recap.summary.map((point, i) => (
                                                     <div key={i} className="flex gap-4 items-start group">
                                                         <div className="mt-2.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 group-hover:scale-150 transition-transform duration-300 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
                                                         <p className="text-gray-300 leading-relaxed text-base">{point}</p>
@@ -332,7 +369,7 @@ export default function MeetingRecap() {
                                                 Action Items
                                             </h3>
                                             <div className="space-y-4">
-                                                {MOCK_RECAP.actionItems.map(item => (
+                                                {recap.actionItems.map(item => (
                                                     <div
                                                         key={item.id}
                                                         className={cn(
@@ -366,7 +403,7 @@ export default function MeetingRecap() {
                                                 Participants
                                             </h3>
                                             <div className="flex flex-wrap gap-3">
-                                                {MOCK_RECAP.participants.map((person, i) => (
+                                                {recap.participants.map((person, i) => (
                                                     <div
                                                         key={i}
                                                         className="flex items-center gap-3 bg-[#252525] border border-[#404040] px-4 py-2 rounded-full text-sm font-medium text-gray-300 transition-colors hover:bg-[#333]"
@@ -409,7 +446,7 @@ export default function MeetingRecap() {
                                             </Button>
                                         </div>
                                         <div className="space-y-8">
-                                            {MOCK_RECAP.transcript.map((line, i) => (
+                                            {recap.transcript.map((line, i) => (
                                                 <div key={i} className="flex flex-col gap-3">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-8 h-8 rounded-full bg-[#2A2A2A] border border-[#404040] flex items-center justify-center text-[10px] font-bold text-blue-400">

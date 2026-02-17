@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Label } from '@/components/ui';
 import { Video, Eye, EyeOff, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
@@ -73,23 +73,29 @@ export function Login() {
 
     const isValid = !errors.email && !errors.password && formData.email && formData.password;
 
-    function handleSubmit(e: React.FormEvent) {
+    const [authError, setAuthError] = useState('');
+    const isLoading = useAuthStore((state) => state.isLoading);
+
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
+        setAuthError('');
         const newErrors = {
             email: validate('email', formData.email),
             password: validate('password', formData.password)
         };
         setErrors(newErrors);
         setTouched({ email: true, password: true });
+
         if (!newErrors.email && !newErrors.password) {
-            // Mock login
-            login({
-                id: '1',
-                name: 'Demo User',
-                email: formData.email,
-                role: 'participant'
-            });
-            navigate('/');
+            try {
+                await login({
+                    email: formData.email,
+                    password: formData.password
+                });
+                navigate('/');
+            } catch (err: any) {
+                setAuthError(err.message || 'Login failed. Please check your credentials.');
+            }
         }
     }
 
@@ -129,6 +135,14 @@ export function Login() {
                     <p className="text-gray-400 text-center mb-6 sm:mb-8 text-sm sm:text-base">
                         Sign in to your account to continue
                     </p>
+
+                    {authError && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {authError === 'Account not found'
+                                ? 'Account not found. Please sign up to continue.'
+                                : authError}
+                        </div>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
                         <div className="space-y-2">
@@ -199,9 +213,9 @@ export function Login() {
                         <Button
                             type="submit"
                             className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-4 sm:py-6 text-base sm:text-lg"
-                            disabled={!isValid}
+                            disabled={!isValid || isLoading}
                         >
-                            Sign In
+                            {isLoading ? 'Signing In...' : 'Sign In'}
                         </Button>
                     </form>
 
@@ -389,7 +403,9 @@ export function ResetPassword() {
 
 export function Register() {
     const navigate = useNavigate();
-    const login = useAuthStore((state) => state.login);
+    const register = useAuthStore((state) => state.register);
+    const isLoading = useAuthStore((state) => state.isLoading);
+    const [authError, setAuthError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [formData, setFormData] = useState({
@@ -401,14 +417,25 @@ export function Register() {
 
     const passwordStrength = calculatePasswordStrength(formData.password);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setAuthError('');
         if (formData.password !== formData.confirmPassword) {
             alert('Passwords do not match');
             return;
         }
-        // Account created successfully, redirect to login
-        navigate('/login');
+
+        try {
+            await register({
+                name: formData.name,
+                email: formData.email,
+                password: formData.password
+            });
+            // Redirect to login on success as requested
+            navigate('/login');
+        } catch (err: any) {
+            setAuthError(err.message || 'Registration failed. Please try again.');
+        }
     };
 
     const handleClose = () => {
@@ -447,6 +474,12 @@ export function Register() {
                     <p className="text-gray-400 text-center mb-8">
                         Sign up to start your meetings
                     </p>
+
+                    {authError && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-2 rounded-lg text-sm mb-6 text-center">
+                            {authError}
+                        </div>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
@@ -549,8 +582,9 @@ export function Register() {
                         <Button
                             type="submit"
                             className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                            disabled={isLoading}
                         >
-                            Create Account
+                            {isLoading ? 'Creating Account...' : 'Create Account'}
                         </Button>
                     </form>
 

@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Video, Mic, MicOff, VideoOff, Calendar, Clock } from 'lucide-react';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Label } from '@/components/ui';
+import { Switch } from '@/components/ui';
+import { Video, Mic, MicOff, VideoOff, Calendar, Clock, Check, Copy } from 'lucide-react';
 // Helper for generating days in a month
 function getDaysInMonth(year: number, month: number) {
     return new Date(year, month + 1, 0).getDate();
@@ -34,7 +34,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks';
 
 export function JoinMeeting() {
     const navigate = useNavigate();
@@ -47,7 +47,7 @@ export function JoinMeeting() {
     // Use global store for media state
     const {
         localStream,
-        
+
         setLocalStream,
         setMeeting,
         isAudioMuted,
@@ -178,66 +178,72 @@ export function JoinMeeting() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleAudioToggle, handleVideoToggle]);
 
-    const handleJoin = () => {
+    const handleJoin = async () => {
         if (!meetingId || !name) {
             alert('Please enter meeting ID and your name');
             return;
         }
 
-        isJoiningRef.current = true; // Prevent cleanup
+        try {
+            const response = await fetch(`/api/meetings/${meetingId}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    alert('Meeting not found. Please check the ID.');
+                } else {
+                    alert('Failed to join meeting. Please try again.');
+                }
+                return;
+            }
 
-        // Set the meeting state for joining
-        setMeeting({
-            id: meetingId,
-            title: 'Meeting in Progress',
-            hostId: 'actual-host-id', // Use a dummy ID that won't match the joining user
-            startTime: new Date(),
-            duration: 60,
-            settings: {
-                enableWaitingRoom: true,
-                allowParticipantsToUnmute: true,
-                allowParticipantsToShareScreen: true,
-            },
-            isRecording: false,
-            isScreenSharing: false,
-            viewMode: 'gallery'
-        });
+            const meetingData = await response.json();
+            isJoiningRef.current = true; // Prevent cleanup
 
-        // Create participant for guest
-        if (!isAuthenticated && guestSessionActive) {
-            const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
-            addParticipant({
-                id: guestId,
-                name,
-                role: 'participant',
-                isAudioMuted,
-                isVideoOff,
-                isHandRaised: false,
-                isSpeaking: false,
-                isPinned: false,
-                isSpotlighted: false,
-                joinedAt: new Date(),
-                avatar: undefined
+            // Set the meeting state from backend data
+            setMeeting({
+                ...meetingData,
+                startTime: new Date(meetingData.start_time),
+                hostId: meetingData.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
             });
-        }
 
-        // Allow join if authenticated or guest session is active
-        if (isAuthenticated || guestSessionActive) {
-            // Trigger Fullscreen
-            if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(err => {
-                    console.warn("Error attempting to enable fullscreen:", err);
+            // Create participant for guest
+            if (!isAuthenticated && guestSessionActive) {
+                const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
+                addParticipant({
+                    id: guestId,
+                    name,
+                    role: 'participant',
+                    isAudioMuted,
+                    isVideoOff,
+                    isHandRaised: false,
+                    isSpeaking: false,
+                    isPinned: false,
+                    isSpotlighted: false,
+                    joinedAt: new Date(),
+                    avatar: undefined
                 });
             }
 
-            setMeetingJoined(true);
+            // Allow join if authenticated or guest session is active
+            if (isAuthenticated || guestSessionActive) {
+                // Trigger Fullscreen
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.warn("Error attempting to enable fullscreen:", err);
+                    });
+                }
 
-
-
-            navigate('/meeting');
-        } else {
-            alert('Guest session expired. Please sign in to continue.');
-            navigate('/login');
+                setMeetingJoined(true);
+                navigate('/meeting');
+            } else {
+                alert('Guest session expired. Please sign in to continue.');
+                navigate('/login');
+            }
+        } catch (err) {
+            console.error('Error joining meeting:', err);
+            alert('A network error occurred. Please try again.');
         }
     };
 
@@ -424,6 +430,7 @@ export function CreateMeeting() {
     const user = useAuthStore((state) => state.user);
     const { setMeeting, meeting: defaultMeeting, setMeetingJoined } = useMeetingStore(); // Access store
     const [isScheduled, setIsScheduled] = useState(false);
+    const [scheduledMeetingData, setScheduledMeetingData] = useState<any>(null);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -477,107 +484,121 @@ export function CreateMeeting() {
         return null;
     }
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
         if (isScheduled && (!formData.title || !formData.date || !formData.time)) {
             alert('Please fill in all required fields');
             return;
         }
 
-        // Update the meeting store with the new meeting details
+        const meetingId = `meeting-${Date.now()}`;
         const startTime = isScheduled ? new Date(`${formData.date}T${formData.time}`) : new Date();
         const duration = formData.duration ? parseInt(formData.duration) : 60;
 
-        // Use defaults if defaultMeeting is null, though it shouldn't be based on store init
-        const baseMeeting = defaultMeeting || {
-            id: 'meeting-' + Date.now(),
-            title: 'New Meeting',
-            hostId: user?.id || 'host',
-            originalHostId: user?.id || 'host',
-            startTime: new Date(),
-            duration: 60,
-            settings: {
-                enableWaitingRoom: true,
-                allowParticipantsToUnmute: true,
-                allowParticipantsToShareScreen: true,
-            },
-            isRecording: false,
-            isScreenSharing: false,
-            viewMode: 'gallery'
-        };
-
         const newMeeting: any = {
-            ...baseMeeting,
-            id: `meeting-${Date.now()}`,
-            title: formData.title, // Sync title
-            startTime: startTime,
+            id: meetingId,
+            title: formData.title || 'New Meeting',
+            host_id: user?.id || 'host',
+            start_time: startTime.toISOString(),
             duration: duration,
-            hostId: user?.id || 'host', // Ensure current user is host
-            password: formData.requirePassword ? formData.password : undefined,
             settings: {
-                ...baseMeeting.settings,
                 enableWaitingRoom: formData.waitingRoom,
                 muteOnEntry: formData.muteOnEntry,
                 disableParticipantVideo: formData.disableVideo,
                 whiteboardEditAccess: formData.whiteboardEditAccess,
-                // other settings can be mapped here
-            }
+            },
+            password: formData.requirePassword ? formData.password : undefined,
         };
 
-        setMeeting(newMeeting);
-        setMeetingJoined(true);
-
-        // Trigger Fullscreen
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.warn("Error attempting to enable fullscreen:", err);
+        try {
+            const response = await fetch('/api/meetings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMeeting),
             });
-        }
 
-        navigate('/meeting');
+            if (!response.ok) throw new Error('Failed to create meeting');
+
+            const savedMeeting = await response.json();
+
+            if (isScheduled) {
+                setScheduledMeetingData(savedMeeting);
+                return;
+            }
+
+            setMeeting({
+                ...savedMeeting,
+                startTime: new Date(savedMeeting.start_time),
+                hostId: savedMeeting.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
+            });
+
+            setMeetingJoined(true);
+
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Error attempting to enable fullscreen:", err);
+                });
+            }
+
+            navigate('/meeting');
+        } catch (err) {
+            console.error('Error creating meeting:', err);
+            alert('Failed to create meeting. Please try again.');
+        }
     };
 
-    const handleInstantMeeting = () => {
-        // Create an instant meeting
-        // Update the meeting store
-        const baseMeeting = defaultMeeting || {
-            id: 'meeting-' + Date.now(),
-            title: 'New Meeting',
-            hostId: user?.id || 'host',
-            originalHostId: user?.id || 'host',
-            startTime: new Date(),
+    const handleInstantMeeting = async () => {
+        const meetingId = `meeting-${Date.now()}`;
+        const newMeeting: any = {
+            id: meetingId,
+            title: "Instant Meeting",
+            host_id: user?.id || 'host',
+            start_time: new Date().toISOString(),
             duration: 60,
             settings: {
                 enableWaitingRoom: true,
                 allowParticipantsToUnmute: true,
                 allowParticipantsToShareScreen: true,
                 disableParticipantVideo: false,
-                whiteboardEditAccess: 'hostOnly' as const,
-            },
-            isRecording: false,
-            isScreenSharing: false,
-            viewMode: 'gallery'
+                whiteboardEditAccess: 'hostOnly',
+            }
         };
 
-        const newMeeting: any = {
-            ...baseMeeting,
-            id: `meeting-${Date.now()}`,
-            title: "Instant Meeting",
-            startTime: new Date(),
-            duration: 60,
-            hostId: user?.id || 'host',
-        };
-
-        setMeeting(newMeeting);
-        setMeetingJoined(true);
-
-        // Trigger Fullscreen
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.warn("Error attempting to enable fullscreen:", err);
+        try {
+            const response = await fetch('/api/meetings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMeeting),
             });
-        }
 
-        navigate('/meeting');
+            if (!response.ok) throw new Error('Failed to create instant meeting');
+
+            const savedMeeting = await response.json();
+
+            setMeeting({
+                ...savedMeeting,
+                startTime: new Date(savedMeeting.start_time),
+                hostId: savedMeeting.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
+            });
+
+            setMeetingJoined(true);
+
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Error attempting to enable fullscreen:", err);
+                });
+            }
+
+            navigate('/meeting');
+        } catch (err) {
+            console.error('Error creating instant meeting:', err);
+            alert('Failed to start instant meeting. Please try again.');
+        }
     };
 
     return (
@@ -593,416 +614,484 @@ export function CreateMeeting() {
                         <h2 className="text-3xl font-bold">Create Meeting</h2>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                        <Button
-                            onClick={() => setIsScheduled(false)}
-                            variant={!isScheduled ? 'default' : 'outline'}
-                            className={!isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
-                        >
-                            Instant Meeting
-                        </Button>
-                        <Button
-                            onClick={() => setIsScheduled(true)}
-                            variant={isScheduled ? 'default' : 'outline'}
-                            className={isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
-                        >
-                            Schedule Meeting
-                        </Button>
-                    </div>
-
-                    {isScheduled ? (
-                        <div className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="title">Meeting Title</Label>
-                                <Input
-                                    id="title"
-                                    type="text"
-                                    placeholder="Team Standup"
-                                    value={formData.title}
-                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                    className="bg-[#1C1C1C] border-[#404040]"
-                                />
+                    {scheduledMeetingData ? (
+                        <div className="text-center py-6 space-y-6">
+                            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Check className="w-8 h-8 text-green-500" />
                             </div>
+                            <h3 className="text-2xl font-bold">Meeting Scheduled!</h3>
+                            <p className="text-gray-400">
+                                Your meeting "{scheduledMeetingData.title}" has been created.
+                            </p>
 
-                            <div className="grid md:grid-cols-2 gap-4">
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="date">Date</Label>
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            tabIndex={-1}
-                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
-                                            onClick={() => setShowDatePicker((v) => !v)}
-                                        >
-                                            <Calendar />
-                                        </button>
-                                        <Input
-                                            id="date"
-                                            ref={dateInputRef}
-                                            type="text"
-                                            placeholder="dd-mm-yyyy"
-                                            value={formData.date ? formData.date.split('-').reverse().join('-') : ''}
-                                            onChange={(e) => {
-                                                // Accept manual typing in dd-mm-yyyy or yyyy-mm-dd
-                                                let val = e.target.value;
-                                                // Try to convert dd-mm-yyyy to yyyy-mm-dd
-                                                if (/^\d{2}-\d{2}-\d{4}$/.test(val)) {
-                                                    const [d, m, y] = val.split('-');
-                                                    val = `${y}-${m}-${d}`;
-                                                }
-                                                setFormData({ ...formData, date: val });
-                                            }}
-                                            onInput={handleDateAutofill}
-                                            onAnimationStart={handleDateAutofill}
-                                            className="bg-[#1C1C1C] border-[#404040] pl-10"
-                                        />
-                                        {/* Date Picker Popover */}
-                                        {showDatePicker && (
-                                            <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg p-4" style={{ minWidth: 260, width: 320 }}>
-                                                {/* Header with navigation and view switch */}
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (pickerView === 'day') {
-                                                                setPickerYear(y => y - (pickerMonth === 0 ? 1 : 0));
-                                                                setPickerMonth(m => m === 0 ? 11 : m - 1);
-                                                            } else if (pickerView === 'month') {
-                                                                setPickerYear(y => y - 1);
-                                                            } else if (pickerView === 'year') {
-                                                                setYearScroll(s => s - 12);
-                                                            }
-                                                        }}
-                                                        className="px-2"
-                                                    >&#8592;</button>
-                                                    <span
-                                                        className="font-semibold cursor-pointer select-none"
-                                                        onClick={() => setPickerView(v => v === 'day' ? 'month' : v === 'month' ? 'year' : 'day')}
-                                                    >
-                                                        {pickerView === 'day' && (
-                                                            <>
-                                                                {new Date(pickerYear, pickerMonth).toLocaleString('default', { month: 'long' })} {pickerYear}
-                                                            </>
-                                                        )}
-                                                        {pickerView === 'month' && (
-                                                            <>{pickerYear}</>
-                                                        )}
-                                                        {pickerView === 'year' && (
-                                                            <>{pickerYear + yearScroll}</>
-                                                        )}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (pickerView === 'day') {
-                                                                setPickerYear(y => y + (pickerMonth === 11 ? 1 : 0));
-                                                                setPickerMonth(m => m === 11 ? 0 : m + 1);
-                                                            } else if (pickerView === 'month') {
-                                                                setPickerYear(y => y + 1);
-                                                            } else if (pickerView === 'year') {
-                                                                setYearScroll(s => s + 12);
-                                                            }
-                                                        }}
-                                                        className="px-2"
-                                                    >&#8594;</button>
-                                                </div>
-                                                {/* Views */}
-                                                {pickerView === 'day' && (
-                                                    <>
-                                                        <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
-                                                            {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => <div key={d} className="font-bold">{d}</div>)}
-                                                        </div>
-                                                        <div className="grid grid-cols-7 gap-1 text-center">
-                                                            {(() => {
-                                                                const firstDay = new Date(pickerYear, pickerMonth, 1).getDay();
-                                                                const days = getDaysInMonth(pickerYear, pickerMonth);
-                                                                const blanks = Array(firstDay).fill(null);
-                                                                return [
-                                                                    ...blanks.map((_, i) => <div key={"b" + i}></div>),
-                                                                    ...Array(days).fill(0).map((_, i) => {
-                                                                        const d = i + 1;
-                                                                        const isSelected = selectedDate && selectedDate.getFullYear() === pickerYear && selectedDate.getMonth() === pickerMonth && selectedDate.getDate() === d;
-                                                                        return (
-                                                                            <button
-                                                                                key={d}
-                                                                                className={
-                                                                                    "w-8 h-8 rounded-full " +
-                                                                                    (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
-                                                                                }
-                                                                                onClick={() => {
-                                                                                    const date = new Date(pickerYear, pickerMonth, d);
-                                                                                    setFormData({ ...formData, date: formatDate(date) });
-                                                                                    setShowDatePicker(false);
-                                                                                    setPickerView('day');
-                                                                                }}
-                                                                            >
-                                                                                {d}
-                                                                            </button>
-                                                                        );
-                                                                    })
-                                                                ];
-                                                            })()}
-                                                        </div>
-                                                    </>
-                                                )}
-                                                {pickerView === 'month' && (
-                                                    <div className="grid grid-cols-4 gap-2 text-center mb-2">
-                                                        {Array.from({ length: 12 }).map((_, m) => {
-                                                            const isSelected = pickerMonth === m;
-                                                            return (
-                                                                <button
-                                                                    key={m}
-                                                                    className={
-                                                                        "py-1 px-2 rounded " +
-                                                                        (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
-                                                                    }
-                                                                    onClick={() => {
-                                                                        setPickerMonth(m);
-                                                                        setPickerView('day');
-                                                                    }}
-                                                                >
-                                                                    {new Date(2000, m).toLocaleString('default', { month: 'short' })}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                                {pickerView === 'year' && (
-                                                    <div className="max-h-40 overflow-y-auto mb-2">
-                                                        {Array.from({ length: 12 }).map((_, i) => {
-                                                            const year = pickerYear + yearScroll - 6 + i;
-                                                            const isSelected = pickerYear === year;
-                                                            return (
-                                                                <button
-                                                                    key={year}
-                                                                    className={
-                                                                        "block w-full text-left py-1 px-2 rounded " +
-                                                                        (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
-                                                                    }
-                                                                    onClick={() => {
-                                                                        setPickerYear(year);
-                                                                        setPickerView('month');
-                                                                    }}
-                                                                >
-                                                                    {year}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                                <div className="flex justify-between mt-2">
-                                                    <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: '' }); setShowDatePicker(false); setPickerView('day'); }}>Clear</button>
-                                                    <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: formatDate(today) }); setShowDatePicker(false); setPickerMonth(today.getMonth()); setPickerYear(today.getFullYear()); setPickerView('day'); }}>Today</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                            <div className="bg-[#1C1C1C] p-4 rounded-xl border border-[#404040] space-y-3">
+                                <div className="flex items-center justify-between text-sm text-gray-400 px-1">
+                                    <span>Meeting ID</span>
+                                    <span>{new Date(scheduledMeetingData.start_time).toLocaleString()}</span>
                                 </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="time">Time</Label>
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            tabIndex={-1}
-                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
-                                            onClick={() => {
-                                                setShowTimePicker((v) => !v);
-                                                setTimePickerHour(null);
-                                            }}
-                                        >
-                                            <Clock />
-                                        </button>
-                                        <Input
-                                            id="time"
-                                            ref={timeInputRef}
-                                            type="text"
-                                            placeholder="--:--"
-                                            value={formData.time}
-                                            onChange={(e) => {
-                                                setFormData({ ...formData, time: e.target.value });
-                                            }}
-                                            onInput={handleTimeAutofill}
-                                            onAnimationStart={handleTimeAutofill}
-                                            className="bg-[#1C1C1C] border-[#404040] pl-10"
-                                        />
-                                        {/* Time Picker Popover */}
-                                        {showTimePicker && (
-                                            <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg flex" style={{ minWidth: 120 }}>
-                                                {/* Hour column */}
-                                                <div className="max-h-48 overflow-y-auto">
-                                                    {Array.from({ length: 24 }).map((_, h) => {
-                                                        const hourStr = String(h).padStart(2, '0');
-                                                        const isSelected = timePickerHour === hourStr || (formData.time && formData.time.split(':')[0] === hourStr && timePickerHour === null);
-                                                        return (
-                                                            <div key={h} className="flex">
-                                                                <button
-                                                                    className={
-                                                                        "w-12 h-8 text-left px-2 rounded-none " +
-                                                                        (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
-                                                                    }
-                                                                    style={{ border: 'none' }}
-                                                                    onClick={() => {
-                                                                        setTimePickerHour(hourStr);
-                                                                    }}
-                                                                >{hourStr}</button>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                                {/* Minute column */}
-                                                <div className="max-h-48 overflow-y-auto">
-                                                    {Array.from({ length: 60 }).map((_, m) => {
-                                                        const minStr = String(m).padStart(2, '0');
-                                                        const isSelected = timePickerHour !== null
-                                                            ? (formData.time === `${timePickerHour}:${minStr}`)
-                                                            : (formData.time && formData.time.split(':')[1] === minStr);
-                                                        return (
-                                                            <div key={m} className="flex">
-                                                                <button
-                                                                    className={
-                                                                        "w-12 h-8 text-left px-2 rounded-none " +
-                                                                        (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
-                                                                    }
-                                                                    style={{ border: 'none' }}
-                                                                    onClick={() => {
-                                                                        const hour = timePickerHour !== null ? timePickerHour : (formData.time.split(':')[0] || '00');
-                                                                        setFormData({ ...formData, time: `${hour}:${minStr}` });
-                                                                        setShowTimePicker(false);
-                                                                        setTimePickerHour(null);
-                                                                    }}
-                                                                >{minStr}</button>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                <div className="flex gap-2">
+                                    <Input
+                                        readOnly
+                                        value={scheduledMeetingData.id}
+                                        className="bg-[#232323] border-[#404040] font-mono"
+                                    />
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        className="border-[#404040] shrink-0"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(scheduledMeetingData.id);
+                                            alert('Meeting ID copied to clipboard!');
+                                        }}
+                                    >
+                                        <Copy className="w-4 h-4" />
+                                    </Button>
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="duration">Duration (minutes)</Label>
-                                <Input
-                                    id="duration"
-                                    type="number"
-                                    min={1}
-                                    max={480}
-                                    step={1}
-                                    value={formData.duration === '' ? '' : formData.duration}
-                                    onChange={(e) => {
-                                        let val = e.target.value;
-                                        if (val === '' || val === null) {
-                                            setFormData({ ...formData, duration: '' });
-                                        } else {
-                                            // Only allow numbers and clamp to min/max
-                                            let num = Math.max(1, Math.min(480, Number(val.replace(/[^0-9]/g, ''))));
-                                            setFormData({ ...formData, duration: isNaN(num) ? '' : num.toString() });
-                                        }
+                            <div className="flex flex-col gap-3 pt-4">
+                                <Button
+                                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] py-6"
+                                    onClick={() => {
+                                        setMeeting({
+                                            ...scheduledMeetingData,
+                                            startTime: new Date(scheduledMeetingData.start_time),
+                                            hostId: scheduledMeetingData.host_id,
+                                            isRecording: false,
+                                            isScreenSharing: false,
+                                            viewMode: 'gallery'
+                                        });
+                                        setMeetingJoined(true);
+                                        navigate('/meeting');
                                     }}
-                                    className="bg-[#1C1C1C] border-[#404040] appearance-auto"
-                                />
+                                >
+                                    Enter Room Now
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setScheduledMeetingData(null);
+                                        setIsScheduled(false);
+                                    }}
+                                >
+                                    Schedule Another
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                                <Button
+                                    onClick={() => setIsScheduled(false)}
+                                    variant={!isScheduled ? 'default' : 'outline'}
+                                    className={!isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
+                                >
+                                    Instant Meeting
+                                </Button>
+                                <Button
+                                    onClick={() => setIsScheduled(true)}
+                                    variant={isScheduled ? 'default' : 'outline'}
+                                    className={isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
+                                >
+                                    Schedule Meeting
+                                </Button>
                             </div>
 
-                            <div className="space-y-4 pt-4 border-t border-[#404040]">
-                                <h3 className="font-semibold">Meeting Settings</h3>
-
-                                <div className="flex items-center justify-between">
-                                    <Label htmlFor="waitingRoom" className="cursor-pointer">
-                                        Enable Waiting Room
-                                    </Label>
-                                    <Switch
-                                        id="waitingRoom"
-                                        checked={formData.waitingRoom}
-                                        onCheckedChange={(checked) => setFormData({ ...formData, waitingRoom: checked })}
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <Label htmlFor="muteOnEntry" className="cursor-pointer">
-                                        Mute Participants on Entry
-                                    </Label>
-                                    <Switch
-                                        id="muteOnEntry"
-                                        checked={formData.muteOnEntry}
-                                        onCheckedChange={(checked) => setFormData({ ...formData, muteOnEntry: checked })}
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <Label htmlFor="disableVideo" className="cursor-pointer">
-                                        Restrict Video on Entry (Host approval needed)
-                                    </Label>
-                                    <Switch
-                                        id="disableVideo"
-                                        checked={formData.disableVideo}
-                                        onCheckedChange={(checked) => setFormData({ ...formData, disableVideo: checked })}
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <Label htmlFor="requirePassword" className="cursor-pointer">
-                                        Require Meeting Password
-                                    </Label>
-                                    <Switch
-                                        id="requirePassword"
-                                        checked={formData.requirePassword}
-                                        onCheckedChange={(checked) => setFormData({ ...formData, requirePassword: checked })}
-                                    />
-                                </div>
-
-                                {formData.requirePassword && (
+                            {isScheduled ? (
+                                <div className="space-y-6">
                                     <div className="space-y-2">
-                                        <Label htmlFor="password">Meeting Password</Label>
+                                        <Label htmlFor="title">Meeting Title</Label>
                                         <Input
-                                            id="password"
+                                            id="title"
                                             type="text"
-                                            placeholder="Enter password"
-                                            value={formData.password}
-                                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                            placeholder="Team Standup"
+                                            value={formData.title}
+                                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                             className="bg-[#1C1C1C] border-[#404040]"
                                         />
                                     </div>
-                                )}
 
-                                <div className="flex items-center justify-between">
-                                    <Label htmlFor="whiteboardAccess" className="cursor-pointer">
-                                        Who can edit?
-                                    </Label>
-                                    <select
-                                        id="whiteboardAccess"
-                                        value={formData.whiteboardEditAccess}
-                                        onChange={(e) => setFormData({ ...formData, whiteboardEditAccess: e.target.value as any })}
-                                        className="bg-[#1C1C1C] border border-[#404040] rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5CFF]"
+                                    <div className="grid md:grid-cols-2 gap-4">
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="date">Date</Label>
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    tabIndex={-1}
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
+                                                    onClick={() => setShowDatePicker((v) => !v)}
+                                                >
+                                                    <Calendar />
+                                                </button>
+                                                <Input
+                                                    id="date"
+                                                    ref={dateInputRef}
+                                                    type="text"
+                                                    placeholder="dd-mm-yyyy"
+                                                    value={formData.date ? formData.date.split('-').reverse().join('-') : ''}
+                                                    onChange={(e) => {
+                                                        // Accept manual typing in dd-mm-yyyy or yyyy-mm-dd
+                                                        let val = e.target.value;
+                                                        // Try to convert dd-mm-yyyy to yyyy-mm-dd
+                                                        if (/^\d{2}-\d{2}-\d{4}$/.test(val)) {
+                                                            const [d, m, y] = val.split('-');
+                                                            val = `${y}-${m}-${d}`;
+                                                        }
+                                                        setFormData({ ...formData, date: val });
+                                                    }}
+                                                    onInput={handleDateAutofill}
+                                                    onAnimationStart={handleDateAutofill}
+                                                    className="bg-[#1C1C1C] border-[#404040] pl-10"
+                                                />
+                                                {/* Date Picker Popover */}
+                                                {showDatePicker && (
+                                                    <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg p-4" style={{ minWidth: 260, width: 320 }}>
+                                                        {/* Header with navigation and view switch */}
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (pickerView === 'day') {
+                                                                        setPickerYear(y => y - (pickerMonth === 0 ? 1 : 0));
+                                                                        setPickerMonth(m => m === 0 ? 11 : m - 1);
+                                                                    } else if (pickerView === 'month') {
+                                                                        setPickerYear(y => y - 1);
+                                                                    } else if (pickerView === 'year') {
+                                                                        setYearScroll(s => s - 12);
+                                                                    }
+                                                                }}
+                                                                className="px-2"
+                                                            >&#8592;</button>
+                                                            <span
+                                                                className="font-semibold cursor-pointer select-none"
+                                                                onClick={() => setPickerView(v => v === 'day' ? 'month' : v === 'month' ? 'year' : 'day')}
+                                                            >
+                                                                {pickerView === 'day' && (
+                                                                    <>
+                                                                        {new Date(pickerYear, pickerMonth).toLocaleString('default', { month: 'long' })} {pickerYear}
+                                                                    </>
+                                                                )}
+                                                                {pickerView === 'month' && (
+                                                                    <>{pickerYear}</>
+                                                                )}
+                                                                {pickerView === 'year' && (
+                                                                    <>{pickerYear + yearScroll}</>
+                                                                )}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (pickerView === 'day') {
+                                                                        setPickerYear(y => y + (pickerMonth === 11 ? 1 : 0));
+                                                                        setPickerMonth(m => m === 11 ? 0 : m + 1);
+                                                                    } else if (pickerView === 'month') {
+                                                                        setPickerYear(y => y + 1);
+                                                                    } else if (pickerView === 'year') {
+                                                                        setYearScroll(s => s + 12);
+                                                                    }
+                                                                }}
+                                                                className="px-2"
+                                                            >&#8594;</button>
+                                                        </div>
+                                                        {/* Views */}
+                                                        {pickerView === 'day' && (
+                                                            <>
+                                                                <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
+                                                                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => <div key={d} className="font-bold">{d}</div>)}
+                                                                </div>
+                                                                <div className="grid grid-cols-7 gap-1 text-center">
+                                                                    {(() => {
+                                                                        const firstDay = new Date(pickerYear, pickerMonth, 1).getDay();
+                                                                        const days = getDaysInMonth(pickerYear, pickerMonth);
+                                                                        const blanks = Array(firstDay).fill(null);
+                                                                        return [
+                                                                            ...blanks.map((_, i) => <div key={"b" + i}></div>),
+                                                                            ...Array(days).fill(0).map((_, i) => {
+                                                                                const d = i + 1;
+                                                                                const isSelected = selectedDate && selectedDate.getFullYear() === pickerYear && selectedDate.getMonth() === pickerMonth && selectedDate.getDate() === d;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={d}
+                                                                                        className={
+                                                                                            "w-8 h-8 rounded-full " +
+                                                                                            (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                                        }
+                                                                                        onClick={() => {
+                                                                                            const date = new Date(pickerYear, pickerMonth, d);
+                                                                                            setFormData({ ...formData, date: formatDate(date) });
+                                                                                            setShowDatePicker(false);
+                                                                                            setPickerView('day');
+                                                                                        }}
+                                                                                    >
+                                                                                        {d}
+                                                                                    </button>
+                                                                                );
+                                                                            })
+                                                                        ];
+                                                                    })()}
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        {pickerView === 'month' && (
+                                                            <div className="grid grid-cols-4 gap-2 text-center mb-2">
+                                                                {Array.from({ length: 12 }).map((_, m) => {
+                                                                    const isSelected = pickerMonth === m;
+                                                                    return (
+                                                                        <button
+                                                                            key={m}
+                                                                            className={
+                                                                                "py-1 px-2 rounded " +
+                                                                                (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            onClick={() => {
+                                                                                setPickerMonth(m);
+                                                                                setPickerView('day');
+                                                                            }}
+                                                                        >
+                                                                            {new Date(2000, m).toLocaleString('default', { month: 'short' })}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        {pickerView === 'year' && (
+                                                            <div className="max-h-40 overflow-y-auto mb-2">
+                                                                {Array.from({ length: 12 }).map((_, i) => {
+                                                                    const year = pickerYear + yearScroll - 6 + i;
+                                                                    const isSelected = pickerYear === year;
+                                                                    return (
+                                                                        <button
+                                                                            key={year}
+                                                                            className={
+                                                                                "block w-full text-left py-1 px-2 rounded " +
+                                                                                (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            onClick={() => {
+                                                                                setPickerYear(year);
+                                                                                setPickerView('month');
+                                                                            }}
+                                                                        >
+                                                                            {year}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex justify-between mt-2">
+                                                            <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: '' }); setShowDatePicker(false); setPickerView('day'); }}>Clear</button>
+                                                            <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: formatDate(today) }); setShowDatePicker(false); setPickerMonth(today.getMonth()); setPickerYear(today.getFullYear()); setPickerView('day'); }}>Today</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="time">Time</Label>
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    tabIndex={-1}
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
+                                                    onClick={() => {
+                                                        setShowTimePicker((v) => !v);
+                                                        setTimePickerHour(null);
+                                                    }}
+                                                >
+                                                    <Clock />
+                                                </button>
+                                                <Input
+                                                    id="time"
+                                                    ref={timeInputRef}
+                                                    type="text"
+                                                    placeholder="--:--"
+                                                    value={formData.time}
+                                                    onChange={(e) => {
+                                                        setFormData({ ...formData, time: e.target.value });
+                                                    }}
+                                                    onInput={handleTimeAutofill}
+                                                    onAnimationStart={handleTimeAutofill}
+                                                    className="bg-[#1C1C1C] border-[#404040] pl-10"
+                                                />
+                                                {/* Time Picker Popover */}
+                                                {showTimePicker && (
+                                                    <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg flex" style={{ minWidth: 120 }}>
+                                                        {/* Hour column */}
+                                                        <div className="max-h-48 overflow-y-auto">
+                                                            {Array.from({ length: 24 }).map((_, h) => {
+                                                                const hourStr = String(h).padStart(2, '0');
+                                                                const isSelected = timePickerHour === hourStr || (formData.time && formData.time.split(':')[0] === hourStr && timePickerHour === null);
+                                                                return (
+                                                                    <div key={h} className="flex">
+                                                                        <button
+                                                                            className={
+                                                                                "w-12 h-8 text-left px-2 rounded-none " +
+                                                                                (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            style={{ border: 'none' }}
+                                                                            onClick={() => {
+                                                                                setTimePickerHour(hourStr);
+                                                                            }}
+                                                                        >{hourStr}</button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        {/* Minute column */}
+                                                        <div className="max-h-48 overflow-y-auto">
+                                                            {Array.from({ length: 60 }).map((_, m) => {
+                                                                const minStr = String(m).padStart(2, '0');
+                                                                const isSelected = timePickerHour !== null
+                                                                    ? (formData.time === `${timePickerHour}:${minStr}`)
+                                                                    : (formData.time && formData.time.split(':')[1] === minStr);
+                                                                return (
+                                                                    <div key={m} className="flex">
+                                                                        <button
+                                                                            className={
+                                                                                "w-12 h-8 text-left px-2 rounded-none " +
+                                                                                (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            style={{ border: 'none' }}
+                                                                            onClick={() => {
+                                                                                const hour = timePickerHour !== null ? timePickerHour : (formData.time.split(':')[0] || '00');
+                                                                                setFormData({ ...formData, time: `${hour}:${minStr}` });
+                                                                                setShowTimePicker(false);
+                                                                                setTimePickerHour(null);
+                                                                            }}
+                                                                        >{minStr}</button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="duration">Duration (minutes)</Label>
+                                        <Input
+                                            id="duration"
+                                            type="number"
+                                            min={1}
+                                            max={480}
+                                            step={1}
+                                            value={formData.duration === '' ? '' : formData.duration}
+                                            onChange={(e) => {
+                                                let val = e.target.value;
+                                                if (val === '' || val === null) {
+                                                    setFormData({ ...formData, duration: '' });
+                                                } else {
+                                                    // Only allow numbers and clamp to min/max
+                                                    let num = Math.max(1, Math.min(480, Number(val.replace(/[^0-9]/g, ''))));
+                                                    setFormData({ ...formData, duration: isNaN(num) ? '' : num.toString() });
+                                                }
+                                            }}
+                                            className="bg-[#1C1C1C] border-[#404040] appearance-auto"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-4 pt-4 border-t border-[#404040]">
+                                        <h3 className="font-semibold">Meeting Settings</h3>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="waitingRoom" className="cursor-pointer">
+                                                Enable Waiting Room
+                                            </Label>
+                                            <Switch
+                                                id="waitingRoom"
+                                                checked={formData.waitingRoom}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, waitingRoom: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="muteOnEntry" className="cursor-pointer">
+                                                Mute Participants on Entry
+                                            </Label>
+                                            <Switch
+                                                id="muteOnEntry"
+                                                checked={formData.muteOnEntry}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, muteOnEntry: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="disableVideo" className="cursor-pointer">
+                                                Restrict Video on Entry (Host approval needed)
+                                            </Label>
+                                            <Switch
+                                                id="disableVideo"
+                                                checked={formData.disableVideo}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, disableVideo: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="requirePassword" className="cursor-pointer">
+                                                Require Meeting Password
+                                            </Label>
+                                            <Switch
+                                                id="requirePassword"
+                                                checked={formData.requirePassword}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, requirePassword: checked })}
+                                            />
+                                        </div>
+
+                                        {formData.requirePassword && (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="password">Meeting Password</Label>
+                                                <Input
+                                                    id="password"
+                                                    type="text"
+                                                    placeholder="Enter password"
+                                                    value={formData.password}
+                                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                                    className="bg-[#1C1C1C] border-[#404040]"
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="whiteboardAccess" className="cursor-pointer">
+                                                Who can edit?
+                                            </Label>
+                                            <select
+                                                id="whiteboardAccess"
+                                                value={formData.whiteboardEditAccess}
+                                                onChange={(e) => setFormData({ ...formData, whiteboardEditAccess: e.target.value as any })}
+                                                className="bg-[#1C1C1C] border border-[#404040] rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5CFF]"
+                                            >
+                                                <option value="hostOnly">Only Host</option>
+                                                <option value="coHost">Host + Co-host</option>
+                                                <option value="everyone">Everyone</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        onClick={handleCreate}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
                                     >
-                                        <option value="hostOnly">Only Host</option>
-                                        <option value="coHost">Host + Co-host</option>
-                                        <option value="everyone">Everyone</option>
-                                    </select>
+                                        Schedule Meeting
+                                    </Button>
                                 </div>
-                            </div>
-
-                            <Button
-                                onClick={handleCreate}
-                                className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            >
-                                Schedule Meeting
-                            </Button>
-                        </div>
-                    ) : (
-                        <div className="text-center py-12">
-                            <p className="text-gray-400 mb-8">
-                                Start an instant meeting right now
-                            </p>
-                            <Button
-                                onClick={handleInstantMeeting}
-                                className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-12 py-6 text-lg"
-                            >
-                                Start Instant Meeting
-                            </Button>
-                        </div>
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-gray-400 mb-8">
+                                        Start an instant meeting right now
+                                    </p>
+                                    <Button
+                                        onClick={handleInstantMeeting}
+                                        className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-12 py-6 text-lg"
+                                    >
+                                        Start Instant Meeting
+                                    </Button>
+                                </div>
+                            )}
+                        </>
                     )}
 
                     <Button

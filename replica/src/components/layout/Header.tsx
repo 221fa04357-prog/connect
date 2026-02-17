@@ -2,8 +2,8 @@ import { Clock, LogOut, Settings, HelpCircle, User2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui';
+import { Avatar, AvatarFallback } from '@/components/ui';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
+} from '@/components/ui';
 import { Video } from 'lucide-react';
 
 export const Header = ({ transparent = false }: { transparent?: boolean }) => {

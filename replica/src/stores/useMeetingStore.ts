@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Meeting, ViewMode, Reaction } from '@/types';
 import { eventBus } from '@/lib/eventBus';
+import { useChatStore } from './useChatStore';
 
 const INSTANCE_ID = eventBus.instanceId;
 
@@ -194,6 +195,10 @@ export const useMeetingStore = create<MeetingState>()(
         if (state.localStream) {
           state.localStream.getTracks().forEach((track) => track.stop());
         }
+
+        // Reset Chat Store
+        useChatStore.getState().reset();
+
         set({
           meeting: null,
           localStream: null,
@@ -215,52 +220,76 @@ export const useMeetingStore = create<MeetingState>()(
       setConnectionQuality: (quality) =>
         set({ connectionQuality: quality }),
 
-      extendMeetingTime: (minutes: number) =>
-        set((state) => {
-          if (!state.meeting) return {} as any;
-          const m = state.meeting;
-          const newDuration = (m.duration || 0) + minutes;
+      extendMeetingTime: async (minutes: number) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
 
-          const next = {
-            meeting: { ...m, duration: newDuration },
-          } as any;
+        const m = state.meeting;
+        const newDuration = (m.duration || 0) + minutes;
 
-          setTimeout(() =>
-            eventBus.publish(
-              'meeting:update',
-              { meeting: next.meeting },
-              { source: INSTANCE_ID }
-            )
+        try {
+          const response = await fetch(`/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ duration: newDuration }),
+          });
+
+          if (!response.ok) throw new Error('Failed to update meeting duration');
+
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            duration: updatedMeetingData.duration,
+          };
+
+          set({ meeting: nextMeeting });
+
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
           );
+        } catch (err) {
+          console.error('Error extending meeting time:', err);
+        }
+      },
 
-          return next;
-        }),
+      setWhiteboardEditAccess: async (access) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
 
-      setWhiteboardEditAccess: (access) =>
-        set((state) => {
-          if (!state.meeting) return {} as any;
-          const m = state.meeting;
+        const m = state.meeting;
+        const nextSettings = {
+          ...m.settings,
+          whiteboardEditAccess: access,
+        };
 
-          const next = {
-            meeting: {
-              ...m,
-              settings: {
-                ...m.settings,
-                whiteboardEditAccess: access,
-              },
-            },
-          } as any;
+        try {
+          const response = await fetch(`/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: nextSettings }),
+          });
 
-          setTimeout(() =>
-            eventBus.publish(
-              'meeting:update',
-              { meeting: next.meeting },
-              { source: INSTANCE_ID }
-            )
+          if (!response.ok) throw new Error('Failed to update whiteboard access');
+
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            settings: updatedMeetingData.settings,
+          };
+
+          set({ meeting: nextMeeting });
+
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
           );
-
-          return next;
-        }),
+        } catch (err) {
+          console.error('Error setting whiteboard access:', err);
+        }
+      },
     }),
     {
       name: 'meeting-store',

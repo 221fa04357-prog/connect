@@ -1,15 +1,15 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui';
+import { Label } from '@/components/ui';
+import { Switch } from '@/components/ui';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from '@/components/ui';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
 import { Video, Mic, Monitor, Keyboard, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -28,11 +28,55 @@ export default function Settings() {
     autoVideo: true
   });
 
-  // TODO: Connect to backend to save user preferences
-  // PUT /api/user/settings
-  // Expected payload: settings object
-  const handleSave = () => {
-    alert('Settings saved successfully!');
+  const [loading, setLoading] = useState(false);
+
+  // Fetch settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/user/settings', {
+          headers: { 'x-user-id': 'default-user' } // Mock auth
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Merge with defaults if data exists
+          if (Object.keys(data).length > 0) {
+            setSettings(prev => ({ ...prev, ...data }));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/user/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': 'default-user'
+        },
+        body: JSON.stringify(settings)
+      });
+
+      if (res.ok) {
+        alert('Settings saved successfully!');
+      } else {
+        throw new Error('Failed to save');
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings. Backend might be down.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,7 +97,9 @@ export default function Settings() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h2 className="text-2xl font-bold">Settings</h2>
+            <div className="flex flex-col">
+              <h2 className="text-2xl font-bold">Settings</h2>
+            </div>
           </div>
 
           <Tabs defaultValue="audio" className="p-6">

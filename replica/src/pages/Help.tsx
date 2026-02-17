@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, HelpCircle, Search, Book, Video, Shield, Menu, ChevronRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 

@@ -1,5 +1,4 @@
-import { Toaster } from '@/components/ui/sonner';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { SonnerToaster, TooltipProvider, Toaster } from '@/components/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
@@ -20,7 +19,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Move, User as UserIcon, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks';
 
 const GlobalMiniPreview = () => {
   const {
@@ -305,41 +304,54 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const AppContent = () => {
+  const fetchCurrentUser = useAuthStore((state) => state.fetchCurrentUser);
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, [fetchCurrentUser]);
+
+  return (
+    <HashRouter>
+      <GlobalMiniPreview />
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/join-meeting" element={
+          <ProtectedRoute>
+            <JoinMeeting />
+          </ProtectedRoute>
+        } />
+        <Route path="/create-meeting" element={
+          <ProtectedRoute>
+            <CreateMeeting />
+          </ProtectedRoute>
+        } />
+        <Route path="/meeting" element={
+          <ProtectedRoute>
+            <MeetingRoom />
+          </ProtectedRoute>
+        } />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/help" element={<Help />} />
+        <Route path="/recap/:meetingId" element={<MeetingRecap />} />
+        <Route path="/recaps" element={<RecapsList />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </HashRouter>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <SonnerToaster />
       <Toaster />
-      <HashRouter>
-        <GlobalMiniPreview />
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/join-meeting" element={
-            <ProtectedRoute>
-              <JoinMeeting />
-            </ProtectedRoute>
-          } />
-          <Route path="/create-meeting" element={
-            <ProtectedRoute>
-              <CreateMeeting />
-            </ProtectedRoute>
-          } />
-          <Route path="/meeting" element={
-            <ProtectedRoute>
-              <MeetingRoom />
-            </ProtectedRoute>
-          } />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/help" element={<Help />} />
-          <Route path="/recap/:meetingId" element={<MeetingRecap />} />
-          <Route path="/recaps" element={<RecapsList />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </HashRouter>
+      <AppContent />
     </TooltipProvider>
-  </QueryClientProvider>
+  </QueryClientProvider >
 );
 
 export default App;

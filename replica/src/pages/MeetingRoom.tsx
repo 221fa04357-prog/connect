@@ -1,18 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
-import VideoGrid from '@/components/meeting/VideoGrid';
-import ControlBar from '@/components/meeting/ControlBar';
-import TopBar from '@/components/meeting/TopBar';
-import ChatPanel from '@/components/meeting/ChatPanel';
-import ParticipantsPanel from '@/components/meeting/ParticipantsPanel';
-import AICompanionPanel from '@/components/meeting/AICompanionPanel';
-import SettingsModal from '@/components/meeting/SettingsModal';
+import { VideoGrid } from '@/components/meeting/MeetingVideo';
+import MeetingControls from '@/components/meeting/MeetingControls';
+import { ChatPanel, ParticipantsPanel, AICompanionPanel } from '@/components/meeting/MeetingLayout';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui';
 
 export default function MeetingRoom() {
   const {
@@ -39,6 +36,16 @@ export default function MeetingRoom() {
     connectionQuality,
     setConnectionQuality
   } = useMeetingStore();
+
+  const { initSocket } = useChatStore();
+
+  /* ---------------- CHAT INITIALIZATION ---------------- */
+  useEffect(() => {
+    if (meeting?.id) {
+      console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id);
+      initSocket(meeting.id);
+    }
+  }, [meeting?.id, initSocket]);
 
   /* ---------------- CONNECTION MONITORING ---------------- */
   const checkConnection = useCallback(() => {
@@ -293,7 +300,7 @@ export default function MeetingRoom() {
 
       {/* MAIN CONTENT */}
       <div className="flex-1 min-h-0 relative">
-        <TopBar />
+        <MeetingControls />
         <VideoGrid />
 
         {/* Global Reactions Overlay */}
@@ -375,11 +382,9 @@ export default function MeetingRoom() {
         </AnimatePresence>
       </div>
 
-      <ControlBar />
       <ChatPanel />
       <ParticipantsPanel />
       <AICompanionPanel />
-      <SettingsModal />
     </div>
   );
 }

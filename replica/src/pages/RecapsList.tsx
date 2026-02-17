@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,9 +12,9 @@ import {
     ListFilter,
     Check
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -22,41 +22,50 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/components/ui";
 import { cn } from '@/lib/utils';
-
-const MOCK_RECIPES = [
-    { id: 'mock-1', title: 'Product Roadmap Q3 Sync', date: 'Feb 12, 2026', timestamp: new Date('2026-02-12').getTime(), host: 'Alex Rivera' },
-    { id: 'mock-2', title: 'Design System Review', date: 'Feb 11, 2026', timestamp: new Date('2026-02-11').getTime(), host: 'Sarah Chen' },
-    { id: 'mock-3', title: 'Weekly Engineering Standup', date: 'Feb 10, 2026', timestamp: new Date('2026-02-10').getTime(), host: 'Jordan Smith' },
-    { id: 'mock-4', title: 'Client Feedback Session', date: 'Feb 09, 2026', timestamp: new Date('2026-02-09').getTime(), host: 'Maria Garcia' },
-    { id: 'mock-5', title: 'Marketing Strategy 2026', date: 'Feb 05, 2026', timestamp: new Date('2026-02-05').getTime(), host: 'Alex Rivera' },
-    { id: 'mock-6', title: 'Security Audit Review', date: 'Feb 01, 2026', timestamp: new Date('2026-02-01').getTime(), host: 'Security Team' },
-];
 
 export default function RecapsList() {
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
     const [filterHost, setFilterHost] = useState<string>('all');
+    const [recaps, setRecaps] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const hosts = useMemo(() => {
-        const uniqueHosts = Array.from(new Set(MOCK_RECIPES.map(r => r.host)));
-        return ['all', ...uniqueHosts];
+    useEffect(() => {
+        fetch('/api/recaps')
+            .then(res => res.json())
+            .then(data => {
+                setRecaps(data.map((r: any) => ({
+                    ...r,
+                    timestamp: parseInt(r.timestamp)
+                })));
+                setIsLoading(false);
+            })
+            .catch(err => {
+                console.error('Error fetching recaps:', err);
+                setIsLoading(false);
+            });
     }, []);
 
+    const hosts = useMemo(() => {
+        const uniqueHosts = Array.from(new Set(recaps.map(r => r.host)));
+        return ['all', ...uniqueHosts];
+    }, [recaps]);
+
     const filteredAndSortedRecaps = useMemo(() => {
-        let recaps = MOCK_RECIPES.filter(recap =>
+        let list = recaps.filter(recap =>
             (recap.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 recap.host.toLowerCase().includes(searchQuery.toLowerCase())) &&
             (filterHost === 'all' || recap.host === filterHost)
         );
 
-        return recaps.sort((a, b) => {
+        return list.sort((a, b) => {
             if (sortBy === 'newest') return b.timestamp - a.timestamp;
             return a.timestamp - b.timestamp;
         });
-    }, [searchQuery, sortBy, filterHost]);
+    }, [recaps, searchQuery, sortBy, filterHost]);
 
     return (
         <div className="min-h-screen bg-[#121212] text-white">
@@ -76,7 +85,7 @@ export default function RecapsList() {
                     </div>
                     <div className="hidden sm:flex items-center gap-2">
                         <Badge variant="outline" className="border-blue-500/30 text-blue-400 bg-blue-500/5">
-                            {MOCK_RECIPES.length} Total Meetings
+                            {recaps.length} Total Meetings
                         </Badge>
                     </div>
                 </div>

@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui';
 import { Video, Users, Monitor, Shield, HelpCircle, FileText, ArrowRight, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -10,8 +10,8 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
+} from '@/components/ui';
+import { Badge } from '@/components/ui';
 
 export default function Landing() {
   const navigate = useNavigate();

@@ -16,16 +16,18 @@ export type ChatType = 'public' | 'private';
 export interface Participant {
   id: string;
   name: string;
+  email?: string;
   role: UserRole;
   isAudioMuted: boolean;
   isVideoOff: boolean;
   isHandRaised: boolean;
+  isScreenSharing?: boolean; // From participant.ts
   isSpeaking: boolean;
   isPinned: boolean;
   isSpotlighted: boolean;
-  avatar?: string;
   joinedAt: Date;
-  isVideoAllowed?: boolean;
+  avatar?: string;
+  isVideoAllowed?: boolean; // From index.ts
 }
 
 export interface ChatMessage {
@@ -34,9 +36,11 @@ export interface ChatMessage {
   senderName: string;
   content: string;
   timestamp: Date;
-  type: ChatType;
+  type: ChatType; // Compatible with 'public' | 'private'
   recipientId?: string; // For private messages
-  reactions?: MessageReaction[];
+  recipientName?: string; // From chat.ts
+  isRead?: boolean; // From chat.ts
+  reactions?: MessageReaction[]; // From index.ts
 }
 
 export interface MessageReaction {
@@ -44,25 +48,42 @@ export interface MessageReaction {
   users: string[];
 }
 
+export interface TypingIndicator {
+  userId: string;
+  userName: string;
+  timestamp: Date;
+}
+
+export interface MeetingSettings {
+  enableWaitingRoom?: boolean;
+  allowParticipantsToUnmute?: boolean;
+  allowParticipantsToShareScreen?: boolean;
+  disableParticipantVideo?: boolean;
+  whiteboardEditAccess?: 'hostOnly' | 'coHost' | 'everyone';
+  // From meeting.ts
+  recordAutomatically?: boolean;
+  muteParticipantsOnEntry?: boolean;
+}
+
 export interface Meeting {
   id: string;
   title: string;
   hostId: string;
   startTime: Date;
-  // Optional extended fields
   duration?: number; // minutes
-  settings?: {
-    enableWaitingRoom?: boolean;
-    allowParticipantsToUnmute?: boolean;
-    allowParticipantsToShareScreen?: boolean;
-    disableParticipantVideo?: boolean;
-    whiteboardEditAccess?: 'hostOnly' | 'coHost' | 'everyone';
-  };
+  settings?: MeetingSettings;
   originalHostId?: string;
   isRecording: boolean;
   isScreenSharing: boolean;
   viewMode: ViewMode;
   password?: string;
+  isLocked?: boolean; // From meeting.ts
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number; // Consolidating to number as per mockData usage
 }
 
 export interface Poll {
@@ -71,19 +92,16 @@ export interface Poll {
   options: PollOption[];
   createdBy: string;
   isActive: boolean;
-}
-
-export interface PollOption {
-  id: string;
-  text: string;
-  votes: number;
+  allowMultipleAnswers?: boolean; // From meeting.ts
+  createdAt?: Date; // From meeting.ts
 }
 
 export interface BreakoutRoom {
   id: string;
   name: string;
   participantIds: string[];
-  capacity: number;
+  capacity?: number; // From index.ts
+  isOpen?: boolean; // From meeting.ts
 }
 
 export interface Reaction {

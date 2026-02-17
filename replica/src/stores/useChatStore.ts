@@ -1,56 +1,88 @@
-// Zustand store for chat management
-
 import { create } from 'zustand';
 import { ChatMessage, ChatType } from '@/types';
-import { generateMockMessages } from '@/utils/mockData';
+import { io, Socket } from 'socket.io-client';
 
 interface ChatState {
   messages: ChatMessage[];
   activeTab: ChatType;
-  typingUsers: string[];
+  typingUsers: { userId: string, userName: string }[];
   unreadCount: number;
+  socket: Socket | null;
+  meetingId: string | null;
 
   // Actions
+  initSocket: (meetingId: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
-  addTypingUser: (userId: string) => void;
-  removeTypingUser: (userId: string) => void;
-  markAsRead: () => void;
   sendMessage: (content: string, type: ChatType, recipientId?: string) => void;
+  sendTypingStatus: (isTyping: boolean) => void;
+  markAsRead: () => void;
+  reset: () => void;
 }
 
-// TODO: Connect to backend WebSocket for real-time chat
-// WebSocket endpoint: ws://api.example.com/meeting/{meetingId}/chat
-
-const DEMO_MESSAGES: ChatMessage[] = [
-  {
-    id: '1',
-    senderId: 'user-1',
-    senderName: 'Alice Johnson',
-    content: 'Hello everyone 👋',
-    type: 'public',
-    timestamp: new Date(),
-  },
-  {
-    id: '2',
-    senderId: 'user-2',
-    senderName: 'Bob Smith',
-    content: 'Can you hear me?',
-    type: 'public',
-    timestamp: new Date(),
-  },
-];
-
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: DEMO_MESSAGES,
+  messages: [],
   activeTab: 'public',
   typingUsers: [],
   unreadCount: 0,
+  socket: null,
+  meetingId: null,
+
+  initSocket: (meetingId) => {
+    if (get().socket) return;
+
+    // In Vite, the proxy handles /socket.io
+    const socket = io('/', {
+      path: '/socket.io'
+    });
+
+    socket.on('connect', () => {
+      console.log('Connected to chat server');
+      socket.emit('join_meeting', meetingId);
+    });
+
+    socket.on('receive_message', (message: ChatMessage) => {
+      // Convert timestamp string to Date object
+      const processedMessage = {
+        ...message,
+        timestamp: new Date(message.timestamp)
+      };
+      get().addMessage(processedMessage, false); // TODO: Pass isChatOpen if possible
+    });
+
+    socket.on('user_typing', (data: { userId: string, userName: string }) => {
+      set((state) => ({
+        typingUsers: [...state.typingUsers.filter(u => u.userId !== data.userId), data]
+      }));
+    });
+
+    socket.on('user_stopped_typing', (data: { userId: string }) => {
+      set((state) => ({
+        typingUsers: state.typingUsers.filter(u => u.userId !== data.userId)
+      }));
+    });
+
+    set({ socket, meetingId });
+
+    // Fetch initial messages
+    fetch(`/api/messages/${meetingId}`)
+      .then(res => res.json())
+      .then(messages => {
+        set({
+          messages: messages.map((m: any) => ({
+            ...m,
+            senderId: m.sender_id,
+            senderName: m.sender_name,
+            timestamp: new Date(m.timestamp)
+          }))
+        });
+      })
+      .catch(err => console.error('Error fetching chat history:', err));
+  },
 
   setMessages: (messages) => set({ messages }),
 
-  // Receive messages via eventBus (simulated frontend-only real-time)
   addMessage: (message, isChatOpen) => set((state) => {
     const isFromMe = message.senderId === 'current-user';
     const shouldIncrement = !isChatOpen && !isFromMe;
@@ -63,36 +95,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  // TODO: Broadcast typing indicator via WebSocket
-  // WS message: { type: 'typing_start', data: { userId } }
-  addTypingUser: (userId) => set((state) => ({
-    typingUsers: [...state.typingUsers, userId]
-  })),
-
-  // TODO: Broadcast typing stop via WebSocket
-  // WS message: { type: 'typing_stop', data: { userId } }
-  removeTypingUser: (userId) => set((state) => ({
-    typingUsers: state.typingUsers.filter(id => id !== userId)
-  })),
-
-  markAsRead: () => set({ unreadCount: 0 }),
-
-  // TODO: Send message via WebSocket
-  // WS message: { type: 'send_message', data: { content, type, recipientId } }
-  // Expected response: { type: 'message_sent', data: { messageId, timestamp } }
   sendMessage: (content, type, recipientId) => {
-    const newMessage: ChatMessage = {
-      id: `message-${Date.now()}`,
-      senderId: 'current-user',
-      senderName: 'You',
+    const { socket, meetingId } = get();
+    if (!socket || !meetingId) return;
+
+    const messageData = {
+      sender_id: 'current-user', // Mock user ID
+      sender_name: 'You',
       content,
-      timestamp: new Date(),
       type,
+      meeting_id: meetingId,
       recipientId
     };
 
-    set((state) => ({
-      messages: [...state.messages, newMessage]
-    }));
-  }
+    socket.emit('send_message', messageData);
+  },
+
+  sendTypingStatus: (isTyping) => {
+    const { socket, meetingId } = get();
+    if (!socket || !meetingId) return;
+
+    if (isTyping) {
+      socket.emit('typing_start', { meeting_id: meetingId, userId: 'current-user', userName: 'You' });
+    } else {
+      socket.emit('typing_stop', { meeting_id: meetingId, userId: 'current-user' });
+    }
+  },
+
+  markAsRead: () => set({ unreadCount: 0 }),
+
+  reset: () => {
+    const { socket } = get();
+    if (socket) {
+      socket.disconnect();
+    }
+    set({
+      messages: [],
+      activeTab: 'public',
+      typingUsers: [],
+      unreadCount: 0,
+      socket: null,
+      meetingId: null
+    });
+  },
 }));
