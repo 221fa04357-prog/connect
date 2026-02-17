@@ -8,9 +8,13 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+
+// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
+const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
+
 const io = new Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL,
+        origin: frontendOrigin,
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -19,7 +23,7 @@ const io = new Server(server, {
 const port = process.env.PORT || 5001;
 
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: frontendOrigin,
     credentials: true
 }));
 
