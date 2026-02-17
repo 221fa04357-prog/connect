@@ -11,7 +11,7 @@ interface ChatState {
   meetingId: string | null;
 
   // Actions
-  initSocket: (meetingId: string) => void;
+  initSocket: (meetingId: string, user?: { id: string, name: string, role: string }) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
@@ -31,17 +31,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
   socket: null,
   meetingId: null,
 
-  initSocket: (meetingId) => {
+  initSocket: (meetingId, user) => {
     if (get().socket) return;
 
-    // In Vite, the proxy handles /socket.io
-    const socket = io('/', {
+    // Use the backend API URL for the socket connection
+    const socket = io(API, {
       path: '/socket.io'
     });
 
     socket.on('connect', () => {
       console.log('Connected to chat server');
-      socket.emit('join_meeting', meetingId);
+      socket.emit('join_meeting', { meetingId, user });
+    });
+
+    socket.on('participants_update', (participants: any[]) => {
+      // Import store here to avoid circular dependency
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().syncParticipants(participants.map(p => ({
+          ...p,
+          isAudioMuted: true, // Default states for now
+          isVideoOff: true,
+          isHandRaised: false,
+          isSpeaking: false,
+          isPinned: false,
+          isSpotlighted: false,
+          avatar: '#0B5CFF'
+        })));
+      });
     });
 
     socket.on('receive_message', (message: ChatMessage) => {

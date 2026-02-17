@@ -4,6 +4,7 @@ const db = require('./db');
 const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
+const groqService = require('./groqService');
 require('dotenv').config();
 
 const app = express();
@@ -107,12 +108,35 @@ app.get("/", (req, res) => {
 });
 
 // Socket.io Logic
+const rooms = new Map(); // meetingId -> Set of {socketId, userId, name, role}
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    socket.on('join_meeting', (meetingId) => {
+    socket.on('join_meeting', (data) => {
+        const { meetingId, user } = typeof data === 'string' ? { meetingId: data, user: null } : data;
         socket.join(meetingId);
-        console.log(`User ${socket.id} joined meeting: ${meetingId}`);
+
+        // Track participant
+        if (!rooms.has(meetingId)) {
+            rooms.set(meetingId, new Map());
+        }
+
+        const participantData = {
+            id: user?.id || `guest-${socket.id}`,
+            name: user?.name || 'Guest',
+            role: user?.role || 'participant',
+            socketId: socket.id,
+            joinedAt: new Date()
+        };
+
+        rooms.get(meetingId).set(socket.id, participantData);
+
+        console.log(`User ${participantData.name} (${socket.id}) joined meeting: ${meetingId}`);
+
+        // Broadcast updated participant list to everyone in the room
+        const roomParticipants = Array.from(rooms.get(meetingId).values());
+        io.to(meetingId).emit('participants_update', roomParticipants);
     });
 
     socket.on('send_message', async (data) => {
@@ -142,8 +166,35 @@ io.on('connection', (socket) => {
         socket.to(data.meeting_id).emit('user_stopped_typing', { userId: data.userId });
     });
 
+    // --- Signaling for WebRTC ---
+    socket.on('signal_send', (data) => {
+        const { to, signal, from } = data;
+        io.to(to).emit('signal_receive', {
+            from,
+            signal
+        });
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+
+        // Remove from all rooms
+        rooms.forEach((participants, meetingId) => {
+            if (participants.has(socket.id)) {
+                const p = participants.get(socket.id);
+                participants.delete(socket.id);
+                console.log(`User ${p.name} left meeting: ${meetingId}`);
+
+                // Broadcast update
+                const roomParticipants = Array.from(participants.values());
+                io.to(meetingId).emit('participants_update', roomParticipants);
+
+                // Cleanup empty rooms
+                if (participants.size === 0) {
+                    rooms.delete(meetingId);
+                }
+            }
+        });
     });
 });
 
@@ -397,6 +448,42 @@ app.put('/api/user/settings', async (req, res) => {
     } catch (err) {
         console.error('Error saving settings', err);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// --- AI Routes ---
+
+// Chat with AI Companion
+app.post('/api/ai/chat', async (req, res) => {
+    const { messages, meetingId } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'Messages array is required' });
+    }
+
+    try {
+        const response = await groqService.getChatCompletion(messages);
+        res.json({ content: response });
+    } catch (err) {
+        console.error('AI Chat Error:', err);
+        res.status(500).json({ error: 'AI failed to respond' });
+    }
+});
+
+// Summarize Meeting
+app.post('/api/ai/summarize', async (req, res) => {
+    const { transcript, meetingId } = req.body;
+
+    if (!transcript) {
+        return res.status(400).json({ error: 'Transcript text is required' });
+    }
+
+    try {
+        const summary = await groqService.summarizeMeeting(transcript);
+        res.json({ summary });
+    } catch (err) {
+        console.error('AI Summarization Error:', err);
+        res.status(500).json({ error: 'AI failed to summarize' });
     }
 });
 

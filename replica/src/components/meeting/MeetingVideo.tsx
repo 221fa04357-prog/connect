@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui'; // Consolidated import
+import { useMediaStore } from '@/stores/useMediaStore';
 
 // --- VideoTile.tsx ---
 
@@ -48,6 +49,7 @@ export function VideoTile({
         showMicConfirm,
         showVideoConfirm
     } = useMeetingStore();
+    const { remoteStreams } = useMediaStore();
 
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
@@ -63,7 +65,15 @@ export function VideoTile({
         if (isLocal && videoRef.current && localStream) {
             videoRef.current.srcObject = localStream;
         }
-    }, [isLocal, localStream, participant.isVideoOff]);
+        // Show remote stream if available
+        else if (!isLocal && videoRef.current) {
+            // @ts-ignore - participant.socketId comes from backend metadata
+            const stream = remoteStreams[participant.socketId];
+            if (stream) {
+                videoRef.current.srcObject = stream;
+            }
+        }
+    }, [isLocal, localStream, remoteStreams, participant, participant.isVideoOff]);
 
     const handleToggleMuteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -159,6 +169,14 @@ export function VideoTile({
                                 muted
                                 onLoadedMetadata={(e) => e.currentTarget.play()}
                                 className="w-full h-full object-cover transform -scale-x-100"
+                            />
+                        ) : !isLocal && (participant as any).socketId && remoteStreams[(participant as any).socketId] ? (
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                onLoadedMetadata={(e) => e.currentTarget.play()}
+                                className="w-full h-full object-cover"
                             />
                         ) : (
                             <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">

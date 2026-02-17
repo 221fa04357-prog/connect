@@ -32,6 +32,8 @@ import { eventBus } from '@/lib/eventBus';
 import { ChatMessage, Participant } from '@/types';
 import { jsPDF } from 'jspdf';
 
+const API = import.meta.env.VITE_API_URL || '';
+
 /* -------------------------------------------------------------------------------------------------
  * CHAT PANEL
  * ------------------------------------------------------------------------------------------------- */
@@ -965,21 +967,91 @@ export function AICompanionPanel() {
         setInput('');
         setIsTyping(true);
 
-        setTimeout(() => {
-            const responseText = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
+        try {
+            // Prepare messages context for Groq
+            // We include the last few messages for context
+            const contextMessages = messages.slice(-5).map(m => ({
+                role: m.sender === 'ai' ? 'assistant' : 'user',
+                content: m.content
+            }));
+            contextMessages.push({ role: 'user', content: userMsg.content });
+
+            const response = await fetch(`${API}/api/ai/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: contextMessages,
+                    meetingId: meeting?.id
+                }),
+            });
+
+            if (!response.ok) throw new Error('AI response failed');
+
+            const data = await response.json();
+
             const aiMsg: AIMessage = {
-                id: (Date.now() + 1).toString(),
+                id: Date.now().toString(),
                 sender: 'ai',
-                content: responseText,
+                content: data.content,
                 timestamp: new Date(),
             };
             setMessages(prev => [...prev, aiMsg]);
+        } catch (err) {
+            console.error('AI Error:', err);
+            const errorMsg: AIMessage = {
+                id: Date.now().toString(),
+                sender: 'ai',
+                content: "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.",
+                timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        } finally {
             setIsTyping(false);
-        }, 1500);
+        }
     };
 
-    const handleQuickAction = (action: string) => {
-        setInput(action);
+    const handleQuickAction = async (action: string) => {
+        if (action === "Summarize last 5 minutes" || action === "Create meeting recap") {
+            setInput(action);
+            setIsTyping(true);
+
+            try {
+                // For a real app, we'd grab the actual transcript from useChatStore
+                // For now, we'll simulate sending current chat history as a "transcript"
+                const recentHistory = useChatStore.getState().messages
+                    .slice(-20)
+                    .map(m => `${m.senderName}: ${m.content}`)
+                    .join('\n');
+
+                const response = await fetch(`${API}/api/ai/summarize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        transcript: recentHistory || "No conversation started yet.",
+                        meetingId: meeting?.id
+                    }),
+                });
+
+                if (!response.ok) throw new Error('Summarization failed');
+
+                const data = await response.json();
+
+                const aiMsg: AIMessage = {
+                    id: Date.now().toString(),
+                    sender: 'ai',
+                    content: data.summary,
+                    timestamp: new Date(),
+                };
+                setMessages(prev => [...prev, aiMsg]);
+            } catch (err) {
+                console.error('AI Summary Error:', err);
+            } finally {
+                setIsTyping(false);
+                setInput('');
+            }
+        } else {
+            setInput(action);
+        }
     };
 
     /* ---------------- LOGIC: ACTION ITEMS ---------------- */

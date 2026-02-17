@@ -28,6 +28,7 @@ export interface Participant {
   joinedAt: Date;
   avatar?: string;
   isVideoAllowed?: boolean; // From index.ts
+  socketId?: string; // Socket ID for WebRTC signaling
 }
 
 export interface ChatMessage {

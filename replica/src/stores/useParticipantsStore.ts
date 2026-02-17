@@ -56,15 +56,16 @@ interface ParticipantsState {
   // Unified Toggle Actions
   toggleParticipantAudio: (id: string) => void;
   toggleParticipantVideo: (id: string) => void;
+  syncParticipants: (participants: Participant[]) => void;
 }
 
 export const useParticipantsStore = create<ParticipantsState>()(
   persist(
     (set) => ({
-      participants: generateMockParticipants(8).map(p => ({ ...p, isVideoAllowed: true })),
+      participants: [], // No more mock data
       focusedParticipantId: null,
       setFocusedParticipant: (id) => set({ focusedParticipantId: id }),
-      waitingRoom: generateWaitingRoomParticipants(),
+      waitingRoom: [], // No more mock data
       transientRoles: {},
       waitingRoomEnabled: true,
       videoRestricted: false,
@@ -351,7 +352,9 @@ export const useParticipantsStore = create<ParticipantsState>()(
         });
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
-      })
+      }),
+
+      syncParticipants: (participants) => set({ participants })
     }),
     {
       name: 'participants-store',

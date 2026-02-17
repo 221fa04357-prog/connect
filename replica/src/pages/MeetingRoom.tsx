@@ -10,8 +10,10 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { useMediaStore } from '@/stores/useMediaStore';
 
 export default function MeetingRoom() {
+  const user = useAuthStore((state) => state.user);
   const {
     participants,
     setActiveSpeaker,
@@ -38,14 +40,89 @@ export default function MeetingRoom() {
   } = useMeetingStore();
 
   const { initSocket } = useChatStore();
+  const { addRemoteStream, removeRemoteStream, clearRemoteStreams } = useMediaStore();
+  const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
 
   /* ---------------- CHAT INITIALIZATION ---------------- */
   useEffect(() => {
-    if (meeting?.id) {
+    if (meeting?.id && user) {
       console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id);
-      initSocket(meeting.id);
+      initSocket(meeting.id, {
+        id: user.id,
+        name: user.name || 'Anonymous',
+        role: (meeting.hostId === user.id) ? 'host' : 'participant'
+      });
+
+      const socket = useChatStore.getState().socket;
+      if (socket) {
+        // Handle incoming signals
+        socket.on('signal_receive', async (data: { from: string, signal: any }) => {
+          const { from, signal } = data;
+
+          if (!peerConnections.current[from]) {
+            createPeerConnection(from);
+          }
+
+          const pc = peerConnections.current[from];
+
+          if (signal.type === 'offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('signal_send', { to: from, from: socket.id, signal: answer });
+          } else if (signal.type === 'answer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          } else if (signal.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal));
+          }
+        });
+      }
     }
-  }, [meeting?.id, initSocket]);
+  }, [meeting?.id, user, initSocket]);
+
+  const createPeerConnection = useCallback((participantSocketId: string) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        useChatStore.getState().socket?.emit('signal_send', {
+          to: participantSocketId,
+          from: useChatStore.getState().socket?.id,
+          signal: event.candidate
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      addRemoteStream(participantSocketId, event.streams[0]);
+    };
+
+    if (localStream) {
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    }
+
+    peerConnections.current[participantSocketId] = pc;
+    return pc;
+  }, [localStream, addRemoteStream]);
+
+  // Handle new participants joining (initiate offers)
+  useEffect(() => {
+    const socket = useChatStore.getState().socket;
+    if (socket) {
+      participants.forEach(p => {
+        // @ts-ignore - p.socketId comes from backend rooms Map
+        if (p.socketId && p.socketId !== socket.id && !peerConnections.current[p.socketId]) {
+          const pc = createPeerConnection(p.socketId);
+          pc.createOffer().then(offer => {
+            pc.setLocalDescription(offer);
+            socket.emit('signal_send', { to: p.socketId, from: socket.id, signal: offer });
+          });
+        }
+      });
+    }
+  }, [participants, createPeerConnection]);
 
   /* ---------------- CONNECTION MONITORING ---------------- */
   const checkConnection = useCallback(() => {
@@ -111,8 +188,12 @@ export default function MeetingRoom() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       if (conn) conn.removeEventListener('change', checkConnection);
+
+      // Cleanup Peer Connections
+      Object.values(peerConnections.current).forEach(pc => pc.close());
+      clearRemoteStreams();
     };
-  }, [checkConnection, setConnectionQuality]);
+  }, [checkConnection, setConnectionQuality, clearRemoteStreams]);
 
   // Toast for poor connection
   useEffect(() => {
@@ -138,8 +219,6 @@ export default function MeetingRoom() {
 
 
   /* ---------------- CAMERA MANAGEMENT ---------------- */
-
-  const user = useAuthStore((state) => state.user);
 
   // Derived state for local participant
   const myParticipant = participants.find(p => p.id === user?.id)
