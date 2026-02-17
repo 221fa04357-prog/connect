@@ -193,16 +193,31 @@ export const useMeetingStore = create<MeetingState>()(
 
       leaveMeeting: () => {
         const state = useMeetingStore.getState();
+
+        // Stop all local media tracks FIRST
         if (state.localStream) {
-          state.localStream.getTracks().forEach((track) => track.stop());
+          state.localStream.getTracks().forEach((track) => {
+            track.stop();
+            console.log(`Stopped ${track.kind} track`);
+          });
         }
 
-        // Reset Chat Store
+        // Stop screen share if active
+        if (state.screenShareStream) {
+          state.screenShareStream.getTracks().forEach((track) => {
+            track.stop();
+            console.log(`Stopped screen share ${track.kind} track`);
+          });
+        }
+
+        // Reset Chat Store (disconnects socket)
         useChatStore.getState().reset();
 
+        // Reset all meeting state
         set({
           meeting: null,
           localStream: null,
+          screenShareStream: null,
           isScreenSharing: false,
           isRecording: false,
           recordingStartTime: null,

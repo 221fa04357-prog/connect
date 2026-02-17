@@ -63,6 +63,12 @@ export function VideoTile({
     useEffect(() => {
         // Show real local stream for the current user/guest only
         if (isLocal && videoRef.current && localStream) {
+            console.log('VideoTile: Setting local stream', {
+                participantId: participant.id,
+                hasStream: !!localStream,
+                streamActive: localStream.active,
+                videoTracks: localStream.getVideoTracks().length
+            });
             videoRef.current.srcObject = localStream;
         }
         // Show remote stream if available
@@ -70,6 +76,11 @@ export function VideoTile({
             // @ts-ignore - participant.socketId comes from backend metadata
             const stream = remoteStreams[participant.socketId];
             if (stream) {
+                console.log('VideoTile: Setting remote stream', {
+                    participantId: participant.id,
+                    socketId: participant.socketId,
+                    hasStream: !!stream
+                });
                 videoRef.current.srcObject = stream;
             }
         }
@@ -159,7 +170,7 @@ export function VideoTile({
                         {participant.name.charAt(0).toUpperCase()}
                     </div>
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                    <div className="w-full h-full flex items-center justify-center overflow-hidden bg-gray-900 rounded-lg">
                         {isLocal && localStream ? (
                             <video
                                 ref={videoRef}
@@ -168,7 +179,8 @@ export function VideoTile({
                                 playsInline
                                 muted
                                 onLoadedMetadata={(e) => e.currentTarget.play()}
-                                className="w-full h-full object-cover transform -scale-x-100"
+                                className="w-full h-full object-cover transform -scale-x-100 rounded-lg"
+                                style={{ backgroundColor: '#1f2937' }}
                             />
                         ) : !isLocal && (participant as any).socketId && remoteStreams[(participant as any).socketId] ? (
                             <video
@@ -176,10 +188,11 @@ export function VideoTile({
                                 autoPlay
                                 playsInline
                                 onLoadedMetadata={(e) => e.currentTarget.play()}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover rounded-lg"
+                                style={{ backgroundColor: '#1f2937' }}
                             />
                         ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
+                            <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center rounded-lg">
                                 <Video className="w-12 h-12 text-gray-500" />
                             </div>
                         )}
@@ -327,31 +340,42 @@ export function VideoGrid() {
     }
 
     // Responsive Zoom-like Gallery View
+    const participantCount = visibleParticipants.length;
+
     return (
         <div className="flex-1 min-h-0 overflow-y-auto pb-[110px] no-scrollbar">
-            <div
-                className={cn(
-                    'grid gap-2 md:gap-4 p-2 md:p-4 w-full',
-                )}
-                style={{
-                    gridTemplateColumns: window.innerWidth >= 768
-                        ? 'repeat(auto-fit, minmax(200px, 1fr))'
-                        : 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gridAutoRows: '1fr',
-                    alignItems: 'stretch',
-                    justifyItems: 'stretch',
-                }}
-            >
-                {visibleParticipants.map((participant) => (
-                    <VideoTile
-                        key={participant.id}
-                        participant={participant}
-                        isActive={participant.id === activeSpeakerId}
-                        isPinned={pinnedParticipantId === participant.id}
-                        onPin={() => handlePin(participant.id)}
-                        onClick={() => setFocusedParticipant(participant.id)}
-                    />
-                ))}
+            <div className={cn(
+                'p-2 md:p-4 w-full h-full',
+                participantCount === 1 ? 'flex items-center justify-center' : ''
+            )}>
+                <div
+                    className={cn(
+                        'grid gap-2 md:gap-4',
+                        participantCount === 1 ? 'max-w-2xl w-full' : 'w-full'
+                    )}
+                    style={{
+                        gridTemplateColumns: participantCount === 1
+                            ? '1fr'
+                            : window.innerWidth >= 768
+                                ? `repeat(auto-fit, minmax(${participantCount === 2 ? '300px' : '200px'}, 1fr))`
+                                : 'repeat(auto-fit, minmax(140px, 1fr))',
+                        gridAutoRows: participantCount === 1 ? 'auto' : '1fr',
+                        aspectRatio: participantCount === 1 ? '16/9' : undefined,
+                        alignItems: 'stretch',
+                        justifyItems: 'stretch',
+                    }}
+                >
+                    {visibleParticipants.map((participant) => (
+                        <VideoTile
+                            key={participant.id}
+                            participant={participant}
+                            isActive={participant.id === activeSpeakerId}
+                            isPinned={pinnedParticipantId === participant.id}
+                            onPin={() => handlePin(participant.id)}
+                            onClick={() => setFocusedParticipant(participant.id)}
+                        />
+                    ))}
+                </div>
             </div>
         </div>
     );

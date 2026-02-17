@@ -82,8 +82,17 @@ export function JoinMeeting() {
                 // Only request if we don't have one active
                 if (!localStream || !localStream.active) {
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: true
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            aspectRatio: { ideal: 16 / 9 },
+                            facingMode: 'user'
+                        },
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
                     });
 
                     // Apply initial state - STOP tracks if they should be off to ensure hardware release

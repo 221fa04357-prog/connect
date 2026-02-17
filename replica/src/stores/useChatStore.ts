@@ -17,6 +17,8 @@ interface ChatState {
   setActiveTab: (tab: ChatType) => void;
   sendMessage: (content: string, type: ChatType, recipientId?: string) => void;
   sendTypingStatus: (isTyping: boolean) => void;
+  emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
+  emitReaction: (meetingId: string, reaction: any) => void;
   markAsRead: () => void;
   reset: () => void;
 }
@@ -57,6 +59,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           isSpotlighted: false,
           avatar: '#0B5CFF'
         })));
+      });
+    });
+
+    socket.on('participant_updated', (data: { userId: string, updates: any }) => {
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().updateParticipant(data.userId, data.updates);
+      });
+    });
+
+    socket.on('receive_reaction', (reaction: any) => {
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().addReaction(reaction);
       });
     });
 
@@ -117,27 +131,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { socket, meetingId } = get();
     if (!socket || !meetingId) return;
 
-    const messageData = {
-      sender_id: 'current-user', // Mock user ID
-      sender_name: 'You',
-      content,
-      type,
-      meeting_id: meetingId,
-      recipientId
-    };
-
-    socket.emit('send_message', messageData);
+    // Import auth store here to avoid circular dependency
+    import('./useAuthStore').then((auth) => {
+      const user = auth.useAuthStore.getState().user;
+      const messageData = {
+        sender_id: user?.id || 'guest',
+        sender_name: user?.name || 'Guest',
+        content,
+        type,
+        meeting_id: meetingId,
+        recipientId
+      };
+      socket.emit('send_message', messageData);
+    });
   },
 
   sendTypingStatus: (isTyping) => {
     const { socket, meetingId } = get();
     if (!socket || !meetingId) return;
 
-    if (isTyping) {
-      socket.emit('typing_start', { meeting_id: meetingId, userId: 'current-user', userName: 'You' });
-    } else {
-      socket.emit('typing_stop', { meeting_id: meetingId, userId: 'current-user' });
-    }
+    import('./useAuthStore').then((auth) => {
+      const user = auth.useAuthStore.getState().user;
+      if (isTyping) {
+        socket.emit('typing_start', {
+          meeting_id: meetingId,
+          userId: user?.id || 'guest',
+          userName: user?.name || 'Guest'
+        });
+      } else {
+        socket.emit('typing_stop', {
+          meeting_id: meetingId,
+          userId: user?.id || 'guest'
+        });
+      }
+    });
+  },
+
+  emitParticipantUpdate: (meetingId, userId, updates) => {
+    get().socket?.emit('update_participant', { meeting_id: meetingId, userId, updates });
+  },
+
+  emitReaction: (meetingId, reaction) => {
+    get().socket?.emit('send_reaction', { meeting_id: meetingId, reaction });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),

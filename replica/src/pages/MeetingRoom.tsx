@@ -39,7 +39,7 @@ export default function MeetingRoom() {
     setConnectionQuality
   } = useMeetingStore();
 
-  const { initSocket } = useChatStore();
+  const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
   const { addRemoteStream, removeRemoteStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
 
@@ -79,6 +79,29 @@ export default function MeetingRoom() {
       }
     }
   }, [meeting?.id, user, initSocket]);
+
+  // Sync local participant state with MeetingStore when joining
+  useEffect(() => {
+    if (meeting?.id && user && participants.length > 0) {
+      const myParticipant = participants.find(p => p.id === user.id || p.id === `participant-${user.id}`);
+      if (myParticipant) {
+        // Update participant to match MeetingStore state
+        if (myParticipant.isVideoOff !== meetingStoreVideoOff || myParticipant.isAudioMuted !== meetingStoreAudioMuted) {
+          console.log('MeetingRoom: Syncing participant state on join', {
+            participantId: myParticipant.id,
+            updating: {
+              isVideoOff: meetingStoreVideoOff,
+              isAudioMuted: meetingStoreAudioMuted
+            }
+          });
+          updateParticipant(myParticipant.id, {
+            isVideoOff: meetingStoreVideoOff,
+            isAudioMuted: meetingStoreAudioMuted
+          });
+        }
+      }
+    }
+  }, [meeting?.id, user, participants, meetingStoreVideoOff, meetingStoreAudioMuted, updateParticipant]);
 
   const createPeerConnection = useCallback((participantSocketId: string) => {
     const pc = new RTCPeerConnection({
@@ -123,6 +146,7 @@ export default function MeetingRoom() {
       });
     }
   }, [participants, createPeerConnection]);
+
 
   /* ---------------- CONNECTION MONITORING ---------------- */
   const checkConnection = useCallback(() => {
@@ -225,22 +249,38 @@ export default function MeetingRoom() {
     || participants.find(p => p.id === `participant-${user?.id}`)
     || participants[0]; // fallback for mock
 
-  const isAudioMutedLocal = myParticipant?.isAudioMuted ?? true;
-  const isVideoOffLocal = myParticipant?.isVideoOff ?? true;
+  const isAudioMutedLocal = meetingStoreAudioMuted;
+  const isVideoOffLocal = meetingStoreVideoOff;
 
-  // Preserve preview states: One-time sync from MeetingStore to ParticipantsStore on mount
+  /* ---------------- SOCKET SYNC BRIDGE (LOCAL -> REMOTE) ---------------- */
+
+  // Sync Media & Hand Raise
   useEffect(() => {
-    if (myParticipant) {
-      // Sync from MeetingStore (which holds the preview state) to ParticipantsStore
-      if (myParticipant.isAudioMuted !== meetingStoreAudioMuted || myParticipant.isVideoOff !== meetingStoreVideoOff) {
-        console.log("MeetingRoom: Syncing preview state from MeetingStore to participant store...");
-        updateParticipant(myParticipant.id, {
-          isAudioMuted: meetingStoreAudioMuted,
-          isVideoOff: meetingStoreVideoOff
-        });
+    if (meeting?.id && user && myParticipant) {
+      emitParticipantUpdate(meeting.id, user.id, {
+        isAudioMuted: meetingStoreAudioMuted,
+        isVideoOff: meetingStoreVideoOff,
+        isHandRaised: myParticipant.isHandRaised
+      });
+    }
+  }, [meeting?.id, user?.id, meetingStoreAudioMuted, meetingStoreVideoOff, myParticipant?.isHandRaised]);
+
+  // Sync Reactions
+  const lastReactionIdForSync = useRef<string | null>(null);
+  useEffect(() => {
+    if (meeting?.id && reactions.length > 0) {
+      const latest = reactions[reactions.length - 1];
+      if (latest.id !== lastReactionIdForSync.current) {
+        lastReactionIdForSync.current = latest.id;
+        if (latest.participantId === user?.id) {
+          emitReaction(meeting.id, latest);
+        }
       }
     }
-  }, [myParticipant?.id]); // Run once when participant is ready
+  }, [meeting?.id, reactions, user?.id]);
+
+  // No longer needed to sync preview state to participant store on mount, 
+  // because we now use MeetingStore as the authoritative source for local user.
 
   // Sync track enablement with store state for local participant (Store wins during meeting)
   useEffect(() => {
@@ -280,13 +320,29 @@ export default function MeetingRoom() {
           try {
             console.log("MeetingRoom: Initializing media stream...");
             const stream = await navigator.mediaDevices.getUserMedia({
-              video: true,
-              audio: true
+              video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
+                facingMode: 'user'
+              },
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
             });
 
             // Set initial track states based on MeetingStore
             stream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
             stream.getVideoTracks().forEach(t => t.enabled = !meetingStoreVideoOff);
+
+            console.log('MeetingRoom: Setting local stream', {
+              hasAudio: stream.getAudioTracks().length > 0,
+              hasVideo: stream.getVideoTracks().length > 0,
+              audioEnabled: !meetingStoreAudioMuted,
+              videoEnabled: !meetingStoreVideoOff
+            });
 
             setLocalStream(stream);
           } catch (err) {

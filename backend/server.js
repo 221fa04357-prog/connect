@@ -166,6 +166,18 @@ io.on('connection', (socket) => {
         socket.to(data.meeting_id).emit('user_stopped_typing', { userId: data.userId });
     });
 
+    // --- State Sync ---
+    socket.on('update_participant', (data) => {
+        const { meeting_id, userId, updates } = data;
+        // Broadcast the update to everyone else
+        socket.to(meeting_id).emit('participant_updated', { userId, updates });
+    });
+
+    socket.on('send_reaction', (data) => {
+        const { meeting_id, reaction } = data;
+        io.to(meeting_id).emit('receive_reaction', reaction);
+    });
+
     // --- Signaling for WebRTC ---
     socket.on('signal_send', (data) => {
         const { to, signal, from } = data;
