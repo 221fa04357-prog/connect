@@ -29,6 +29,14 @@ app.use(cors({
 
 app.use(express.json());
 
+// Root route
+app.get("/", (req, res) => {
+    res.json({
+        status: "ok",
+        message: "Backend is running 🚀"
+    });
+});
+
 // Socket.io Logic
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
