@@ -1,0 +1,1133 @@
+import { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Label } from '@/components/ui';
+import { Switch } from '@/components/ui';
+import { Video, Mic, MicOff, VideoOff, Calendar, Clock, Check, Copy } from 'lucide-react';
+// Helper for generating days in a month
+function getDaysInMonth(year: number, month: number) {
+    return new Date(year, month + 1, 0).getDate();
+}
+
+// Helper for formatting date
+
+function formatDate(date: Date | null) {
+    if (!date) return '';
+    const d = date;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${year}-${month}-${day}`;
+}
+
+// Helper for formatting time
+function formatTime(date: Date | null) {
+    if (!date) return '';
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+}
+import { useNavigate, useParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useParticipantsStore } from '@/stores/useParticipantsStore';
+import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
+import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useIsMobile } from '@/hooks';
+
+const API = import.meta.env.VITE_API_URL || '';
+
+export function JoinMeeting() {
+    const navigate = useNavigate();
+    const { meetingId: paramMeetingId } = useParams();
+    // Add participants store
+    const addParticipant = useParticipantsStore((state) => state.addParticipant);
+    const [meetingId, setMeetingId] = useState(paramMeetingId || '');
+    const [name, setName] = useState('');
+    const [permissionDenied, setPermissionDenied] = useState(false);
+
+    // Use global store for media state
+    const {
+        localStream,
+
+        setLocalStream,
+        setMeeting,
+        isAudioMuted,
+        isVideoOff,
+        toggleAudio,
+        toggleVideo,
+        setMeetingJoined
+    } = useMeetingStore();
+
+    const isMobile = useIsMobile();
+    // If meeting ID is provided via URL, verify user has camera permissions then go to join step
+    const [step, setStep] = useState(paramMeetingId ? 1 : 0);
+
+    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const guestSessionActive = useGuestSessionStore((state) => state.guestSessionActive);
+
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const isJoiningRef = useRef(false);
+
+    // Initial Stream Setup
+    useEffect(() => {
+        const initCamera = async () => {
+            try {
+                // Check if browser supports mediaDevices
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    console.error("MediaDevices API not supported.");
+                    setPermissionDenied(true);
+                    return;
+                }
+
+                // Only request if we don't have one active
+                if (!localStream || !localStream.active) {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            aspectRatio: { ideal: 16 / 9 },
+                            facingMode: 'user'
+                        },
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+
+                    // Apply initial state - STOP tracks if they should be off to ensure hardware release
+                    if (isAudioMuted) {
+                        stream.getAudioTracks().forEach(t => t.stop());
+                    }
+                    if (isVideoOff) {
+                        stream.getVideoTracks().forEach(t => t.stop());
+                    }
+
+                    setLocalStream(stream);
+                    setPermissionDenied(false);
+                }
+            } catch (err: any) {
+                console.error("Camera access error:", err);
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    setPermissionDenied(true);
+                } else if (err.name === 'NotFoundError') {
+                    console.error("No camera/microphone found.");
+                    // We could set a different state here if we wanted specific UI
+                }
+                setPermissionDenied(true);
+            }
+        };
+        initCamera();
+
+        // Cleanup: Managed globally by MeetingStore
+        return () => { };
+    }, []);
+
+    // Bind stream to video element
+    useEffect(() => {
+        if (videoRef.current && localStream) {
+            videoRef.current.srcObject = localStream;
+        }
+    }, [localStream]);
+
+    const handleAudioToggle = async () => {
+        const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isVideoOff = useMeetingStore.getState().isVideoOff;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: !isVideoOff
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get audio stream:", err);
+            }
+        }
+        toggleAudio();
+    };
+
+    const handleVideoToggle = async () => {
+        const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: !isAudioMuted
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get video stream:", err);
+            }
+        }
+        toggleVideo();
+    };
+
+    // Keyboard shortcuts for Mic (Alt+A) and Video (Alt+V) in Preview
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Alt+A for Audio
+            if (e.altKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                handleAudioToggle();
+            }
+            // Alt+V for Video
+            if (e.altKey && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                handleVideoToggle();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleAudioToggle, handleVideoToggle]);
+
+    const handleJoin = async () => {
+        if (!meetingId || !name) {
+            alert('Please enter meeting ID and your name');
+            return;
+        }
+
+        try {
+            // Automatically start guest session if not authenticated and no guest session is active
+            if (!isAuthenticated && !guestSessionActive) {
+                const { startGuestSession } = useGuestSessionStore.getState();
+                startGuestSession();
+            }
+
+            const response = await fetch(`${API}/api/meetings/${meetingId}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    alert('Meeting not found. Please check the ID.');
+                } else {
+                    alert('Failed to join meeting. Please try again.');
+                }
+                return;
+            }
+
+            const meetingData = await response.json();
+            isJoiningRef.current = true; // Prevent cleanup
+
+            // Set the meeting state from backend data
+            setMeeting({
+                ...meetingData,
+                startTime: meetingData.start_timestamp
+                    ? new Date(Number(meetingData.start_timestamp))
+                    : new Date(meetingData.start_time.includes('T') ? (meetingData.start_time.endsWith('Z') ? meetingData.start_time : meetingData.start_time + 'Z') : meetingData.start_time.replace(' ', 'T') + 'Z'),
+                hostId: meetingData.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
+            });
+
+            // Create participant for guest
+            if (!isAuthenticated && guestSessionActive) {
+                const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
+                addParticipant({
+                    id: guestId,
+                    name,
+                    role: 'participant',
+                    isAudioMuted,
+                    isVideoOff,
+                    isHandRaised: false,
+                    isSpeaking: false,
+                    isPinned: false,
+                    isSpotlighted: false,
+                    joinedAt: new Date(),
+                    avatar: undefined
+                });
+            }
+
+            // Allow join if authenticated or guest session is active
+            if (isAuthenticated || guestSessionActive) {
+                // Trigger Fullscreen
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.warn("Error attempting to enable fullscreen:", err);
+                    });
+                }
+
+                setMeetingJoined(true);
+                navigate('/meeting');
+            } else {
+                alert('Guest session expired. Please sign in to continue.');
+                navigate('/login');
+            }
+        } catch (err) {
+            console.error('Error joining meeting:', err);
+            alert('A network error occurred. Please try again.');
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full max-w-4xl"
+            >
+                <div className={cn(
+                    "grid gap-8",
+                    isMobile ? "grid-cols-1" : "md:grid-cols-2"
+                )}>
+                    {/* Step 0: Preview (Shown on Desktop always, or Step 0 on Mobile) */}
+                    {(!isMobile || step === 0) && (
+                        <motion.div
+                            initial={isMobile ? { opacity: 0, x: -20 } : false}
+                            animate={{ opacity: 1, x: 0 }}
+                            className={cn(
+                                "bg-[#232323] rounded-2xl flex flex-col min-h-[420px] shadow-2xl transition-all",
+                                isMobile ? "p-4 pt-3" : "p-6"
+                            )}
+                        >
+                            <h3 className={cn(
+                                "text-2xl font-bold text-center md:text-left",
+                                isMobile ? "mb-3" : "mb-4"
+                            )}>Preview</h3>
+
+                            <div className={cn(
+                                "flex-1 bg-[#1C1C1C] rounded-lg relative overflow-hidden",
+                                isMobile ? "mb-5 aspect-[4/3]" : "mb-6 aspect-video md:aspect-auto"
+                            )}>
+                                {/* Video Element - shown when video is on */}
+                                <div className={cn("w-full h-full", isVideoOff ? "hidden" : "block")}>
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        muted
+                                        playsInline
+                                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                                        style={{ transform: 'scaleX(-1)' }}
+                                    />
+                                </div>
+
+                                {/* Avatar - shown when video is off */}
+                                {isVideoOff && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-[#1C1C1C]">
+                                        <div
+                                            className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-semibold"
+                                            style={{ backgroundColor: '#0B5CFF' }}
+                                        >
+                                            {name ? name.charAt(0).toUpperCase() : 'Y'}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Permission Denied Error */}
+                                {permissionDenied && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 z-20 text-center p-6">
+                                        <p className="text-white text-sm font-medium">Camera access blocked. Please enable it in browser settings to continue.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex flex-col gap-6">
+                                <div className="flex justify-center gap-6">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={handleAudioToggle}
+                                        className={cn(
+                                            'rounded-full w-14 h-14 shadow-lg transition-all',
+                                            isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'
+                                        )}
+                                    >
+                                        {isAudioMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                                    </Button>
+
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={handleVideoToggle}
+                                        className={cn(
+                                            'rounded-full w-14 h-14 shadow-lg transition-all',
+                                            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1C1C1C] hover:bg-[#2D2D2D]'
+                                        )}
+                                    >
+                                        {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+                                    </Button>
+                                </div>
+
+                                {isMobile && (
+                                    <Button
+                                        onClick={() => setStep(1)}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] py-6 text-lg font-semibold rounded-xl"
+                                    >
+                                        Next
+                                    </Button>
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* Step 1: Join Form (Shown on Desktop always, or Step 1 on Mobile) */}
+                    {(!isMobile || step === 1) && (
+                        <motion.div
+                            initial={isMobile ? { opacity: 0, x: 20 } : false}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="bg-[#232323] rounded-2xl p-8 flex flex-col justify-center min-h-[400px]"
+                        >
+                            <div className="mb-8">
+                                <h2 className="text-3xl font-bold mb-2">Join Meeting</h2>
+                                <p className="text-gray-400">
+                                    Enter the meeting ID to join the call
+                                </p>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <Label htmlFor="meetingId">Meeting ID</Label>
+                                    <Input
+                                        id="meetingId"
+                                        type="text"
+                                        placeholder="123-456-789"
+                                        value={meetingId}
+                                        onChange={(e) => setMeetingId(e.target.value)}
+                                        className="bg-[#1C1C1C] border-[#404040] text-lg h-12"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="name">Your Name</Label>
+                                    <Input
+                                        id="name"
+                                        type="text"
+                                        placeholder="John Doe"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="bg-[#1C1C1C] border-[#404040] text-lg h-12"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-3 pt-2">
+                                    <Button
+                                        onClick={handleJoin}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-7 text-xl font-bold rounded-xl shadow-lg border-none"
+                                    >
+                                        Join Meeting
+                                    </Button>
+
+                                    {isMobile && (
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => setStep(0)}
+                                            className="w-full h-12 text-gray-400 hover:text-white"
+                                        >
+                                            Back to Preview
+                                        </Button>
+                                    )}
+
+                                    {!isMobile && (
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => navigate('/')}
+                                            className="w-full h-12 text-gray-400 hover:text-white"
+                                        >
+                                            Back to Home
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </div>
+            </motion.div>
+        </div>
+    );
+}
+
+export function CreateMeeting() {
+    const navigate = useNavigate();
+    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const user = useAuthStore((state) => state.user);
+    const { setMeeting, meeting: defaultMeeting, setMeetingJoined } = useMeetingStore(); // Access store
+    const [isScheduled, setIsScheduled] = useState(false);
+    const [scheduledMeetingData, setScheduledMeetingData] = useState<any>(null);
+    const [copied, setCopied] = useState(false);
+
+    const [formData, setFormData] = useState({
+        title: '',
+        date: '', // yyyy-mm-dd
+        time: '', // HH:mm
+        duration: '', // allow empty/null
+        waitingRoom: true,
+        muteOnEntry: false,
+        disableVideo: false,
+        requirePassword: false,
+        password: '',
+        whiteboardEditAccess: 'hostOnly' as 'hostOnly' | 'coHost' | 'everyone'
+    });
+
+    // Popover state
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [timePickerHour, setTimePickerHour] = useState<string | null>(null); // for two-step selection
+    const dateInputRef = useRef<HTMLInputElement>(null);
+    const timeInputRef = useRef<HTMLInputElement>(null);
+
+    // Autofill detection for date/time
+    // When browser autofills, input event is fired with isTrusted true, but sometimes only animationstart is reliable
+    // We'll use both for robustness
+    const handleDateAutofill = (e: React.SyntheticEvent<HTMLInputElement>) => {
+        // If value is filled and popup is open, close it
+        if (e.currentTarget.value && showDatePicker) {
+            setShowDatePicker(false);
+        }
+    };
+    const handleTimeAutofill = (e: React.SyntheticEvent<HTMLInputElement>) => {
+        if (e.currentTarget.value && showTimePicker) {
+            setShowTimePicker(false);
+        }
+    };
+
+    // For date picker
+    const today = new Date();
+    const selectedDate = formData.date ? new Date(formData.date) : null;
+    const [pickerMonth, setPickerMonth] = useState(today.getMonth());
+    const [pickerYear, setPickerYear] = useState(today.getFullYear());
+    const [pickerView, setPickerView] = useState<'day' | 'month' | 'year'>('day');
+    const [yearScroll, setYearScroll] = useState(0); // for scrolling years
+
+    // For time picker
+    const selectedTime = formData.time;
+
+    // Redirect to login if not authenticated
+    if (!isAuthenticated) {
+        navigate('/login', { replace: true });
+        return null;
+    }
+
+    const handleCreate = async () => {
+        if (isScheduled && (!formData.title || !formData.date || !formData.time)) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        const meetingId = `meeting-${Date.now()}`;
+        const startTime = isScheduled ? new Date(`${formData.date}T${formData.time}`) : new Date();
+        const duration = formData.duration ? parseInt(formData.duration) : 60;
+
+        const newMeeting: any = {
+            id: meetingId,
+            title: formData.title || 'New Meeting',
+            host_id: user?.id || 'host',
+            start_time: startTime.toISOString(),
+            start_timestamp: startTime.getTime(),
+            duration: duration,
+            settings: {
+                enableWaitingRoom: formData.waitingRoom,
+                muteOnEntry: formData.muteOnEntry,
+                disableParticipantVideo: formData.disableVideo,
+                whiteboardEditAccess: formData.whiteboardEditAccess,
+            },
+            password: formData.requirePassword ? formData.password : undefined,
+        };
+
+        try {
+            const response = await fetch(`${API}/api/meetings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMeeting),
+            });
+
+            if (!response.ok) throw new Error('Failed to create meeting');
+
+            const savedMeeting = await response.json();
+
+            if (isScheduled) {
+                setScheduledMeetingData(savedMeeting);
+                return;
+            }
+
+            setMeeting({
+                ...savedMeeting,
+                startTime: (savedMeeting as any).start_timestamp ? new Date(Number((savedMeeting as any).start_timestamp)) : new Date(savedMeeting.start_time.includes('T') ? (savedMeeting.start_time.endsWith('Z') ? savedMeeting.start_time : savedMeeting.start_time + 'Z') : (savedMeeting.start_time.includes(' ') ? savedMeeting.start_time.replace(' ', 'T') + 'Z' : savedMeeting.start_time + 'Z')),
+                hostId: savedMeeting.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
+            });
+
+            setMeetingJoined(true);
+
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Error attempting to enable fullscreen:", err);
+                });
+            }
+
+            navigate('/meeting');
+        } catch (err) {
+            console.error('Error creating meeting:', err);
+            alert('Failed to create meeting. Please try again.');
+        }
+    };
+
+    const handleInstantMeeting = async () => {
+        const meetingId = `meeting-${Date.now()}`;
+        const newMeeting: any = {
+            id: meetingId,
+            title: "Instant Meeting",
+            host_id: user?.id || 'host',
+            start_time: new Date().toISOString(),
+            start_timestamp: Date.now(),
+            duration: 60,
+            settings: {
+                enableWaitingRoom: true,
+                allowParticipantsToUnmute: true,
+                allowParticipantsToShareScreen: true,
+                disableParticipantVideo: false,
+                whiteboardEditAccess: 'hostOnly',
+            }
+        };
+
+        try {
+            const response = await fetch(`${API}/api/meetings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMeeting),
+            });
+
+            if (!response.ok) throw new Error('Failed to create instant meeting');
+
+            const savedMeeting = await response.json();
+
+            setMeeting({
+                ...savedMeeting,
+                startTime: (savedMeeting as any).start_timestamp ? new Date(Number((savedMeeting as any).start_timestamp)) : new Date(savedMeeting.start_time.includes('T') ? (savedMeeting.start_time.endsWith('Z') ? savedMeeting.start_time : savedMeeting.start_time + 'Z') : (savedMeeting.start_time.includes(' ') ? savedMeeting.start_time.replace(' ', 'T') + 'Z' : savedMeeting.start_time + 'Z')),
+                hostId: savedMeeting.host_id,
+                isRecording: false,
+                isScreenSharing: false,
+                viewMode: 'gallery'
+            });
+
+            setMeetingJoined(true);
+
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Error attempting to enable fullscreen:", err);
+                });
+            }
+
+            navigate('/meeting');
+        } catch (err) {
+            console.error('Error creating instant meeting:', err);
+            alert('Failed to start instant meeting. Please try again.');
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full max-w-2xl"
+            >
+                <div className="bg-[#232323] rounded-2xl p-8">
+                    <div className="flex items-center gap-3 mb-8">
+                        <Video className="w-8 h-8 text-[#0B5CFF]" />
+                        <h2 className="text-3xl font-bold">Create Meeting</h2>
+                    </div>
+
+                    {scheduledMeetingData ? (
+                        <div className="text-center py-6 space-y-6">
+                            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Check className="w-8 h-8 text-green-500" />
+                            </div>
+                            <h3 className="text-2xl font-bold">Meeting Scheduled!</h3>
+                            <p className="text-gray-400">
+                                Your meeting "{scheduledMeetingData.title}" has been created.
+                            </p>
+
+                            <div className="bg-[#1C1C1C] p-4 rounded-xl border border-[#404040] space-y-3">
+                                <div className="flex items-center justify-between text-sm text-gray-400 px-1">
+                                    <span>Meeting ID</span>
+                                    <span>{new Date(scheduledMeetingData.start_time).toLocaleString()}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Input
+                                        readOnly
+                                        value={scheduledMeetingData.id}
+                                        className="bg-[#232323] border-[#404040] font-mono"
+                                    />
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        className="border-[#404040] shrink-0"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(scheduledMeetingData.id);
+                                            setCopied(true);
+                                            setTimeout(() => setCopied(false), 2000);
+                                        }}
+                                    >
+                                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3 pt-4">
+                                <Button
+                                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] py-6"
+                                    onClick={() => {
+                                        setMeeting({
+                                            ...scheduledMeetingData,
+                                            startTime: new Date(scheduledMeetingData.start_time),
+                                            hostId: scheduledMeetingData.host_id,
+                                            isRecording: false,
+                                            isScreenSharing: false,
+                                            viewMode: 'gallery'
+                                        });
+                                        setMeetingJoined(true);
+                                        navigate('/meeting');
+                                    }}
+                                >
+                                    Enter Room Now
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setScheduledMeetingData(null);
+                                        setIsScheduled(false);
+                                    }}
+                                >
+                                    Schedule Another
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                                <Button
+                                    onClick={() => setIsScheduled(false)}
+                                    variant={!isScheduled ? 'default' : 'outline'}
+                                    className={!isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
+                                >
+                                    Instant Meeting
+                                </Button>
+                                <Button
+                                    onClick={() => setIsScheduled(true)}
+                                    variant={isScheduled ? 'default' : 'outline'}
+                                    className={isScheduled ? 'bg-[#0B5CFF]' : 'border-[#404040]'}
+                                >
+                                    Schedule Meeting
+                                </Button>
+                            </div>
+
+                            {isScheduled ? (
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="title">Meeting Title</Label>
+                                        <Input
+                                            id="title"
+                                            type="text"
+                                            placeholder="Team Standup"
+                                            value={formData.title}
+                                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                            className="bg-[#1C1C1C] border-[#404040]"
+                                        />
+                                    </div>
+
+                                    <div className="grid md:grid-cols-2 gap-4">
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="date">Date</Label>
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    tabIndex={-1}
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
+                                                    onClick={() => setShowDatePicker((v) => !v)}
+                                                >
+                                                    <Calendar />
+                                                </button>
+                                                <Input
+                                                    id="date"
+                                                    ref={dateInputRef}
+                                                    type="text"
+                                                    placeholder="dd-mm-yyyy"
+                                                    value={formData.date ? formData.date.split('-').reverse().join('-') : ''}
+                                                    onChange={(e) => {
+                                                        // Accept manual typing in dd-mm-yyyy or yyyy-mm-dd
+                                                        let val = e.target.value;
+                                                        // Try to convert dd-mm-yyyy to yyyy-mm-dd
+                                                        if (/^\d{2}-\d{2}-\d{4}$/.test(val)) {
+                                                            const [d, m, y] = val.split('-');
+                                                            val = `${y}-${m}-${d}`;
+                                                        }
+                                                        setFormData({ ...formData, date: val });
+                                                    }}
+                                                    onInput={handleDateAutofill}
+                                                    onAnimationStart={handleDateAutofill}
+                                                    className="bg-[#1C1C1C] border-[#404040] pl-10"
+                                                />
+                                                {/* Date Picker Popover */}
+                                                {showDatePicker && (
+                                                    <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg p-4" style={{ minWidth: 260, width: 320 }}>
+                                                        {/* Header with navigation and view switch */}
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (pickerView === 'day') {
+                                                                        setPickerYear(y => y - (pickerMonth === 0 ? 1 : 0));
+                                                                        setPickerMonth(m => m === 0 ? 11 : m - 1);
+                                                                    } else if (pickerView === 'month') {
+                                                                        setPickerYear(y => y - 1);
+                                                                    } else if (pickerView === 'year') {
+                                                                        setYearScroll(s => s - 12);
+                                                                    }
+                                                                }}
+                                                                className="px-2"
+                                                            >&#8592;</button>
+                                                            <span
+                                                                className="font-semibold cursor-pointer select-none"
+                                                                onClick={() => setPickerView(v => v === 'day' ? 'month' : v === 'month' ? 'year' : 'day')}
+                                                            >
+                                                                {pickerView === 'day' && (
+                                                                    <>
+                                                                        {new Date(pickerYear, pickerMonth).toLocaleString('default', { month: 'long' })} {pickerYear}
+                                                                    </>
+                                                                )}
+                                                                {pickerView === 'month' && (
+                                                                    <>{pickerYear}</>
+                                                                )}
+                                                                {pickerView === 'year' && (
+                                                                    <>{pickerYear + yearScroll}</>
+                                                                )}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (pickerView === 'day') {
+                                                                        setPickerYear(y => y + (pickerMonth === 11 ? 1 : 0));
+                                                                        setPickerMonth(m => m === 11 ? 0 : m + 1);
+                                                                    } else if (pickerView === 'month') {
+                                                                        setPickerYear(y => y + 1);
+                                                                    } else if (pickerView === 'year') {
+                                                                        setYearScroll(s => s + 12);
+                                                                    }
+                                                                }}
+                                                                className="px-2"
+                                                            >&#8594;</button>
+                                                        </div>
+                                                        {/* Views */}
+                                                        {pickerView === 'day' && (
+                                                            <>
+                                                                <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
+                                                                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => <div key={d} className="font-bold">{d}</div>)}
+                                                                </div>
+                                                                <div className="grid grid-cols-7 gap-1 text-center">
+                                                                    {(() => {
+                                                                        const firstDay = new Date(pickerYear, pickerMonth, 1).getDay();
+                                                                        const days = getDaysInMonth(pickerYear, pickerMonth);
+                                                                        const blanks = Array(firstDay).fill(null);
+                                                                        return [
+                                                                            ...blanks.map((_, i) => <div key={"b" + i}></div>),
+                                                                            ...Array(days).fill(0).map((_, i) => {
+                                                                                const d = i + 1;
+                                                                                const isSelected = selectedDate && selectedDate.getFullYear() === pickerYear && selectedDate.getMonth() === pickerMonth && selectedDate.getDate() === d;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={d}
+                                                                                        className={
+                                                                                            "w-8 h-8 rounded-full " +
+                                                                                            (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                                        }
+                                                                                        onClick={() => {
+                                                                                            const date = new Date(pickerYear, pickerMonth, d);
+                                                                                            setFormData({ ...formData, date: formatDate(date) });
+                                                                                            setShowDatePicker(false);
+                                                                                            setPickerView('day');
+                                                                                        }}
+                                                                                    >
+                                                                                        {d}
+                                                                                    </button>
+                                                                                );
+                                                                            })
+                                                                        ];
+                                                                    })()}
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        {pickerView === 'month' && (
+                                                            <div className="grid grid-cols-4 gap-2 text-center mb-2">
+                                                                {Array.from({ length: 12 }).map((_, m) => {
+                                                                    const isSelected = pickerMonth === m;
+                                                                    return (
+                                                                        <button
+                                                                            key={m}
+                                                                            className={
+                                                                                "py-1 px-2 rounded " +
+                                                                                (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            onClick={() => {
+                                                                                setPickerMonth(m);
+                                                                                setPickerView('day');
+                                                                            }}
+                                                                        >
+                                                                            {new Date(2000, m).toLocaleString('default', { month: 'short' })}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        {pickerView === 'year' && (
+                                                            <div className="max-h-40 overflow-y-auto mb-2">
+                                                                {Array.from({ length: 12 }).map((_, i) => {
+                                                                    const year = pickerYear + yearScroll - 6 + i;
+                                                                    const isSelected = pickerYear === year;
+                                                                    return (
+                                                                        <button
+                                                                            key={year}
+                                                                            className={
+                                                                                "block w-full text-left py-1 px-2 rounded " +
+                                                                                (isSelected ? "bg-[#0B5CFF] text-white" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            onClick={() => {
+                                                                                setPickerYear(year);
+                                                                                setPickerView('month');
+                                                                            }}
+                                                                        >
+                                                                            {year}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex justify-between mt-2">
+                                                            <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: '' }); setShowDatePicker(false); setPickerView('day'); }}>Clear</button>
+                                                            <button type="button" className="text-xs text-gray-400 hover:underline" onClick={() => { setFormData({ ...formData, date: formatDate(today) }); setShowDatePicker(false); setPickerMonth(today.getMonth()); setPickerYear(today.getFullYear()); setPickerView('day'); }}>Today</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="time">Time</Label>
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    tabIndex={-1}
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10"
+                                                    onClick={() => {
+                                                        setShowTimePicker((v) => !v);
+                                                        setTimePickerHour(null);
+                                                    }}
+                                                >
+                                                    <Clock />
+                                                </button>
+                                                <Input
+                                                    id="time"
+                                                    ref={timeInputRef}
+                                                    type="text"
+                                                    placeholder="--:--"
+                                                    value={formData.time}
+                                                    onChange={(e) => {
+                                                        setFormData({ ...formData, time: e.target.value });
+                                                    }}
+                                                    onInput={handleTimeAutofill}
+                                                    onAnimationStart={handleTimeAutofill}
+                                                    className="bg-[#1C1C1C] border-[#404040] pl-10"
+                                                />
+                                                {/* Time Picker Popover */}
+                                                {showTimePicker && (
+                                                    <div className="absolute left-0 mt-2 z-20 bg-[#232323] border border-[#404040] rounded-lg shadow-lg flex" style={{ minWidth: 120 }}>
+                                                        {/* Hour column */}
+                                                        <div className="max-h-48 overflow-y-auto">
+                                                            {Array.from({ length: 24 }).map((_, h) => {
+                                                                const hourStr = String(h).padStart(2, '0');
+                                                                const isSelected = timePickerHour === hourStr || (formData.time && formData.time.split(':')[0] === hourStr && timePickerHour === null);
+                                                                return (
+                                                                    <div key={h} className="flex">
+                                                                        <button
+                                                                            className={
+                                                                                "w-12 h-8 text-left px-2 rounded-none " +
+                                                                                (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            style={{ border: 'none' }}
+                                                                            onClick={() => {
+                                                                                setTimePickerHour(hourStr);
+                                                                            }}
+                                                                        >{hourStr}</button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        {/* Minute column */}
+                                                        <div className="max-h-48 overflow-y-auto">
+                                                            {Array.from({ length: 60 }).map((_, m) => {
+                                                                const minStr = String(m).padStart(2, '0');
+                                                                const isSelected = timePickerHour !== null
+                                                                    ? (formData.time === `${timePickerHour}:${minStr}`)
+                                                                    : (formData.time && formData.time.split(':')[1] === minStr);
+                                                                return (
+                                                                    <div key={m} className="flex">
+                                                                        <button
+                                                                            className={
+                                                                                "w-12 h-8 text-left px-2 rounded-none " +
+                                                                                (isSelected ? "bg-[#E5E5E5] text-black font-bold" : "hover:bg-[#404040]")
+                                                                            }
+                                                                            style={{ border: 'none' }}
+                                                                            onClick={() => {
+                                                                                const hour = timePickerHour !== null ? timePickerHour : (formData.time.split(':')[0] || '00');
+                                                                                setFormData({ ...formData, time: `${hour}:${minStr}` });
+                                                                                setShowTimePicker(false);
+                                                                                setTimePickerHour(null);
+                                                                            }}
+                                                                        >{minStr}</button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="duration">Duration (minutes)</Label>
+                                        <Input
+                                            id="duration"
+                                            type="number"
+                                            min={1}
+                                            max={480}
+                                            step={1}
+                                            value={formData.duration === '' ? '' : formData.duration}
+                                            onChange={(e) => {
+                                                let val = e.target.value;
+                                                if (val === '' || val === null) {
+                                                    setFormData({ ...formData, duration: '' });
+                                                } else {
+                                                    // Only allow numbers and clamp to min/max
+                                                    let num = Math.max(1, Math.min(480, Number(val.replace(/[^0-9]/g, ''))));
+                                                    setFormData({ ...formData, duration: isNaN(num) ? '' : num.toString() });
+                                                }
+                                            }}
+                                            className="bg-[#1C1C1C] border-[#404040] appearance-auto"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-4 pt-4 border-t border-[#404040]">
+                                        <h3 className="font-semibold">Meeting Settings</h3>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="waitingRoom" className="cursor-pointer">
+                                                Enable Waiting Room
+                                            </Label>
+                                            <Switch
+                                                id="waitingRoom"
+                                                checked={formData.waitingRoom}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, waitingRoom: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="muteOnEntry" className="cursor-pointer">
+                                                Mute Participants on Entry
+                                            </Label>
+                                            <Switch
+                                                id="muteOnEntry"
+                                                checked={formData.muteOnEntry}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, muteOnEntry: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="disableVideo" className="cursor-pointer">
+                                                Restrict Video on Entry (Host approval needed)
+                                            </Label>
+                                            <Switch
+                                                id="disableVideo"
+                                                checked={formData.disableVideo}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, disableVideo: checked })}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="requirePassword" className="cursor-pointer">
+                                                Require Meeting Password
+                                            </Label>
+                                            <Switch
+                                                id="requirePassword"
+                                                checked={formData.requirePassword}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, requirePassword: checked })}
+                                            />
+                                        </div>
+
+                                        {formData.requirePassword && (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="password">Meeting Password</Label>
+                                                <Input
+                                                    id="password"
+                                                    type="text"
+                                                    placeholder="Enter password"
+                                                    value={formData.password}
+                                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                                    className="bg-[#1C1C1C] border-[#404040]"
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="whiteboardAccess" className="cursor-pointer">
+                                                Who can edit?
+                                            </Label>
+                                            <select
+                                                id="whiteboardAccess"
+                                                value={formData.whiteboardEditAccess}
+                                                onChange={(e) => setFormData({ ...formData, whiteboardEditAccess: e.target.value as any })}
+                                                className="bg-[#1C1C1C] border border-[#404040] rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5CFF]"
+                                            >
+                                                <option value="hostOnly">Only Host</option>
+                                                <option value="coHost">Host + Co-host</option>
+                                                <option value="everyone">Everyone</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        onClick={handleCreate}
+                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                                    >
+                                        Schedule Meeting
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-gray-400 mb-8">
+                                        Start an instant meeting right now
+                                    </p>
+                                    <Button
+                                        onClick={handleInstantMeeting}
+                                        className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-12 py-6 text-lg"
+                                    >
+                                        Start Instant Meeting
+                                    </Button>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    <Button
+                        variant="ghost"
+                        onClick={() => navigate('/')}
+                        className="w-full mt-4"
+                    >
+                        Back to Home
+                    </Button>
+                </div>
+            </motion.div>
+        </div>
+    );
+}

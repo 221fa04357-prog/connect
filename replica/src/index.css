@@ -1,0 +1,253 @@
+/* Hide scrollbars globally but keep scroll functionality */
+html,
+body,
+* {
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
+}
+
+/* Chrome, Safari, Edge */
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* Force mobile control bar to always be visible and above all content */
+.controlbar-mobile-fix {
+  z-index: 9999 !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: #0A0A0A !important;
+  pointer-events: auto !important;
+}
+
+body,
+#root,
+html {
+  min-height: 100vh !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  position: relative !important;
+}
+
+html,
+body {
+  height: 100%;
+  overflow-x: hidden;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 11%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 14%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 14%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 217 100% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 217 100% 52%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1C1C1C;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+.animate-slide-in-bottom {
+  animation: slideInFromBottom 0.3s ease-out;
+}
+
+/* Utility to hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Zoom-style red blink (opacity only) — reusable utility */
+@-webkit-keyframes blinkRed {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.15;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes blinkRed {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.15;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Markdown Styling for AI Companion */
+.ai-content-markdown {
+  line-height: 1.6;
+  color: #e5e7eb;
+}
+
+.ai-content-markdown p {
+  margin-bottom: 0.75rem;
+}
+
+.ai-content-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-content-markdown strong {
+  color: #60a5fa;
+  /* Light blue for bold text to make it pop */
+  font-weight: 600;
+}
+
+.ai-content-markdown ul,
+.ai-content-markdown ol {
+  margin-left: 1.25rem;
+  margin-bottom: 0.75rem;
+  list-style-type: disc;
+}
+
+.ai-content-markdown li {
+  margin-bottom: 0.25rem;
+}
+
+.ai-content-markdown h1,
+.ai-content-markdown h2,
+.ai-content-markdown h3 {
+  color: #ffffff;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ai-content-markdown h1 {
+  font-size: 1.125rem;
+}
+
+.ai-content-markdown h2 {
+  font-size: 1.05rem;
+}
+
+.ai-content-markdown h3 {
+  font-size: 1rem;
+}
+
+.ai-content-markdown code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+/* Apply to icon elements (use together with a red color class, e.g. text-red-500) */
+.blink-red {
+  -webkit-animation: blinkRed 1s ease-in-out infinite;
+  animation: blinkRed 1s ease-in-out infinite;
+  will-change: opacity;
+  /* No background or box added — icon only */
+}
