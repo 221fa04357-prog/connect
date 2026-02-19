@@ -517,7 +517,7 @@ export function JoinMeeting() {
 
                                 <div className="flex flex-col gap-3 pt-2">
                                     <Button
-                                        onClick={handleJoin}
+                                        onClick={() => handleJoin()}
                                         className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-7 text-xl font-bold rounded-xl shadow-lg border-none"
                                     >
                                         Join Meeting
