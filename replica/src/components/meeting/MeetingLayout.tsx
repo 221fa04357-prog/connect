@@ -365,10 +365,10 @@ export function ParticipantsPanel() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const { user } = useAuthStore();
-    const { meeting } = useMeetingStore();
+    const { meeting, isJoinedAsHost } = useMeetingStore();
 
-    /** Resolve host status strictly by meeting.hostId */
-    const isHost = meeting?.hostId === user?.id;
+    /** Resolve host status strictly by isJoinedAsHost flag */
+    const isHost = isJoinedAsHost;
 
     /** Current participant from store */
     const currentUserParticipant = participants.find(p => p.id === user?.id);

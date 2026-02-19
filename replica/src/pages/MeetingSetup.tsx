@@ -97,16 +97,22 @@ export function JoinMeeting() {
                         }
                     });
 
-                    // Apply initial state - STOP tracks if they should be off to ensure hardware release
-                    if (isAudioMuted) {
-                        stream.getAudioTracks().forEach(t => t.stop());
-                    }
-                    if (isVideoOff) {
-                        stream.getVideoTracks().forEach(t => t.stop());
-                    }
+                    // Check if we are still on this page before setting store state
+                    if (!isJoiningRef.current) {
+                        // Apply initial state - STOP tracks if they should be off to ensure hardware release
+                        if (isAudioMuted) {
+                            stream.getAudioTracks().forEach(t => t.stop());
+                        }
+                        if (isVideoOff) {
+                            stream.getVideoTracks().forEach(t => t.stop());
+                        }
 
-                    setLocalStream(stream);
-                    setPermissionDenied(false);
+                        setLocalStream(stream);
+                        setPermissionDenied(false);
+                    } else {
+                        // If we are already joining, just stop this new stream immediately
+                        stream.getTracks().forEach(t => t.stop());
+                    }
                 }
             } catch (err: any) {
                 console.error("Camera access error:", err);
@@ -121,8 +127,20 @@ export function JoinMeeting() {
         };
         initCamera();
 
-        // Cleanup: Managed globally by MeetingStore
-        return () => { };
+        // Cleanup: Stop tracks when leaving the preview, UNLESS we are joining the meeting
+        return () => {
+            if (!isJoiningRef.current) {
+                const stream = useMeetingStore.getState().localStream;
+                if (stream) {
+                    stream.getTracks().forEach(track => {
+                        track.stop();
+                        console.log(`MeetingSetup: Stopped track on cleanup: ${track.kind}`);
+                    });
+                    // Also clear from store
+                    useMeetingStore.getState().setLocalStream(null);
+                }
+            }
+        };
     }, []);
 
     // Bind stream to video element
@@ -257,6 +275,8 @@ export function JoinMeeting() {
                 }
 
                 setMeetingJoined(true);
+                // Explicitly set as participant when joining via Join Meeting
+                useMeetingStore.getState().setIsJoinedAsHost(false);
                 navigate('/meeting');
             } else {
                 alert('Guest session expired. Please sign in to continue.');
@@ -558,6 +578,8 @@ export function CreateMeeting() {
             });
 
             setMeetingJoined(true);
+            // Explicitly set as host when creating a meeting
+            useMeetingStore.getState().setIsJoinedAsHost(true);
 
             if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(err => {
@@ -611,6 +633,8 @@ export function CreateMeeting() {
             });
 
             setMeetingJoined(true);
+            // Explicitly set as host when creating an instant meeting
+            useMeetingStore.getState().setIsJoinedAsHost(true);
 
             if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(err => {

@@ -774,9 +774,12 @@ function ControlBar() {
         showMicConfirm,
         showVideoConfirm,
         setMicConfirm,
-        setVideoConfirm
+        setVideoConfirm,
+
+        isJoinedAsHost
 
     } = useMeetingStore();
+    const isHost = isJoinedAsHost;
     const { user, isSubscribed } = useAuthStore();
 
     const {
@@ -991,7 +994,7 @@ function ControlBar() {
     const chunksRef = useRef<Blob[]>([]);
 
     // Derived state
-    const isHost = meeting?.hostId === user?.id;
+    // isHost is now defined at the top of ControlBar from isJoinedAsHost
 
     // Handlers
     const handleReaction = (emoji: string) => {
@@ -1293,14 +1296,15 @@ function ControlBar() {
         }
     };
 
-    const handleLeave = async () => {
-        // Only save recap if user is host
-        // We check both the participant role and the meeting metadata for redundancy
-        const isHost = currentParticipant?.role === 'host' || meeting?.hostId === user?.id;
-
-        console.log('MeetingControls: handleLeave called', { isHost, role: currentParticipant?.role, meetingHostId: meeting?.hostId, userId: user?.id });
+    const handleLeave = async (endForAll = false) => {
+        console.log('MeetingControls: handleLeave called', { isHost, endForAll, role: currentParticipant?.role, meetingHostId: meeting?.hostId, userId: user?.id });
 
         if (isHost && meeting) {
+            // If host ending for all, emit socket event
+            if (endForAll) {
+                useChatStore.getState().endMeeting(meeting.id);
+            }
+
             try {
                 const { summaryPoints, actionItems } = useAIStore.getState();
                 const { messages: transcript } = useChatStore.getState();
@@ -1976,14 +1980,14 @@ function ControlBar() {
                             <div className="flex flex-col gap-3">
                                 {isHost && (
                                     <Button
-                                        onClick={handleLeave}
+                                        onClick={() => handleLeave(true)}
                                         className="w-full bg-[#E53935] hover:bg-[#D32F2F] text-white py-6"
                                     >
                                         End Meeting for All
                                     </Button>
                                 )}
                                 <Button
-                                    onClick={handleLeave}
+                                    onClick={() => handleLeave()}
                                     variant={isHost ? "secondary" : "destructive"}
                                     className={cn("w-full py-6", !isHost && "bg-[#E53935] hover:bg-[#D32F2F] text-white")}
                                 >

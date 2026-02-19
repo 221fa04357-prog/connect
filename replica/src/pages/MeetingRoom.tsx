@@ -52,7 +52,7 @@ export default function MeetingRoom() {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
 
     console.log(`Creating PeerConnection for ${participantSocketId} (Polite: ${isPolite})`);
-    
+
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -128,18 +128,19 @@ export default function MeetingRoom() {
     if (meeting?.id) {
       // Try to find existing guest participant to get ID/Name
       const existingGuest = participants.find(p => p.id.startsWith('guest-'));
-      
+
+      const isJoinedAsHost = useMeetingStore.getState().isJoinedAsHost;
       const identity = user ? {
         id: user.id,
         name: user.name || 'Anonymous',
-        role: (meeting.hostId === user.id) ? 'host' : 'participant'
+        role: isJoinedAsHost ? 'host' : 'participant'
       } : {
         id: existingGuest?.id || `guest-${Math.random().toString(36).substr(2, 9)}`,
         name: existingGuest?.name || 'Guest',
         role: 'participant'
       };
 
-      console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id, identity);
+      console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id, identity, { isJoinedAsHost });
       initSocket(meeting.id, identity);
 
       const socket = useChatStore.getState().socket;
@@ -156,7 +157,7 @@ export default function MeetingRoom() {
 
           try {
             let pc = peerConnections.current[from];
-            
+
             if (!pc) {
               pc = createPeerConnection(from, isPolite);
             }
@@ -173,7 +174,7 @@ export default function MeetingRoom() {
               console.log(`Received OFFER from ${from} (Polite: ${isPolite})`);
               await pc.setRemoteDescription(new RTCSessionDescription(signal));
               await pc.setLocalDescription();
-              
+
               useChatStore.getState().socket?.emit('signal_send', {
                 to: from,
                 from: socketId,
@@ -182,16 +183,16 @@ export default function MeetingRoom() {
             } else if (signal.type === 'answer') {
               console.log(`Received ANSWER from ${from}`);
               if (pc.signalingState === "have-local-offer") {
-                 await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                await pc.setRemoteDescription(new RTCSessionDescription(signal));
               } else {
-                 console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState}`);
+                console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState}`);
               }
             } else if (signal.candidate) {
               try {
                 await pc.addIceCandidate(new RTCIceCandidate(signal));
               } catch (err) {
                 if (!ignoreOfferRef.current[from]) {
-                    console.error("Error adding ICE candidate:", err);
+                  console.error("Error adding ICE candidate:", err);
                 }
               }
             }
@@ -201,12 +202,12 @@ export default function MeetingRoom() {
         });
       }
     }
-  }, [meeting?.id, user, initSocket, createPeerConnection]); 
+  }, [meeting?.id, user, initSocket, createPeerConnection]);
 
   // Sync local participant state with MeetingStore when joining
   useEffect(() => {
     if (meeting?.id && participants.length > 0) {
-      const myParticipant = user 
+      const myParticipant = user
         ? participants.find(p => p.id === user.id)
         : participants.find(p => p.id.startsWith('guest-'));
 
@@ -229,11 +230,11 @@ export default function MeetingRoom() {
       participants.forEach(p => {
         // @ts-ignore - p.socketId comes from backend rooms Map
         if (p.socketId && p.socketId !== socket.id && !peerConnections.current[p.socketId]) {
-           // Only initiate if we don't have a connection yet.
-           // Note: In Perfect Negotiation, both sides CAN start, but usually we let the "impolite" one strictly offering isn't required if we handle collision.
-           // However, to kickstart:
-           const isPolite = socket.id < p.socketId;
-           createPeerConnection(p.socketId, isPolite);
+          // Only initiate if we don't have a connection yet.
+          // Note: In Perfect Negotiation, both sides CAN start, but usually we let the "impolite" one strictly offering isn't required if we handle collision.
+          // However, to kickstart:
+          const isPolite = socket.id < p.socketId;
+          createPeerConnection(p.socketId, isPolite);
         }
       });
     }
@@ -241,30 +242,30 @@ export default function MeetingRoom() {
 
   // DYNAMIC TRACK UPDATE: Re-attach tracks when localStream changes
   useEffect(() => {
-     if (localStream) {
-         const videoTrack = localStream.getVideoTracks()[0];
-         const audioTrack = localStream.getAudioTracks()[0];
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      const audioTrack = localStream.getAudioTracks()[0];
 
-         Object.values(peerConnections.current).forEach((pc) => {
-             const senders = pc.getSenders();
-             
-             // Replace Video Track
-             const videoSender = senders.find(s => s.track?.kind === 'video');
-             if (videoSender && videoTrack) {
-                 videoSender.replaceTrack(videoTrack);
-             } else if (!videoSender && videoTrack) {
-                 pc.addTrack(videoTrack, localStream);
-             }
+      Object.values(peerConnections.current).forEach((pc) => {
+        const senders = pc.getSenders();
 
-             // Replace Audio Track
-             const audioSender = senders.find(s => s.track?.kind === 'audio');
-             if (audioSender && audioTrack) {
-                 audioSender.replaceTrack(audioTrack);
-             } else if (!audioSender && audioTrack) {
-                 pc.addTrack(audioTrack, localStream);
-             }
-         });
-     }
+        // Replace Video Track
+        const videoSender = senders.find(s => s.track?.kind === 'video');
+        if (videoSender && videoTrack) {
+          videoSender.replaceTrack(videoTrack);
+        } else if (!videoSender && videoTrack) {
+          pc.addTrack(videoTrack, localStream);
+        }
+
+        // Replace Audio Track
+        const audioSender = senders.find(s => s.track?.kind === 'audio');
+        if (audioSender && audioTrack) {
+          audioSender.replaceTrack(audioTrack);
+        } else if (!audioSender && audioTrack) {
+          pc.addTrack(audioTrack, localStream);
+        }
+      });
+    }
   }, [localStream]);
 
 
@@ -421,8 +422,20 @@ export default function MeetingRoom() {
   }, [isAudioMutedLocal, isVideoOffLocal, localStream]);
 
   /* ---------------- CAMERA MANAGEMENT (Initial & Recovery) ---------------- */
+  const meetingJoined = useMeetingStore(state => state.meetingJoined);
+
   useEffect(() => {
     const initCamera = async () => {
+      // Robust Guard 1: Do not initialize if we are not supposed to be joined
+      if (!meetingJoined) {
+        if (localStream) {
+          localStream.getTracks().forEach(t => t.stop());
+          setLocalStream(null);
+          console.log("MeetingRoom: Meeting ended, force stopping tracks and clearing stream");
+        }
+        return;
+      }
+
       // Use MeetingStore state (preview state) instead of ParticipantsStore
       // Only initialize if video is NOT explicitly off in the MeetingStore
       if (!meetingStoreVideoOff) {

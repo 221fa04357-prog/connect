@@ -37,9 +37,11 @@ interface MeetingState {
   isMiniVisible: boolean;
   meetingJoined: boolean;
   isInsideMeeting: boolean;
+  isJoinedAsHost: boolean;
   setMiniVisible: (visible: boolean) => void;
   setMeetingJoined: (joined: boolean) => void;
   setIsInsideMeeting: (inside: boolean) => void;
+  setIsJoinedAsHost: (isHost: boolean) => void;
 
   // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
@@ -115,16 +117,27 @@ export const useMeetingStore = create<MeetingState>()(
       isMiniVisible: false,
       meetingJoined: false,
       isInsideMeeting: false,
+      isJoinedAsHost: false,
       setMiniVisible: (visible) => set({ isMiniVisible: visible }),
       setMeetingJoined: (joined) => set({ meetingJoined: joined }),
       setIsInsideMeeting: (inside) => set({ isInsideMeeting: inside }),
+      setIsJoinedAsHost: (isHost) => set({ isJoinedAsHost: isHost }),
 
       connectionQuality: 'excellent',
 
       // ================= ACTIONS =================
 
       setMeeting: (meeting) => set({ meeting }),
-      setLocalStream: (stream) => set({ localStream: stream }),
+      setLocalStream: (stream) => set((state) => {
+        // Automatically stop old tracks when a new stream is set
+        if (state.localStream && state.localStream !== stream) {
+          state.localStream.getTracks().forEach(track => {
+            track.stop();
+            console.log(`MeetingStore: Stopped old track: ${track.kind}`);
+          });
+        }
+        return { localStream: stream };
+      }),
       setViewMode: (mode) => set({ viewMode: mode }),
 
       toggleSelfView: () =>
