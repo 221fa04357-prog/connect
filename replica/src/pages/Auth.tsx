@@ -92,7 +92,14 @@ export function Login() {
                     email: formData.email,
                     password: formData.password
                 });
-                navigate('/');
+                // If guest was redirected here after session expiry, send them back to the join page
+                const pendingRedirect = localStorage.getItem('connectpro_post_login_redirect');
+                if (pendingRedirect) {
+                    localStorage.removeItem('connectpro_post_login_redirect');
+                    navigate(pendingRedirect);
+                } else {
+                    navigate('/');
+                }
             } catch (err: any) {
                 setAuthError(err.message || 'Login failed. Please check your credentials.');
             }
