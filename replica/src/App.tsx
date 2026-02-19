@@ -295,6 +295,13 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
         // If expired after check, it will update state
         const { guestSessionActive: stillActive } = useGuestSessionStore.getState();
         if (!stillActive) {
+          // Save the current meeting ID so Login can redirect back after auth
+          const meetingId = useMeetingStore.getState().meeting?.id;
+          if (meetingId) {
+            localStorage.setItem('connectpro_post_login_redirect', `/join/${meetingId}`);
+          } else {
+            localStorage.setItem('connectpro_post_login_redirect', '/join-meeting');
+          }
           // Force reload/redirect to ensure clean state
           window.location.href = '/#/login';
         }
