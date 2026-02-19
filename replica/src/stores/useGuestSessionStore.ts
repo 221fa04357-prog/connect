@@ -9,7 +9,7 @@ interface GuestSessionState {
 }
 
 const GUEST_SESSION_KEY = 'connectpro_guest_session';
-const GUEST_SESSION_DURATION = 2 * 60 * 1000 + 50 * 1000; // 2 min 50 sec in ms
+const GUEST_SESSION_DURATION = 3 * 60 * 1000; // 3 minutes in ms
 
 function saveGuestSession(expiresAt: number | null) {
   if (expiresAt) {

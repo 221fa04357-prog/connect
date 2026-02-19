@@ -46,16 +46,28 @@ export default function MeetingRoom() {
   /* ---------------- SIGNALING STATE ---------------- */
   const makingOfferRef = useRef<Record<string, boolean>>({});
   const ignoreOfferRef = useRef<Record<string, boolean>>({});
+  const isSettingRemoteAnswerPending = useRef<Record<string, boolean>>({});
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
+    if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
+
+    console.log(`Creating PeerConnection for ${participantSocketId} (Polite: ${isPolite})`);
+    
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+      ]
     });
 
     pc.onnegotiationneeded = async () => {
       try {
         makingOfferRef.current[participantSocketId] = true;
         await pc.setLocalDescription();
+        console.log(`Sending OFFER to ${participantSocketId}`);
         useChatStore.getState().socket?.emit('signal_send', {
           to: participantSocketId,
           from: useChatStore.getState().socket?.id,
@@ -79,11 +91,15 @@ export default function MeetingRoom() {
     };
 
     pc.ontrack = (event) => {
+      console.log(`Received remote track from ${participantSocketId}:`, event.streams[0].id);
       addRemoteStream(participantSocketId, event.streams[0]);
     };
 
+    // Add local tracks if they exist
     if (localStream) {
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
     }
 
     peerConnections.current[participantSocketId] = pc;
@@ -108,13 +124,23 @@ export default function MeetingRoom() {
 
   /* ---------------- CHAT & SIGNALING INITIALIZATION ---------------- */
   useEffect(() => {
-    if (meeting?.id && user) {
-      console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id);
-      initSocket(meeting.id, {
+    // FIX: Allow guests (user is null) to init socket
+    if (meeting?.id) {
+      // Try to find existing guest participant to get ID/Name
+      const existingGuest = participants.find(p => p.id.startsWith('guest-'));
+      
+      const identity = user ? {
         id: user.id,
         name: user.name || 'Anonymous',
         role: (meeting.hostId === user.id) ? 'host' : 'participant'
-      });
+      } : {
+        id: existingGuest?.id || `guest-${Math.random().toString(36).substr(2, 9)}`,
+        name: existingGuest?.name || 'Guest',
+        role: 'participant'
+      };
+
+      console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id, identity);
+      initSocket(meeting.id, identity);
 
       const socket = useChatStore.getState().socket;
       if (socket) {
@@ -129,11 +155,11 @@ export default function MeetingRoom() {
           const isPolite = socketId < from;
 
           try {
-            if (!peerConnections.current[from]) {
-              createPeerConnection(from, isPolite);
+            let pc = peerConnections.current[from];
+            
+            if (!pc) {
+              pc = createPeerConnection(from, isPolite);
             }
-
-            const pc = peerConnections.current[from];
 
             if (signal.type === 'offer') {
               const offerCollision = makingOfferRef.current[from] || pc.signalingState !== "stable";
@@ -144,20 +170,29 @@ export default function MeetingRoom() {
                 return;
               }
 
+              console.log(`Received OFFER from ${from} (Polite: ${isPolite})`);
               await pc.setRemoteDescription(new RTCSessionDescription(signal));
               await pc.setLocalDescription();
-              socket.emit('signal_send', {
+              
+              useChatStore.getState().socket?.emit('signal_send', {
                 to: from,
                 from: socketId,
                 signal: pc.localDescription
               });
             } else if (signal.type === 'answer') {
-              await pc.setRemoteDescription(new RTCSessionDescription(signal));
+              console.log(`Received ANSWER from ${from}`);
+              if (pc.signalingState === "have-local-offer") {
+                 await pc.setRemoteDescription(new RTCSessionDescription(signal));
+              } else {
+                 console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState}`);
+              }
             } else if (signal.candidate) {
               try {
                 await pc.addIceCandidate(new RTCIceCandidate(signal));
               } catch (err) {
-                if (!ignoreOfferRef.current[from]) throw err;
+                if (!ignoreOfferRef.current[from]) {
+                    console.error("Error adding ICE candidate:", err);
+                }
               }
             }
           } catch (err) {
@@ -166,22 +201,18 @@ export default function MeetingRoom() {
         });
       }
     }
-  }, [meeting?.id, user, initSocket, createPeerConnection]);
+  }, [meeting?.id, user, initSocket, createPeerConnection]); 
 
   // Sync local participant state with MeetingStore when joining
   useEffect(() => {
-    if (meeting?.id && user && participants.length > 0) {
-      const myParticipant = participants.find(p => p.id === user.id || p.id === `participant-${user.id}`);
+    if (meeting?.id && participants.length > 0) {
+      const myParticipant = user 
+        ? participants.find(p => p.id === user.id)
+        : participants.find(p => p.id.startsWith('guest-'));
+
       if (myParticipant) {
         // Update participant to match MeetingStore state
         if (myParticipant.isVideoOff !== meetingStoreVideoOff || myParticipant.isAudioMuted !== meetingStoreAudioMuted) {
-          console.log('MeetingRoom: Syncing participant state on join', {
-            participantId: myParticipant.id,
-            updating: {
-              isVideoOff: meetingStoreVideoOff,
-              isAudioMuted: meetingStoreAudioMuted
-            }
-          });
           updateParticipant(myParticipant.id, {
             isVideoOff: meetingStoreVideoOff,
             isAudioMuted: meetingStoreAudioMuted
@@ -198,13 +229,43 @@ export default function MeetingRoom() {
       participants.forEach(p => {
         // @ts-ignore - p.socketId comes from backend rooms Map
         if (p.socketId && p.socketId !== socket.id && !peerConnections.current[p.socketId]) {
-          const isPolite = socket.id < p.socketId;
-          createPeerConnection(p.socketId, isPolite);
-          // Negotiation is automatically triggered by onnegotiationneeded
+           // Only initiate if we don't have a connection yet.
+           // Note: In Perfect Negotiation, both sides CAN start, but usually we let the "impolite" one strictly offering isn't required if we handle collision.
+           // However, to kickstart:
+           const isPolite = socket.id < p.socketId;
+           createPeerConnection(p.socketId, isPolite);
         }
       });
     }
   }, [participants, createPeerConnection]);
+
+  // DYNAMIC TRACK UPDATE: Re-attach tracks when localStream changes
+  useEffect(() => {
+     if (localStream) {
+         const videoTrack = localStream.getVideoTracks()[0];
+         const audioTrack = localStream.getAudioTracks()[0];
+
+         Object.values(peerConnections.current).forEach((pc) => {
+             const senders = pc.getSenders();
+             
+             // Replace Video Track
+             const videoSender = senders.find(s => s.track?.kind === 'video');
+             if (videoSender && videoTrack) {
+                 videoSender.replaceTrack(videoTrack);
+             } else if (!videoSender && videoTrack) {
+                 pc.addTrack(videoTrack, localStream);
+             }
+
+             // Replace Audio Track
+             const audioSender = senders.find(s => s.track?.kind === 'audio');
+             if (audioSender && audioTrack) {
+                 audioSender.replaceTrack(audioTrack);
+             } else if (!audioSender && audioTrack) {
+                 pc.addTrack(audioTrack, localStream);
+             }
+         });
+     }
+  }, [localStream]);
 
 
   /* ---------------- CONNECTION MONITORING ---------------- */

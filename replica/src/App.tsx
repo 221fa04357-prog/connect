@@ -292,6 +292,12 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     if (!isAuthenticated && guestSessionActive) {
       const interval = setInterval(() => {
         checkGuestSession();
+        // If expired after check, it will update state
+        const { guestSessionActive: stillActive } = useGuestSessionStore.getState();
+        if (!stillActive) {
+          // Force reload/redirect to ensure clean state
+          window.location.href = '/#/login';
+        }
       }, 1000);
       return () => clearInterval(interval);
     }
