@@ -84,8 +84,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       import('./useMeetingStore').then((store) => {
         const meetingStore = store.useMeetingStore.getState();
         meetingStore.leaveMeeting();
-        // Use window.location as we don't have navigate here
-        window.location.hash = '/';
+        // App uses HashRouter (/#/ prefix) so we must use replace to properly navigate
+        window.location.replace('/#/');
       });
     });
 
