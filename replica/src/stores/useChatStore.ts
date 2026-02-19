@@ -20,6 +20,7 @@ interface ChatState {
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
   emitReaction: (meetingId: string, reaction: any) => void;
+  endMeeting: (meetingId: string) => void;
   markAsRead: () => void;
   reset: () => void;
 }
@@ -75,6 +76,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('receive_reaction', (reaction: any) => {
       import('./useMeetingStore').then((store) => {
         store.useMeetingStore.getState().addReaction(reaction);
+      });
+    });
+
+    socket.on('meeting_ended', () => {
+      console.log('Meeting has been ended by the host');
+      import('./useMeetingStore').then((store) => {
+        const meetingStore = store.useMeetingStore.getState();
+        meetingStore.leaveMeeting();
+        // Use window.location as we don't have navigate here
+        window.location.hash = '/';
       });
     });
 
@@ -183,6 +194,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitReaction: (meetingId, reaction) => {
     get().socket?.emit('send_reaction', { meeting_id: meetingId, reaction });
+  },
+
+  endMeeting: (meetingId) => {
+    get().socket?.emit('end_meeting', { meetingId });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),

@@ -214,6 +214,12 @@ io.on('connection', (socket) => {
         io.to(meeting_id).emit('receive_reaction', reaction);
     });
 
+    socket.on('end_meeting', (data) => {
+        const { meetingId } = data;
+        console.log(`Meeting ${meetingId} ended by host`);
+        io.to(meetingId).emit('meeting_ended', { meetingId });
+    });
+
     // --- Signaling for WebRTC ---
     socket.on('signal_send', (data) => {
         const { to, signal, from } = data;
