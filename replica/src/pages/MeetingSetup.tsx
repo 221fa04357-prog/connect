@@ -46,6 +46,10 @@ export function JoinMeeting() {
     const [meetingId, setMeetingId] = useState(paramMeetingId || '');
     const [name, setName] = useState('');
     const [permissionDenied, setPermissionDenied] = useState(false);
+    const [waitingForStart, setWaitingForStart] = useState(false);
+    const [timeRemaining, setTimeRemaining] = useState<number>(0);
+    const [scheduledStartTime, setScheduledStartTime] = useState<Date | null>(null);
+    const user = useAuthStore((state) => state.user);
 
     // Use global store for media state
     const {
@@ -209,8 +213,39 @@ export function JoinMeeting() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleAudioToggle, handleVideoToggle]);
 
-    const handleJoin = async () => {
-        if (!meetingId || !name) {
+    // Countdown timer for scheduled meetings
+    useEffect(() => {
+        if (!waitingForStart || !scheduledStartTime) return;
+
+        const timer = setInterval(() => {
+            const now = Date.now();
+            const start = scheduledStartTime.getTime();
+            const diff = start - now;
+
+            if (diff <= 0) {
+                clearInterval(timer);
+                setWaitingForStart(false);
+                setTimeRemaining(0);
+                // Auto-join
+                handleJoin(true); // pass strict=true to bypass check
+            } else {
+                setTimeRemaining(diff);
+            }
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [waitingForStart, scheduledStartTime]);
+
+    const formatTimeRemaining = (ms: number) => {
+        const totalSeconds = Math.floor(ms / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    const handleJoin = async (forceJoin = false) => {
+        if (!meetingId || (!name && !user?.name)) {
             alert('Please enter meeting ID and your name');
             return;
         }
@@ -233,14 +268,29 @@ export function JoinMeeting() {
             }
 
             const meetingData = await response.json();
+
+            // START DATE PARSING
+            const startTimeStamp = meetingData.start_timestamp
+                ? Number(meetingData.start_timestamp)
+                : new Date(meetingData.start_time.includes('T') ? (meetingData.start_time.endsWith('Z') ? meetingData.start_time : meetingData.start_time + 'Z') : meetingData.start_time.replace(' ', 'T') + 'Z').getTime();
+
+            const isHost = user?.id && (user.id === meetingData.host_id || user.id === 'host');
+
+            // STRICT START TIME CHECK
+            // If strictly enforced and not host
+            if (!forceJoin && !isHost && startTimeStamp > Date.now()) {
+                setScheduledStartTime(new Date(startTimeStamp));
+                setWaitingForStart(true);
+                setTimeRemaining(startTimeStamp - Date.now());
+                return;
+            }
+
             isJoiningRef.current = true; // Prevent cleanup
 
             // Set the meeting state from backend data
             setMeeting({
                 ...meetingData,
-                startTime: meetingData.start_timestamp
-                    ? new Date(Number(meetingData.start_timestamp))
-                    : new Date(meetingData.start_time.includes('T') ? (meetingData.start_time.endsWith('Z') ? meetingData.start_time : meetingData.start_time + 'Z') : meetingData.start_time.replace(' ', 'T') + 'Z'),
+                startTime: new Date(startTimeStamp),
                 hostId: meetingData.host_id,
                 isRecording: false,
                 isScreenSharing: false,
@@ -252,7 +302,7 @@ export function JoinMeeting() {
                 const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
                 addParticipant({
                     id: guestId,
-                    name,
+                    name: name || 'Guest',
                     role: 'participant',
                     isAudioMuted,
                     isVideoOff,
@@ -287,6 +337,43 @@ export function JoinMeeting() {
             alert('A network error occurred. Please try again.');
         }
     };
+
+    if (waitingForStart && scheduledStartTime) {
+        return (
+            <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-[#232323] p-8 rounded-2xl max-w-md w-full text-center border border-[#404040] shadow-2xl"
+                >
+                    <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Clock className="w-8 h-8 text-blue-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">Meeting Not Started</h2>
+                    <p className="text-gray-400 mb-6">
+                        This meeting has not started yet. Please join at the scheduled time ({scheduledStartTime.toLocaleTimeString()}).
+                    </p>
+
+                    <div className="text-4xl font-mono font-bold text-white mb-8 tracking-wider">
+                        {formatTimeRemaining(timeRemaining)}
+                    </div>
+
+                    <div className="space-y-3">
+                        <p className="text-sm text-gray-500">
+                            You will join automatically when the meeting starts.
+                        </p>
+                        <Button
+                            variant="outline"
+                            onClick={() => setWaitingForStart(false)}
+                            className="w-full border-[#404040] hover:bg-[#2D2D2D] hover:text-white"
+                        >
+                            Cancel
+                        </Button>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
@@ -430,7 +517,7 @@ export function JoinMeeting() {
 
                                 <div className="flex flex-col gap-3 pt-2">
                                     <Button
-                                        onClick={handleJoin}
+                                        onClick={() => handleJoin()}
                                         className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-7 text-xl font-bold rounded-xl shadow-lg border-none"
                                     >
                                         Join Meeting

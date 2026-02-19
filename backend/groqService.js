@@ -1,9 +1,9 @@
 const Groq = require("groq-sdk");
 require("dotenv").config();
 
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-});
+const groq = process.env.GROQ_API_KEY
+    ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+    : null;
 
 /**
  * Get AI Completion from Groq
@@ -11,6 +11,11 @@ const groq = new Groq({
  * @param {string} model - Groq model to use (current: llama-3.3-70b-versatile)
  */
 async function getChatCompletion(messages, model = "llama-3.3-70b-versatile") {
+    if (!groq) {
+        console.warn("GROQ_API_KEY is missing. AI features are disabled.");
+        return "AI features are currently unavailable due to missing API configuration.";
+    }
+
     try {
         const chatCompletion = await groq.chat.completions.create({
             messages: [
