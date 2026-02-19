@@ -135,8 +135,36 @@ const rooms = new Map(); // meetingId -> Set of {socketId, userId, name, role}
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    socket.on('join_meeting', (data) => {
+    socket.on('join_meeting', async (data) => {
         const { meetingId, user } = typeof data === 'string' ? { meetingId: data, user: null } : data;
+
+        try {
+            // Check meeting start time enforcement
+            const meetingResult = await db.query('SELECT host_id, start_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
+            const meeting = meetingResult.rows[0];
+
+            if (meeting) {
+                const isHost = user?.id && (user.id === meeting.host_id || user.id === 'host'); // Basic check, ideally verify auth
+                const now = Date.now();
+                const startTime = Number(meeting.start_timestamp);
+
+                // Check for strict start time (allow 5-minute buffer if needed, or strict as requested)
+                // Requirement: "The meeting should become accessible ONLY when the current time is equal to or greater than the scheduled start time."
+                if (!isHost && startTime && now < startTime) {
+                    // It's too early
+                    console.log(`User ${user?.name} blocked from joining meeting ${meetingId} (Starts at ${new Date(startTime).toISOString()})`);
+                    socket.emit('join_error', {
+                        code: 'MEETING_NOT_STARTED',
+                        message: 'This meeting has not started yet. Please join at the scheduled time.',
+                        startTime: startTime
+                    });
+                    return;
+                }
+            }
+        } catch (err) {
+            console.error('Error validating meeting enrollment:', err);
+        }
+
         socket.join(meetingId);
 
         // Track participant

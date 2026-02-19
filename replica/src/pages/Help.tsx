@@ -149,7 +149,7 @@ export default function Help() {
                     ))}
                 </nav>
 
-                <div className="p-4 border-t border-[#333]">
+                <div className="hidden md:block p-4 border-t border-[#333]">
                     <Button
                         variant="outline"
                         className="w-full justify-start gap-2 border-[#333] text-gray-400 hover:text-white"
@@ -164,11 +164,23 @@ export default function Help() {
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 bg-[#0A0A0A] relative">
                 {/* Mobile Header */}
-                <header className="md:hidden flex items-center p-4 border-b border-[#333] bg-[#111]">
-                    <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
-                        <Menu className="w-6 h-6" />
+                <header className="md:hidden flex items-center justify-between p-4 border-b border-[#333] bg-[#111]">
+                    <div className="flex items-center gap-3">
+                        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
+                            <Menu className="w-6 h-6" />
+                        </Button>
+                        <span className="font-bold text-lg">Help Center</span>
+                    </div>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-gray-400 hover:text-white flex items-center gap-2"
+                        onClick={() => navigate('/')}
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span className="text-sm font-medium">Back to Home</span>
                     </Button>
-                    <span className="ml-4 font-bold text-lg">Help Center</span>
                 </header>
 
                 {/* Top Search Bar */}
