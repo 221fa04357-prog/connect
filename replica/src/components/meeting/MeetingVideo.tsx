@@ -236,10 +236,13 @@ export function VideoTile({
                                         onClick={handleToggleMuteClick}
                                         className={cn(
                                             "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                            participant.isAudioMuted ? "bg-red-500/20 text-red-500" : "text-white"
+                                            // Priority: Local State > Participant State
+                                            (isLocal ? useMeetingStore.getState().isAudioMuted : participant.isAudioMuted)
+                                                ? "bg-red-500/20 text-red-500"
+                                                : "text-white"
                                         )}
                                     >
-                                        {participant.isAudioMuted ? (
+                                        {(isLocal ? useMeetingStore.getState().isAudioMuted : participant.isAudioMuted) ? (
                                             <MicOff className="w-4 h-4" />
                                         ) : (
                                             <Mic className="w-4 h-4" />
@@ -252,10 +255,12 @@ export function VideoTile({
                                         onClick={handleToggleVideoClick}
                                         className={cn(
                                             "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                            participant.isVideoOff ? "bg-red-500/20 text-red-500" : "text-white"
+                                            (isLocal ? useMeetingStore.getState().isVideoOff : participant.isVideoOff)
+                                                ? "bg-red-500/20 text-red-500"
+                                                : "text-white"
                                         )}
                                     >
-                                        {participant.isVideoOff ? (
+                                        {(isLocal ? useMeetingStore.getState().isVideoOff : participant.isVideoOff) ? (
                                             <VideoOff className="w-4 h-4" />
                                         ) : (
                                             <Video className="w-4 h-4" />

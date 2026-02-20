@@ -232,29 +232,29 @@ io.on('connection', (socket) => {
                 // Find recipient socket(s) in the meeting room
                 const room = rooms.get(meeting_id);
                 let sentToRecipient = false;
-                
+
                 if (room) {
                     for (const [sId, p] of room.entries()) {
-                         if (p.id === recipient_id) {
-                             io.to(sId).emit('receive_message', savedMessage);
-                             sentToRecipient = true;
-                         }
+                        if (p.id === recipient_id) {
+                            io.to(sId).emit('receive_message', savedMessage);
+                            sentToRecipient = true;
+                        }
                     }
                 }
-                
+
                 // Always send back to sender so it appears on their screen
                 // We do this by emitting to the sender's socket directly.
                 // If sender has multiple tabs (same user ID), ideally we'd emit to all their sockets too.
                 // For now, emitting to current socket + ensuring we broadcast to all sockets of that user if we could.
                 // Simpler: iterate room again for sender
-                 if (room) {
+                if (room) {
                     for (const [sId, p] of room.entries()) {
-                         if (p.id === sender_id) {
-                             io.to(sId).emit('receive_message', savedMessage);
-                         }
+                        if (p.id === sender_id) {
+                            io.to(sId).emit('receive_message', savedMessage);
+                        }
                     }
                 }
-                
+
             } else {
                 // Broadcast to everyone in the meeting room (public)
                 io.to(meeting_id).emit('receive_message', savedMessage);
@@ -295,6 +295,16 @@ io.on('connection', (socket) => {
         const { meeting_id } = data;
         // Broadcast to everyone in the meeting
         io.to(meeting_id).emit('unmute_all');
+    });
+
+    socket.on('stop_video_all', (data) => {
+        const { meeting_id } = data;
+        io.to(meeting_id).emit('stop_video_all');
+    });
+
+    socket.on('allow_video_all', (data) => {
+        const { meeting_id } = data;
+        io.to(meeting_id).emit('allow_video_all');
     });
 
     socket.on('end_meeting', (data) => {
