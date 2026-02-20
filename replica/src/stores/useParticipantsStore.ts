@@ -80,7 +80,12 @@ export const useParticipantsStore = create<ParticipantsState>()(
       addParticipant: (participant) => set((state) => {
         const p = { ...participant, isVideoAllowed: !state.videoRestricted };
         if (state.waitingRoomEnabled && p.role === 'participant') {
-          const waitingEntry: WaitingRoomParticipant = { id: p.id, name: p.name, joinedAt: new Date() };
+          const waitingEntry: WaitingRoomParticipant = {
+            id: p.id,
+            socketId: p.socketId || `local-${p.id}`,
+            name: p.name,
+            joinedAt: new Date()
+          };
           return { waitingRoom: [...state.waitingRoom, waitingEntry] };
         }
         const res = { participants: [...state.participants, p] };

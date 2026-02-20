@@ -138,6 +138,7 @@ export const generateMockBreakoutRooms = (): BreakoutRoom[] => [
 export const generateWaitingRoomParticipants = (): WaitingRoomParticipant[] =>
     Array.from({ length: 10 }, (_, i) => ({
         id: `waiting-${i + 1}`,
+        socketId: `socket-waiting-${i + 1}`,
         name: `New Participant ${i + 1}`,
         joinedAt: new Date(Date.now() - i * 15000)
     }));
