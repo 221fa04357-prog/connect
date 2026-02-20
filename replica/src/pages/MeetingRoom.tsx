@@ -215,12 +215,13 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id, user, initSocket, createPeerConnection, hasHydrated]);
 
+  const { localUserId } = useChatStore();
+
   // Sync local participant state with MeetingStore when joining
   useEffect(() => {
     if (meeting?.id && participants.length > 0) {
-      const myParticipant = user
-        ? participants.find(p => p.id === user.id)
-        : participants.find(p => p.id.startsWith('guest-'));
+      const myParticipant = participants.find(p => p.id === localUserId) ||
+        (user ? participants.find(p => p.id === user.id) : null);
 
       if (myParticipant) {
         // Update participant to match MeetingStore state

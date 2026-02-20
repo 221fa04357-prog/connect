@@ -369,7 +369,20 @@ export const useParticipantsStore = create<ParticipantsState>()(
           if (p.id === id) {
             const role = state.transientRoles[p.id] || p.role;
             if (role === 'host') return p;
-            return { ...p, isVideoAllowed: allowed, isVideoOff: !allowed };
+            const nextVideoOff = !allowed;
+
+            // Broadcast update
+            import('./useChatStore').then((chatStore) => {
+              const cs = chatStore.useChatStore.getState();
+              if (cs.meetingId) {
+                cs.emitParticipantUpdate(cs.meetingId, id, {
+                  isVideoAllowed: allowed,
+                  isVideoOff: nextVideoOff
+                });
+              }
+            });
+
+            return { ...p, isVideoAllowed: allowed, isVideoOff: nextVideoOff };
           }
           return p;
         });
@@ -402,22 +415,42 @@ export const useParticipantsStore = create<ParticipantsState>()(
       }),
 
       toggleParticipantAudio: (id) => set((state) => {
+        const target = state.participants.find(p => p.id === id);
+        if (!target) return {};
+        const nextMuted = !target.isAudioMuted;
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isAudioMuted: nextMuted });
+          }
+        });
+
         const participants = state.participants.map(p =>
-          p.id === id ? { ...p, isAudioMuted: !p.isAudioMuted } : p
+          p.id === id ? { ...p, isAudioMuted: nextMuted } : p
         );
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
 
       toggleParticipantVideo: (id) => set((state) => {
-        const participants = state.participants.map(p => {
-          if (p.id === id) {
-            const nextVideoOff = !p.isVideoOff;
-            if (!nextVideoOff && p.isVideoAllowed === false) return p;
-            return { ...p, isVideoOff: nextVideoOff };
+        const target = state.participants.find(p => p.id === id);
+        if (!target) return {};
+        const nextVideoOff = !target.isVideoOff;
+        if (!nextVideoOff && target.isVideoAllowed === false) return {};
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isVideoOff: nextVideoOff });
           }
-          return p;
         });
+
+        const participants = state.participants.map(p =>
+          p.id === id ? { ...p, isVideoOff: nextVideoOff } : p
+        );
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
