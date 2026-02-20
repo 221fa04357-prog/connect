@@ -1018,7 +1018,8 @@ function ControlBar() {
         || participants.find(p => p.id === `participant-${currentUserId}`)
         || participants[0];
 
-    const isHost = isJoinedAsHost || (currentParticipant && (transientRoles[currentParticipant.id] || currentParticipant.role)) === 'host';
+    const currentRole = currentParticipant ? (transientRoles[currentParticipant.id] || currentParticipant.role) : 'participant';
+    const isHost = isJoinedAsHost || currentRole === 'host' || currentRole === 'co-host';
     const isHandRaised = !!currentParticipant?.isHandRaised;
 
     const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
