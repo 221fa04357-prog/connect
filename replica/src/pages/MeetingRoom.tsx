@@ -553,8 +553,9 @@ export default function MeetingRoom() {
   /* ---------------- AUTO-END LOGIC ---------------- */
 
   // 1. Listen for meeting_ended event (Server broadcast)
+  const socket = useChatStore(state => state.socket);
+
   useEffect(() => {
-    const socket = useChatStore.getState().socket;
     if (!socket) return;
 
     const onMeetingEnded = () => {
@@ -569,11 +570,29 @@ export default function MeetingRoom() {
       navigate('/');
     };
 
+    const onMeetingExtended = (updatedMeeting: any) => {
+      console.log("Meeting extended:", updatedMeeting);
+      useMeetingStore.getState().setMeeting({
+        ...useMeetingStore.getState().meeting!,
+        ...updatedMeeting,
+        endTime: updatedMeeting.endTime // Ensure this is synced
+      });
+      import('sonner').then(({ toast }) => {
+        toast.success('Meeting Extended', {
+          description: `New end time: ${new Date(updatedMeeting.endTime).toLocaleTimeString()}`,
+          duration: 3000,
+        });
+      });
+    };
+
     socket.on('meeting_ended', onMeetingEnded);
+    socket.on('meeting_extended', onMeetingExtended);
+
     return () => {
       socket.off('meeting_ended', onMeetingEnded);
+      socket.off('meeting_extended', onMeetingExtended);
     };
-  }, [navigate]);
+  }, [socket, navigate]);
 
   // 2. Timer Enforcement
   useEffect(() => {
@@ -601,13 +620,21 @@ export default function MeetingRoom() {
         // Meeting time expired
 
         // Host emits 'end_meeting' signal
-        // Allowed within a modest window after end time to ensure it fires but doesn't spam forever
         if (isHost && now < endTime + 10000) {
-          useChatStore.getState().socket?.emit('end_meeting', { meetingId: meeting.id });
+          // Use the reactive socket we got from the hook above
+          if (socket) {
+            socket.emit('end_meeting', { meetingId: meeting.id });
+          } else {
+            // Fallback if socket isn't ready in store yet (rare)
+            useChatStore.getState().socket?.emit('end_meeting', { meetingId: meeting.id });
+          }
         }
 
         // Host & Participants: Force leave if 5 seconds past end time
+        // This is the safety net. If for some reason the socket event 'meeting_ended' 
+        // doesn't come back or isn't handled, this ensures everyone (including host) leaves.
         if (now >= endTime + 5000) {
+          console.log("Auto-end timer expired. Forcing leave.");
           useMeetingStore.getState().leaveMeeting();
           navigate('/');
         }
@@ -616,7 +643,7 @@ export default function MeetingRoom() {
 
     const interval = setInterval(checkTime, 1000);
     return () => clearInterval(interval);
-  }, [meeting, isHost, navigate]);
+  }, [meeting, isHost, navigate, socket]);
 
   /* ---------------- RECORDING TIMER ---------------- */
 

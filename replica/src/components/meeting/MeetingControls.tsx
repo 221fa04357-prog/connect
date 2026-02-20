@@ -57,7 +57,16 @@ import { useIsMobile } from '@/hooks';
 // --- TopBar.tsx ---
 
 function TopBar() {
-    const { meeting, isRecording, connectionQuality, isWhiteboardOpen } = useMeetingStore();
+    const {
+        meeting,
+        isRecording,
+        connectionQuality,
+        isWhiteboardOpen,
+        extendMeetingTime,
+        isParticipantsOpen,
+        isChatOpen
+    } = useMeetingStore();
+    const isMobile = useIsMobile();
     const { participants } = useParticipantsStore();
     const [copied, setCopied] = useState(false);
     // Removed controlled state usage to fix closing issue
@@ -109,6 +118,9 @@ function TopBar() {
     const host = participants.find(p => p.id === meeting?.hostId);
     const hostName = host ? host.name : 'Host';
 
+    const user = useAuthStore(state => state.user);
+    const isHost = meeting?.hostId === user?.id || user?.id === 'host';
+
     const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
     useEffect(() => {
@@ -140,6 +152,50 @@ function TopBar() {
         const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
     }, [meeting]);
+
+    // Extend Meeting Logic
+    const [showExtendPopup, setShowExtendPopup] = useState(false);
+    const [hasShownExtendPopup, setHasShownExtendPopup] = useState(false); // Only show once per session
+    const isPro = user?.subscriptionPlan === 'pro' || user?.subscriptionPlan === 'enterprise';
+
+    useEffect(() => {
+        if (!timeLeft || !isHost || hasShownExtendPopup) return;
+
+        // Time format is MM:SS
+        // Parse current time left. If <= 5:00, show popup
+        const [m, s] = timeLeft.split(':').map(Number);
+        const totalSeconds = (m * 60) + s;
+
+        if (totalSeconds > 0 && totalSeconds <= 300) { // 5 minutes
+            setShowExtendPopup(true);
+            setHasShownExtendPopup(true);
+        }
+    }, [timeLeft, isHost, hasShownExtendPopup]);
+
+    const handleExtendMeeting = (minutes: number) => {
+        if (!isPro) {
+            import('sonner').then(({ toast }) => {
+                toast.error('Upgrade Required', {
+                    description: 'You need a Pro plan to extend meetings.',
+                    action: {
+                        label: 'Upgrade',
+                        onClick: () => window.open('/pricing', '_blank')
+                    }
+                });
+            });
+            return;
+        }
+
+        extendMeetingTime(minutes);
+        setShowExtendPopup(false);
+        setHasShownExtendPopup(false); // Allow showing again if time runs low again
+
+        import('sonner').then(({ toast }) => {
+            toast.success(`Meeting Extended`, {
+                description: `Added ${minutes} minutes to the meeting.`,
+            });
+        });
+    };
 
     // Meeting Link
     const inviteLink = meeting?.id
@@ -357,7 +413,12 @@ function TopBar() {
                 </DropdownMenu>
             </div>
 
-            <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-3">
+            <div
+                className={cn(
+                    "absolute top-4 pointer-events-auto flex items-center gap-3 transition-all duration-300 ease-in-out",
+                    (!isMobile && (isParticipantsOpen || isChatOpen)) ? "right-[340px]" : "right-4"
+                )}
+            >
                 {timeLeft && (
                     <div className={cn(
                         "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
@@ -400,6 +461,82 @@ function TopBar() {
                     </div>
                 )}
             </div>
+
+            {/* Extend Meeting Warning Modal */}
+            <AnimatePresence>
+                {showExtendPopup && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 pointer-events-auto"
+                        onClick={() => { }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                            className="bg-[#1C1C1C] border border-[#333] rounded-xl p-6 max-w-[400px] w-full shadow-2xl relative overflow-hidden pointer-events-auto"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Pro Badge or Upgrade Banner */}
+                            {!isPro && (
+                                <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-blue-600 to-purple-600 h-1" />
+                            )}
+
+                            <div className="text-center mb-6">
+                                <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Clock className="w-8 h-8 text-yellow-500" />
+                                </div>
+                                <h3 className="text-xl font-bold text-white mb-2">Meeting Ending Soon</h3>
+                                <p className="text-gray-400">
+                                    This meeting will end in less than 5 minutes.
+                                    {isPro ? ' Would you like to extend it?' : ' Upgrade to extend the duration.'}
+                                </p>
+                            </div>
+
+                            {isPro ? (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[5, 10, 15].map((mins) => (
+                                            <Button
+                                                key={mins}
+                                                variant="outline"
+                                                onClick={() => handleExtendMeeting(mins)}
+                                                className="bg-[#2A2A2A] border-[#333] hover:bg-[#3A3A3A] hover:text-white"
+                                            >
+                                                +{mins}m
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <Button
+                                        onClick={() => setShowExtendPopup(false)}
+                                        className="w-full bg-gray-700 hover:bg-gray-600 text-white mt-2"
+                                    >
+                                        Dismiss
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <Button
+                                        onClick={() => window.open('/pricing', '_blank')}
+                                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold h-11"
+                                    >
+                                        Upgrade to Extend
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        onClick={() => setShowExtendPopup(false)}
+                                        className="w-full text-gray-400 hover:text-white hover:bg-[#2A2A2A]"
+                                    >
+                                        Dismiss
+                                    </Button>
+                                </div>
+                            )}
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
@@ -2133,7 +2270,7 @@ function ControlBar() {
                 )}
             </AnimatePresence>
         </>
-    );
+    ); // End of ControlBar return
 }
 
 // Helper Component for consistent button styling
@@ -2179,6 +2316,9 @@ function ControlButton({ icon: Icon, label, onClick, active, isActiveState, clas
     );
 }
 
+// This step is just to trigger a safe rebuild/refresh of the file content
+// and confirm no syntax errors remain.
+// I will not change anything significant, just force a save.
 export default function MeetingControls() {
     return (
         <>

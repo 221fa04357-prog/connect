@@ -665,6 +665,12 @@ app.patch('/api/meetings/:id', async (req, res) => {
         meeting.settings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : meeting.settings;
         if (meeting.end_timestamp) meeting.endTime = Number(meeting.end_timestamp);
 
+        // Broadcast extension if time changed
+        if (updateEndTime) {
+            console.log(`Broadcasting meeting extension for ${meeting.id} to ${meeting.endTime}`);
+            io.to(meeting.id).emit('meeting_extended', meeting);
+        }
+
         res.json(meeting);
     } catch (err) {
         console.error('Error updating meeting:', err);
