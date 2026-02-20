@@ -103,11 +103,24 @@ export const useParticipantsStore = create<ParticipantsState>()(
         return { participants };
       }),
 
-      toggleHandRaise: (id) => set((state) => ({
-        participants: state.participants.map(p =>
-          p.id === id ? { ...p, isHandRaised: !p.isHandRaised } : p
-        )
-      })),
+      toggleHandRaise: (id) => set((state) => {
+        const currentParticipant = state.participants.find(p => p.id === id);
+        const nextHandRaised = !currentParticipant?.isHandRaised;
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isHandRaised: nextHandRaised });
+          }
+        });
+
+        const participants = state.participants.map(p =>
+          p.id === id ? { ...p, isHandRaised: nextHandRaised } : p
+        );
+        setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+        return { participants };
+      }),
 
       setActiveSpeaker: (id) => set({ activeSpeakerId: id }),
 
@@ -146,6 +159,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
           }
           return p;
         });
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isAudioMuted: true });
+          }
+        });
+
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
@@ -159,6 +181,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
           }
           return p;
         });
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isAudioMuted: false });
+          }
+        });
+
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
@@ -194,6 +225,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
           const next = { ...state.transientRoles };
           next[id] = ('host' as Participant['role']);
           const participants = state.participants.map(p => p.id === id ? { ...p, role: ('host' as Participant['role']) } : p);
+
+          // Broadcast update
+          import('./useChatStore').then((chatStore) => {
+            const cs = chatStore.useChatStore.getState();
+            if (cs.meetingId) {
+              cs.emitParticipantUpdate(cs.meetingId, id, { role: 'host' });
+            }
+          });
+
           const res = { transientRoles: next, participants };
           setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
           return res;
@@ -206,6 +246,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
           if (currentCoHostsCheck.length >= 2) return {};
           const next = { ...state.transientRoles, [id]: ('co-host' as Participant['role']) };
           const participants = state.participants.map(p => p.id === id ? { ...p, role: ('co-host' as Participant['role']) } : p);
+
+          // Broadcast update
+          import('./useChatStore').then((chatStore) => {
+            const cs = chatStore.useChatStore.getState();
+            if (cs.meetingId) {
+              cs.emitParticipantUpdate(cs.meetingId, id, { role: 'co-host' });
+            }
+          });
+
           const res = { transientRoles: next, participants };
           setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
           return res;
@@ -234,6 +283,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
             ...p,
             role: p.id === id ? ('participant' as Participant['role']) : p.role
           }));
+
+          // Broadcast update
+          import('./useChatStore').then((chatStore) => {
+            const cs = chatStore.useChatStore.getState();
+            if (cs.meetingId) {
+              cs.emitParticipantUpdate(cs.meetingId, id, { role: 'participant' });
+            }
+          });
+
           const res = { transientRoles: next, participants };
           setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
           return res;
@@ -247,6 +305,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
           next[id] = 'participant';
         }
         const participants = state.participants.map(p => p.id === id && p.role === ('co-host' as Participant['role']) ? { ...p, role: ('participant' as Participant['role']) } : p);
+
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { role: 'participant' });
+          }
+        });
+
         const res = { transientRoles: next, participants };
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return res;

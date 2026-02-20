@@ -138,7 +138,7 @@ export default function MeetingRoom() {
       } : {
         id: existingGuest?.id || `guest-${Math.random().toString(36).substr(2, 9)}`,
         name: existingGuest?.name || 'Guest',
-        role: 'participant'
+        role: isJoinedAsHost ? 'host' : 'participant'
       };
 
       console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id, identity, { isJoinedAsHost });
