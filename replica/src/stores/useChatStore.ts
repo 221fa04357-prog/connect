@@ -95,6 +95,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...message,
         senderId: message.sender_id || message.senderId,
         senderName: message.sender_name || message.senderName,
+        recipientId: message.recipient_id || message.recipientId, // Added mapping
         timestamp: new Date(message.timestamp)
       };
       get().addMessage(processedMessage, false);
@@ -125,6 +126,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...m,
             senderId: m.sender_id || m.senderId,
             senderName: m.sender_name || m.senderName,
+            recipientId: m.recipient_id || m.recipientId, // Added mapping
             timestamp: new Date(m.timestamp)
           }))
         });
