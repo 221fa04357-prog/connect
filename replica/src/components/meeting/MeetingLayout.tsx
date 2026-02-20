@@ -144,9 +144,7 @@ export function ChatPanel() {
                     {/* HEADER */}
                     <div className="shrink-0 flex items-center justify-between p-4 border-b border-[#404040]">
                         <h3 className="text-lg font-semibold">Chat</h3>
-                        <Button variant="ghost" size="icon" onClick={toggleChat}>
-                            <X className="w-5 h-5" />
-                        </Button>
+                        {/* Close button moved to TopBar */}
                     </div>
 
                     {/* TABS */}
@@ -474,14 +472,7 @@ export function ParticipantsPanel() {
                         <h3 className="text-lg font-semibold">
                             Participants ({participants.length})
                         </h3>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={toggleParticipants}
-                            className="hover:bg-[#2D2D2D]"
-                        >
-                            <X className="w-5 h-5" />
-                        </Button>
+                        {/* Close button moved to TopBar */}
                     </div>
 
                     {/* SEARCH & HOST CONTROLS */}

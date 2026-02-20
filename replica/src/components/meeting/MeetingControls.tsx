@@ -64,12 +64,21 @@ function TopBar() {
         isWhiteboardOpen,
         extendMeetingTime,
         isParticipantsOpen,
-        isChatOpen
+        isChatOpen,
+        toggleParticipants,
+        toggleChat
     } = useMeetingStore();
     const isMobile = useIsMobile();
     const { participants } = useParticipantsStore();
     const [copied, setCopied] = useState(false);
     // Removed controlled state usage to fix closing issue
+
+    // Derived state for panel close button
+    const isPanelOpen = isParticipantsOpen || isChatOpen;
+    const handleClosePanel = () => {
+        if (isParticipantsOpen) toggleParticipants();
+        if (isChatOpen) toggleChat();
+    };
 
     const getConnectionColor = () => {
         switch (connectionQuality) {
@@ -315,7 +324,7 @@ function TopBar() {
     };
 
     return (
-        <div className="absolute inset-0 z-50 pointer-events-none">
+        <div className="absolute inset-0 z-[60] pointer-events-none">
             <div
                 className={cn("absolute pointer-events-auto touch-none select-none", isWhiteboardOpen && "hidden")}
                 style={{
@@ -414,22 +423,9 @@ function TopBar() {
             </div>
 
             <div
-                className={cn(
-                    "absolute top-4 pointer-events-auto flex items-center gap-3 transition-all duration-300 ease-in-out",
-                    (!isMobile && (isParticipantsOpen || isChatOpen)) ? "right-[340px]" : "right-4"
-                )}
+                className="absolute top-4 right-4 pointer-events-auto flex items-center gap-2"
             >
-                {timeLeft && (
-                    <div className={cn(
-                        "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
-                        (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
-                            ? "bg-red-500/80 text-white animate-pulse"
-                            : "bg-black/40 text-gray-200"
-                    )}>
-                        <Clock className="w-3 h-3" />
-                        <span className="text-xs font-mono font-medium">{timeLeft}</span>
-                    </div>
-                )}
+                {/* Connection Status */}
                 {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
                     <div
                         className={cn(
@@ -452,6 +448,7 @@ function TopBar() {
                     </div>
                 )}
 
+                {/* Recording Indicator */}
                 {isRecording && (
                     <div className="bg-red-600/90 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
                         <div className="w-2 h-2 bg-white rounded-full" />
@@ -460,7 +457,33 @@ function TopBar() {
                         </span>
                     </div>
                 )}
+
+                {/* Timer */}
+                {timeLeft && (
+                    <div className={cn(
+                        "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
+                        (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
+                            ? "bg-red-500/80 text-white animate-pulse"
+                            : "bg-black/40 text-gray-200"
+                    )}>
+                        <Clock className="w-3 h-3" />
+                        <span className="text-xs font-mono font-medium">{timeLeft}</span>
+                    </div>
+                )}
+
+                {/* Panel Close Button (X) - Only visible when panel is open */}
+                {isPanelOpen && (
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleClosePanel}
+                        className="w-8 h-8 rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/10 shadow-lg"
+                    >
+                        <X className="w-4 h-4" />
+                    </Button>
+                )}
             </div>
+
 
             {/* Extend Meeting Warning Modal */}
             <AnimatePresence>
