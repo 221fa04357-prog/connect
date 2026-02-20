@@ -47,7 +47,9 @@ export function VideoTile({
         setMicConfirm,
         setVideoConfirm,
         showMicConfirm,
-        showVideoConfirm
+        showVideoConfirm,
+        isAudioMuted: msAudioMuted,
+        isVideoOff: msVideoOff
     } = useMeetingStore();
     const { remoteStreams } = useMediaStore();
 
@@ -56,6 +58,7 @@ export function VideoTile({
     const isLocal =
         participant.id === user?.id ||
         participant.id === `participant-${user?.id}` ||
+        participant.id.startsWith('guest-') || // Add guest support
         (user?.role === 'host' && participant.id === 'participant-1');
 
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -237,12 +240,12 @@ export function VideoTile({
                                         className={cn(
                                             "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
                                             // Priority: Local State > Participant State
-                                            (isLocal ? useMeetingStore.getState().isAudioMuted : participant.isAudioMuted)
+                                            (isLocal ? msAudioMuted : participant.isAudioMuted)
                                                 ? "bg-red-500/20 text-red-500"
                                                 : "text-white"
                                         )}
                                     >
-                                        {(isLocal ? useMeetingStore.getState().isAudioMuted : participant.isAudioMuted) ? (
+                                        {(isLocal ? msAudioMuted : participant.isAudioMuted) ? (
                                             <MicOff className="w-4 h-4" />
                                         ) : (
                                             <Mic className="w-4 h-4" />
@@ -255,12 +258,12 @@ export function VideoTile({
                                         onClick={handleToggleVideoClick}
                                         className={cn(
                                             "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                            (isLocal ? useMeetingStore.getState().isVideoOff : participant.isVideoOff)
+                                            (isLocal ? msVideoOff : participant.isVideoOff)
                                                 ? "bg-red-500/20 text-red-500"
                                                 : "text-white"
                                         )}
                                     >
-                                        {(isLocal ? useMeetingStore.getState().isVideoOff : participant.isVideoOff) ? (
+                                        {(isLocal ? msVideoOff : participant.isVideoOff) ? (
                                             <VideoOff className="w-4 h-4" />
                                         ) : (
                                             <Video className="w-4 h-4" />
