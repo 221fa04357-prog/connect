@@ -144,6 +144,7 @@ app.get("/", (req, res) => {
 // Socket.io Logic
 const rooms = new Map(); // meetingId -> Map of socketId -> participantData
 const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
+const whiteboardInitiators = new Map(); // meetingId -> userId
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
@@ -155,11 +156,11 @@ io.on('connection', (socket) => {
         try {
             // Check meeting start time enforcement
             const meetingResult = await db.query(
-  'SELECT host_id, start_timestamp, settings, end_timestamp, status FROM meetings WHERE id = $1',
-  [meetingId]
-);
+                'SELECT host_id, start_timestamp, settings, end_timestamp, status FROM meetings WHERE id = $1',
+                [meetingId]
+            );
 
-meeting = meetingResult.rows[0];
+            meeting = meetingResult.rows[0];
 
             if (meeting) {
                 const meetingSettings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : (meeting.settings || {});
@@ -481,8 +482,20 @@ meeting = meetingResult.rows[0];
     // --- Whiteboard Sync ---
     socket.on('whiteboard_draw', (data) => {
         const { meeting_id, stroke } = data;
-        // Broadcast stroke to everyone else in the room
-        socket.to(meeting_id).emit('whiteboard_draw', stroke);
+
+        // Ensure initiator is set if not already
+        if (!whiteboardInitiators.has(meeting_id)) {
+            // Find user ID from the room
+            const room = rooms.get(meeting_id);
+            if (room && room.has(socket.id)) {
+                whiteboardInitiators.set(meeting_id, room.get(socket.id).id);
+            }
+        }
+
+        const initiatorId = whiteboardInitiators.get(meeting_id);
+
+        // Broadcast stroke to everyone else in the room, including metadata
+        socket.to(meeting_id).emit('whiteboard_draw', { ...stroke, initiatorId });
     });
 
     socket.on('whiteboard_clear', (data) => {
@@ -492,9 +505,28 @@ meeting = meetingResult.rows[0];
     });
 
     socket.on('whiteboard_toggle', (data) => {
-        const { meeting_id, isOpen } = data;
-        // Broadcast toggle signal to everyone else in the room
-        socket.to(meeting_id).emit('whiteboard_toggle', { isOpen });
+        const { meeting_id, isOpen, userId } = data;
+
+        if (isOpen) {
+            // Set initiator if not set
+            if (!whiteboardInitiators.has(meeting_id)) {
+                whiteboardInitiators.set(meeting_id, userId);
+            }
+            const initiatorId = whiteboardInitiators.get(meeting_id);
+            // Broadcast toggle signal to everyone else in the room
+            socket.to(meeting_id).emit('whiteboard_toggle', { isOpen, initiatorId });
+        } else {
+            // ONLY ALLOW GLOBAL CLOSE IF SENDER IS THE INITIATOR
+            const currentInitiator = whiteboardInitiators.get(meeting_id);
+            if (currentInitiator === userId) {
+                console.log(`Global whiteboard close triggered by initiator ${userId} for meeting ${meeting_id}`);
+                whiteboardInitiators.delete(meeting_id);
+                socket.to(meeting_id).emit('whiteboard_toggle', { isOpen: false });
+            } else {
+                console.log(`Whiteboard local close by ${userId} (not initiator) for meeting ${meeting_id}`);
+                // No broadcast - other users keep the board open
+            }
+        }
     });
 
     // --- Signaling for WebRTC ---
