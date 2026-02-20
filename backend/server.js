@@ -136,7 +136,7 @@ io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
     socket.on('join_meeting', async (data) => {
-        const { meetingId, user } = typeof data === 'string' ? { meetingId: data, user: null } : data;
+        const { meetingId, user, initialState } = typeof data === 'string' ? { meetingId: data, user: null, initialState: {} } : data;
 
         try {
             // Check meeting start time enforcement
@@ -188,7 +188,11 @@ io.on('connection', (socket) => {
             name: user?.name || 'Guest',
             role: user?.role || 'participant',
             socketId: socket.id,
-            joinedAt: new Date()
+            joinedAt: new Date(),
+            // Capture initial state or default to OFF (safe default)
+            isAudioMuted: initialState?.isAudioMuted ?? true,
+            isVideoOff: initialState?.isVideoOff ?? true,
+            isHandRaised: initialState?.isHandRaised ?? false
         };
 
         room.set(socket.id, participantData);

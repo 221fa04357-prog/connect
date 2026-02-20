@@ -12,7 +12,7 @@ interface ChatState {
   localUserId: string | null;
 
   // Actions
-  initSocket: (meetingId: string, user?: { id: string, name: string, role: string }) => void;
+  initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
@@ -36,7 +36,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   meetingId: null,
   localUserId: null,
 
-  initSocket: (meetingId, user) => {
+  initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
 
     // Use the backend API URL for the socket connection
@@ -48,7 +48,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.log('Connected to chat server');
       const userId = user?.id || `guest-${socket.id}`;
       set({ localUserId: userId });
-      socket.emit('join_meeting', { meetingId, user });
+      socket.emit('join_meeting', { meetingId, user, initialState });
     });
 
     socket.on('participants_update', (participants: any[]) => {
@@ -56,9 +56,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       import('./useParticipantsStore').then((store) => {
         store.useParticipantsStore.getState().syncParticipants(participants.map(p => ({
           ...p,
-          isAudioMuted: true, // Default states for now
-          isVideoOff: true,
-          isHandRaised: false,
+          // Fallback defaults only if server/payload is missing them
+          isAudioMuted: p.isAudioMuted ?? true,
+          isVideoOff: p.isVideoOff ?? true,
+          isHandRaised: p.isHandRaised ?? false,
           isSpeaking: false,
           isPinned: false,
           isSpotlighted: false,
