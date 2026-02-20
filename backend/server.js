@@ -32,8 +32,17 @@ async function initializeDatabase() {
                 content TEXT NOT NULL,
                 type VARCHAR(50) NOT NULL,
                 meeting_id VARCHAR(255),
+                recipient_id VARCHAR(255),
                 timestamp TIMESTAMP DEFAULT NOW()
             );
+
+            -- Add recipient_id if it doesn't exist
+             DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='recipient_id') THEN
+                    ALTER TABLE messages ADD COLUMN recipient_id VARCHAR(255);
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS recaps (
                 id VARCHAR(255) PRIMARY KEY,
@@ -201,21 +210,51 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { sender_id, sender_name, content, type, meeting_id } = data;
+        const { sender_id, sender_name, content, type, meeting_id, recipientId } = data;
+        const recipient_id = recipientId || data.recipient_id;
 
         try {
             const query = `
-        INSERT INTO messages (sender_id, sender_name, content, type, meeting_id)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO messages (sender_id, sender_name, content, type, meeting_id, recipient_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *;
       `;
-            const result = await db.query(query, [sender_id, sender_name, content, type, meeting_id]);
+            const result = await db.query(query, [sender_id, sender_name, content, type, meeting_id, recipient_id]);
             const savedMessage = result.rows[0];
 
-            console.log(`Message saved for meeting ${meeting_id}:`, { id: savedMessage.id, sender: sender_name });
+            console.log(`Message saved for meeting ${meeting_id}:`, { id: savedMessage.id, sender: sender_name, type, recipient: recipient_id });
 
-            // Broadcast to everyone in the meeting room
-            io.to(meeting_id).emit('receive_message', savedMessage);
+            if (type === 'private' && recipient_id) {
+                // Find recipient socket(s) in the meeting room
+                const room = rooms.get(meeting_id);
+                let sentToRecipient = false;
+                
+                if (room) {
+                    for (const [sId, p] of room.entries()) {
+                         if (p.id === recipient_id) {
+                             io.to(sId).emit('receive_message', savedMessage);
+                             sentToRecipient = true;
+                         }
+                    }
+                }
+                
+                // Always send back to sender so it appears on their screen
+                // We do this by emitting to the sender's socket directly.
+                // If sender has multiple tabs (same user ID), ideally we'd emit to all their sockets too.
+                // For now, emitting to current socket + ensuring we broadcast to all sockets of that user if we could.
+                // Simpler: iterate room again for sender
+                 if (room) {
+                    for (const [sId, p] of room.entries()) {
+                         if (p.id === sender_id) {
+                             io.to(sId).emit('receive_message', savedMessage);
+                         }
+                    }
+                }
+                
+            } else {
+                // Broadcast to everyone in the meeting room (public)
+                io.to(meeting_id).emit('receive_message', savedMessage);
+            }
         } catch (err) {
             console.error('Error saving message payload:', { sender_id, sender_name, meeting_id });
             console.error('Error details:', err);

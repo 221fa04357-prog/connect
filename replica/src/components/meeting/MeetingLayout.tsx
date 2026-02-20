@@ -285,16 +285,27 @@ function MessageList({
             {messages.map(msg => {
                 const isMe = msg.senderId === currentUserId;
 
+                let displayName = msg.senderName;
+                if (msg.type === 'private') {
+                    if (isMe) {
+                        const recipient = participants.find(p => p.id === msg.recipientId);
+                        displayName = `You → ${recipient ? recipient.name : (msg.recipientName || 'Unknown')}`;
+                    } else {
+                        displayName = `${msg.senderName} → You`;
+                    }
+                }
+
                 return (
                     <div
                         key={msg.id}
                         className={cn('flex flex-col gap-1', isMe ? 'items-end' : 'items-start')}
                     >
                         <div className="text-xs text-gray-400">
-                            {msg.senderName} •{' '}
+                            {displayName} •{' '}
                             {msg.timestamp.toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                hour12: true
                             })}
                         </div>
 
