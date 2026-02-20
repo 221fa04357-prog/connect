@@ -20,6 +20,8 @@ interface ChatState {
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
   emitReaction: (meetingId: string, reaction: any) => void;
+  muteAll: (meetingId: string) => void;
+  unmuteAll: (meetingId: string) => void;
   endMeeting: (meetingId: string) => void;
   markAsRead: () => void;
   reset: () => void;
@@ -77,6 +79,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('receive_reaction', (reaction: any) => {
       import('./useMeetingStore').then((store) => {
         store.useMeetingStore.getState().addReaction(reaction);
+      });
+    });
+
+    socket.on('mute_all', () => {
+      import('./useParticipantsStore').then((participantStore) => {
+        const ps = participantStore.useParticipantsStore.getState();
+        ps.muteAll(); // update participant list UI
+
+        // Check if I am a scalable participant (not host)
+        import('./useMeetingStore').then((meetingStore) => {
+          const ms = meetingStore.useMeetingStore.getState();
+          // If I am not the host, I should mute my audio
+          // Logic: check if my user ID matches host. 
+          // However, 'muteAll' usually means "everyone but the sender/host".
+          // The socket broadcast sends to everyone.
+          // We need to check if *I* initiated it? 
+          // Actually, standard behavior: Mute everyone except the person who triggered it?
+          // Or if host triggers it, host stays unmuted?
+          // Let's rely on role.
+          const myId = get().localUserId;
+          const participant = ps.participants.find(p => p.id === myId);
+
+          if (participant && participant.role !== 'host') {
+            // I am a participant, so I must mute
+            ms.toggleAudio(); // This toggles. We need setAudioMuted(true).
+            // useMeetingStore doesn't have setAudioMuted, it has toggleAudio.
+            // Let's check state first.
+            if (!ms.isAudioMuted) {
+              ms.toggleAudio();
+              import('sonner').then(({ toast }) => toast.info('The host has muted everyone.'));
+            }
+          }
+        });
+      });
+    });
+
+    socket.on('unmute_all', () => {
+      import('./useParticipantsStore').then((participantStore) => {
+        const ps = participantStore.useParticipantsStore.getState();
+        ps.unmuteAll(); // update participant list UI to show mic icons as active (or at least not forced muted)
+
+        // Check if I am a scalable participant (not host)
+        import('./useMeetingStore').then((meetingStore) => {
+          const ms = meetingStore.useMeetingStore.getState();
+          const myId = get().localUserId;
+          const participant = ps.participants.find(p => p.id === myId);
+
+          if (participant && participant.role !== 'host') {
+            // Should we auto-unmute? Usually privacy concerns say NO.
+            // But user requirement: "changes should be synchronized and visible... immediately"
+            // This implies state sync. 
+            // Let's UN-MUTE them to match the "Enable All" request, but maybe show a toast.
+            if (ms.isAudioMuted) {
+              ms.toggleAudio();
+              import('sonner').then(({ toast }) => toast.info('The host has unmuted everyone.'));
+            }
+          }
+        });
       });
     });
 
@@ -197,6 +257,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitReaction: (meetingId, reaction) => {
     get().socket?.emit('send_reaction', { meeting_id: meetingId, reaction });
+  },
+
+  muteAll: (meetingId) => {
+    get().socket?.emit('mute_all', { meeting_id: meetingId });
+  },
+
+  unmuteAll: (meetingId) => {
+    get().socket?.emit('unmute_all', { meeting_id: meetingId });
   },
 
   endMeeting: (meetingId) => {

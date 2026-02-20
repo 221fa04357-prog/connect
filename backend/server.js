@@ -285,6 +285,18 @@ io.on('connection', (socket) => {
         io.to(meeting_id).emit('receive_reaction', reaction);
     });
 
+    socket.on('mute_all', (data) => {
+        const { meeting_id } = data;
+        // Broadcast to everyone in the meeting
+        io.to(meeting_id).emit('mute_all');
+    });
+
+    socket.on('unmute_all', (data) => {
+        const { meeting_id } = data;
+        // Broadcast to everyone in the meeting
+        io.to(meeting_id).emit('unmute_all');
+    });
+
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);
