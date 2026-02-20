@@ -142,7 +142,8 @@ app.get("/", (req, res) => {
 });
 
 // Socket.io Logic
-const rooms = new Map(); // meetingId -> Set of {socketId, userId, name, role}
+const rooms = new Map(); // meetingId -> Map of socketId -> participantData
+const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
@@ -152,16 +153,16 @@ io.on('connection', (socket) => {
 
         try {
             // Check meeting start time enforcement
-            const meetingResult = await db.query('SELECT host_id, start_timestamp, end_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
+            const meetingResult = await db.query('SELECT host_id, start_timestamp, settings, end_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
             const meeting = meetingResult.rows[0];
 
             if (meeting) {
+                const meetingSettings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : (meeting.settings || {});
                 const isHost = user?.id && (user.id === meeting.host_id || user.id === 'host'); // Basic check, ideally verify auth
                 const now = Date.now();
                 const startTime = Number(meeting.start_timestamp);
 
-                // Check for strict start time (allow 5-minute buffer if needed, or strict as requested)
-                // Requirement: "The meeting should become accessible ONLY when the current time is equal to or greater than the scheduled start time."
+                // Check for strict start time
                 if (!isHost && startTime && now < startTime) {
                     // It's too early
                     console.log(`User ${user?.name} blocked from joining meeting ${meetingId} (Starts at ${new Date(startTime).toISOString()})`);
@@ -184,6 +185,42 @@ io.on('connection', (socket) => {
                         message: 'This meeting has already ended.',
                         endTime: endTime
                     });
+                    return;
+                }
+
+                // --- WAITING ROOM LOGIC ---
+                const enableWaitingRoom = meetingSettings.enableWaitingRoom === true;
+
+                if (enableWaitingRoom && !isHost) {
+                    console.log(`User ${user?.name} placed in waiting room for meeting ${meetingId}`);
+
+                    if (!waitingRooms.has(meetingId)) {
+                        waitingRooms.set(meetingId, new Map());
+                    }
+                    const waitingRoom = waitingRooms.get(meetingId);
+
+                    const participantData = {
+                        id: user?.id || `guest-${socket.id}`,
+                        name: user?.name || 'Guest',
+                        role: 'participant',
+                        socketId: socket.id,
+                        joinedAt: new Date(),
+                        isWaiting: true,
+                        isAudioMuted: initialState?.isAudioMuted ?? true,
+                        isVideoOff: initialState?.isVideoOff ?? true,
+                    };
+
+                    waitingRoom.set(socket.id, participantData);
+                    socket.join(meetingId); // Join the meeting room so host can see them, but they are in 'waiting' state
+
+                    socket.emit('waiting_room_status', {
+                        status: 'waiting',
+                        message: 'Wait for the host to let you in.'
+                    });
+
+                    // Notify host about the new waiting participant
+                    const waitingParticipants = Array.from(waitingRoom.values());
+                    io.to(meetingId).emit('waiting_room_update', waitingParticipants);
                     return;
                 }
             }
@@ -228,6 +265,18 @@ io.on('connection', (socket) => {
         // Broadcast updated participant list to everyone in the room
         const roomParticipants = Array.from(room.values());
         io.to(meetingId).emit('participants_update', roomParticipants);
+
+        // Also send waiting room status OK to this user
+        socket.emit('waiting_room_status', { status: 'admitted' });
+
+        // Let host know the waiting room changed if they were in it
+        if (waitingRooms.has(meetingId)) {
+            const waitingRoom = waitingRooms.get(meetingId);
+            if (waitingRoom.has(socket.id)) {
+                waitingRoom.delete(socket.id);
+                io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
+            }
+        }
     });
 
     socket.on('send_message', async (data) => {
@@ -324,6 +373,98 @@ io.on('connection', (socket) => {
         io.to(meeting_id).emit('allow_video_all');
     });
 
+    // --- Waiting Room Controls ---
+    socket.on('admit_participant', (data) => {
+        const { meetingId, socketId } = data;
+        const waitingRoom = waitingRooms.get(meetingId);
+
+        if (waitingRoom && waitingRoom.has(socketId)) {
+            const p = waitingRoom.get(socketId);
+            waitingRoom.delete(socketId);
+
+            // Move to main room
+            if (!rooms.has(meetingId)) rooms.set(meetingId, new Map());
+            const room = rooms.get(meetingId);
+
+            const participantData = {
+                ...p,
+                isWaiting: false,
+                joinedAt: new Date()
+            };
+
+            room.set(socketId, participantData);
+
+            // Notify the admitted user
+            io.to(socketId).emit('waiting_room_status', { status: 'admitted' });
+
+            // Broadcast updates
+            io.to(meetingId).emit('participants_update', Array.from(room.values()));
+            io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
+
+            console.log(`User ${p.name} admitted to meeting ${meetingId}`);
+        }
+    });
+
+    socket.on('reject_participant', (data) => {
+        const { meetingId, socketId } = data;
+        const waitingRoom = waitingRooms.get(meetingId);
+
+        if (waitingRoom && waitingRoom.has(socketId)) {
+            const p = waitingRoom.get(socketId);
+            waitingRoom.delete(socketId);
+
+            // Notify the rejected user
+            io.to(socketId).emit('waiting_room_status', { status: 'rejected', message: 'The host has denied your entry.' });
+
+            // Broadcast waiting room update
+            io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
+
+            console.log(`User ${p.name} rejected from meeting ${meetingId}`);
+        }
+    });
+
+    socket.on('toggle_waiting_room', async (data) => {
+        const { meetingId, enabled } = data;
+        try {
+            // Update meeting settings in DB
+            const result = await db.query('SELECT settings FROM meetings WHERE id = $1', [meetingId]);
+            if (result.rows.length > 0) {
+                const settings = typeof result.rows[0].settings === 'string' ? JSON.parse(result.rows[0].settings) : (result.rows[0].settings || {});
+                settings.enableWaitingRoom = enabled;
+                await db.query('UPDATE meetings SET settings = $1 WHERE id = $2', [JSON.stringify(settings), meetingId]);
+
+                // Broadcast setting change
+                io.to(meetingId).emit('waiting_room_setting_updated', { enabled });
+
+                // If disabling, admit everyone currently waiting
+                if (!enabled && waitingRooms.has(meetingId)) {
+                    const waitingRoom = waitingRooms.get(meetingId);
+                    if (waitingRoom.size > 0) {
+                        if (!rooms.has(meetingId)) rooms.set(meetingId, new Map());
+                        const room = rooms.get(meetingId);
+
+                        waitingRoom.forEach((p, sId) => {
+                            const participantData = {
+                                ...p,
+                                isWaiting: false,
+                                joinedAt: new Date()
+                            };
+                            room.set(sId, participantData);
+                            io.to(sId).emit('waiting_room_status', { status: 'admitted' });
+                        });
+
+                        waitingRoom.clear();
+                        io.to(meetingId).emit('participants_update', Array.from(room.values()));
+                        io.to(meetingId).emit('waiting_room_update', []);
+                        console.log(`Waiting room disabled for ${meetingId}, admitted all waiting participants.`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error toggling waiting room:', err);
+        }
+    });
+
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);
@@ -356,6 +497,23 @@ io.on('connection', (socket) => {
                 // Cleanup empty rooms
                 if (participants.size === 0) {
                     rooms.delete(meetingId);
+                }
+            }
+        });
+
+        // Also remove from waiting rooms
+        waitingRooms.forEach((participants, meetingId) => {
+            if (participants.has(socket.id)) {
+                const p = participants.get(socket.id);
+                participants.delete(socket.id);
+                console.log(`User ${p.name} left waiting room: ${meetingId}`);
+
+                // Broadcast update
+                const waitingParticipants = Array.from(participants.values());
+                io.to(meetingId).emit('waiting_room_update', waitingParticipants);
+
+                if (participants.size === 0) {
+                    waitingRooms.delete(meetingId);
                 }
             }
         });
@@ -461,9 +619,32 @@ app.get('/api/health', async (req, res) => {
 // GET chat history
 app.get('/api/messages/:meetingId', async (req, res) => {
     const { meetingId } = req.params;
+    const userId = req.headers['x-user-id']; // Optional but strictly recommended for privacy
+
     try {
-        const result = await db.query('SELECT * FROM messages WHERE meeting_id = $1 ORDER BY timestamp ASC', [meetingId]);
-        console.log(`Fetched ${result.rows.length} messages for meeting ${meetingId}`);
+        let query;
+        let params;
+
+        if (userId) {
+            // Filter: Public messages OR (Private messages where user is sender OR recipient)
+            query = `
+                SELECT * FROM messages 
+                WHERE meeting_id = $1 
+                AND (
+                    type = 'public' 
+                    OR (type = 'private' AND (sender_id = $2 OR recipient_id = $2))
+                )
+                ORDER BY timestamp ASC
+            `;
+            params = [meetingId, userId];
+        } else {
+            // Only public if no user ID
+            query = 'SELECT * FROM messages WHERE meeting_id = $1 AND type = $2 ORDER BY timestamp ASC';
+            params = [meetingId, 'public'];
+        }
+
+        const result = await db.query(query, params);
+        console.log(`Fetched ${result.rows.length} messages for meeting ${meetingId} (User: ${userId || 'None'})`);
         res.json(result.rows);
     } catch (err) {
         console.error(`Error fetching messages for meeting ${meetingId}:`, err);

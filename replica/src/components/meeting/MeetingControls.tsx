@@ -768,9 +768,29 @@ function SettingsModal() {
                                     <div className="space-y-4">
                                         <div className="p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
                                             <p className="text-sm text-gray-400">
-                                                These settings will be applied to all your meetings
+                                                These settings will be applied to this meeting.
                                             </p>
                                         </div>
+
+                                        {useMeetingStore.getState().isJoinedAsHost && (
+                                            <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                                                <div className="space-y-0.5">
+                                                    <Label htmlFor="waitingRoom">Enable Waiting Room</Label>
+                                                    <p className="text-xs text-gray-500">New participants must be admitted by the host.</p>
+                                                </div>
+                                                <Switch
+                                                    id="waitingRoom"
+                                                    checked={useParticipantsStore.getState().waitingRoomEnabled}
+                                                    onCheckedChange={(checked) => {
+                                                        const meetingId = useMeetingStore.getState().meeting?.id;
+                                                        if (meetingId) {
+                                                            useChatStore.getState().toggleWaitingRoom(meetingId, checked);
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
+
                                         <div className="space-y-2">
                                             <Label>Default View Mode</Label>
                                             <Select defaultValue="gallery">

@@ -39,10 +39,12 @@ interface MeetingState {
   meetingJoined: boolean;
   isInsideMeeting: boolean;
   isJoinedAsHost: boolean;
+  isWaiting: boolean;
   setMiniVisible: (visible: boolean) => void;
   setMeetingJoined: (joined: boolean) => void;
   setIsInsideMeeting: (inside: boolean) => void;
   setIsJoinedAsHost: (isHost: boolean) => void;
+  setIsWaiting: (isWaiting: boolean) => void;
 
   // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
@@ -123,10 +125,12 @@ export const useMeetingStore = create<MeetingState>()(
       meetingJoined: false,
       isInsideMeeting: false,
       isJoinedAsHost: false,
+      isWaiting: false,
       setMiniVisible: (visible) => set({ isMiniVisible: visible }),
       setMeetingJoined: (joined) => set({ meetingJoined: joined }),
       setIsInsideMeeting: (inside) => set({ isInsideMeeting: inside }),
       setIsJoinedAsHost: (isHost) => set({ isJoinedAsHost: isHost }),
+      setIsWaiting: (isWaiting) => set({ isWaiting }),
 
       connectionQuality: 'excellent',
 
