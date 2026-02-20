@@ -34,6 +34,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { useIsMobile } from '@/hooks';
 
 const API = import.meta.env.VITE_API_URL || '';
