@@ -422,13 +422,105 @@ export function Register() {
         confirmPassword: ''
     });
 
+    const [errors, setErrors] = useState({
+        name: '',
+        email: '',
+        password: '',
+        confirmPassword: ''
+    });
+    const [touched, setTouched] = useState({
+        name: false,
+        email: false,
+        password: false,
+        confirmPassword: false
+    });
+
     const passwordStrength = calculatePasswordStrength(formData.password);
+
+    function validate(field: string, value: string) {
+        switch (field) {
+            case 'name':
+                if (!value.trim()) return 'Name is required';
+                return '';
+            case 'email':
+                if (!value) return 'Email is required';
+                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return 'Invalid email address';
+                return '';
+            case 'password':
+                if (!value) return 'Password is required';
+                if (value.length < 8) return 'Password must be at least 8 characters.';
+                return '';
+            case 'confirmPassword':
+                // Check against current form state for password if comparing
+                if (!value) return 'Please confirm your password';
+                if (value !== formData.password && field === 'confirmPassword') return 'Passwords do not match';
+                return '';
+            default:
+                return '';
+        }
+    }
+
+    // Wrap validation because confirmPassword depends on dynamic password value
+    function getValidationError(field: string, value: string, currentFormData: typeof formData) {
+        if (field === 'confirmPassword') {
+            if (!value) return 'Please confirm your password';
+            if (value !== currentFormData.password) return 'Passwords do not match';
+            return '';
+        }
+        return validate(field, value);
+    }
+
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const { id, value } = e.target;
+        // Map id to state keys (id is 'name', 'email', 'password', 'confirmPassword')
+        const fieldName = id as keyof typeof formData;
+
+        const newFormData = { ...formData, [fieldName]: value };
+        setFormData(newFormData);
+
+        // Validate on change
+        setErrors(prev => ({
+            ...prev,
+            [fieldName]: getValidationError(fieldName, value, newFormData)
+        }));
+
+        // If changing password, re-validate confirm password if it's touched
+        if (fieldName === 'password' && touched.confirmPassword) {
+            setErrors(prev => ({
+                ...prev,
+                confirmPassword: getValidationError('confirmPassword', formData.confirmPassword, newFormData)
+            }));
+        }
+    }
+
+    function handleBlur(e: React.FocusEvent<HTMLInputElement>) {
+        const { id } = e.target;
+        const fieldName = id as keyof typeof formData;
+        setTouched(prev => ({ ...prev, [fieldName]: true }));
+        setErrors(prev => ({
+            ...prev,
+            [fieldName]: getValidationError(fieldName, formData[fieldName], formData)
+        }));
+    }
+
+    const isValid = !errors.name && !errors.email && !errors.password && !errors.confirmPassword &&
+        formData.name && formData.email && formData.password && formData.confirmPassword;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setAuthError('');
-        if (formData.password !== formData.confirmPassword) {
-            alert('Passwords do not match');
+
+        // Validate all
+        const newErrors = {
+            name: validate('name', formData.name),
+            email: validate('email', formData.email),
+            password: validate('password', formData.password),
+            confirmPassword: formData.password !== formData.confirmPassword ? 'Passwords do not match' : ''
+        };
+        setErrors(newErrors);
+        setTouched({ name: true, email: true, password: true, confirmPassword: true });
+
+        if (Object.values(newErrors).some(err => err)) {
             return;
         }
 
@@ -493,30 +585,46 @@ export function Register() {
                             <Label htmlFor="name" className="text-white">
                                 Full Name
                             </Label>
-                            <Input
-                                id="name"
-                                type="text"
-                                placeholder="John Doe"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                required
-                                className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="name"
+                                    type="text"
+                                    placeholder="John Doe"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                />
+                                {touched.name && errors.name && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.name)}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="email" className="text-white">
                                 Email Address
                             </Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                placeholder="you@example.com"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                required
-                                className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="you@example.com"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                />
+                                {touched.email && errors.email && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.email)}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="space-y-2">
@@ -529,7 +637,8 @@ export function Register() {
                                     type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={formData.password}
-                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
                                     required
                                     className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
                                 />
@@ -540,8 +649,13 @@ export function Register() {
                                 >
                                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                 </button>
+                                {touched.password && errors.password && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.password)}
+                                    </div>
+                                )}
                             </div>
-                            {formData.password && (
+                            {formData.password && !errors.password && (
                                 <p className={cn('text-sm mt-2', passwordStrength.color)}>
                                     {passwordStrength.text}
                                 </p>
@@ -558,7 +672,8 @@ export function Register() {
                                     type={showConfirm ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={formData.confirmPassword}
-                                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
                                     required
                                     className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
                                 />
@@ -569,6 +684,11 @@ export function Register() {
                                 >
                                     {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                 </button>
+                                {touched.confirmPassword && errors.confirmPassword && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.confirmPassword)}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -589,7 +709,7 @@ export function Register() {
                         <Button
                             type="submit"
                             className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            disabled={isLoading}
+                            disabled={!isValid || isLoading}
                         >
                             {isLoading ? 'Creating Account...' : 'Create Account'}
                         </Button>

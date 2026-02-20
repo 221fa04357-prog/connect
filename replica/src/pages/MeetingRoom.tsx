@@ -141,7 +141,15 @@ export default function MeetingRoom() {
       };
 
       console.log('MeetingRoom: Initializing chat socket for meeting:', meeting.id, identity, { isJoinedAsHost });
-      initSocket(meeting.id, identity);
+
+      // Capture current media state to send as initial state
+      const initialState = {
+        isAudioMuted: useMeetingStore.getState().isAudioMuted,
+        isVideoOff: useMeetingStore.getState().isVideoOff,
+        isHandRaised: false
+      };
+
+      initSocket(meeting.id, identity, initialState);
 
       const socket = useChatStore.getState().socket;
       if (socket) {

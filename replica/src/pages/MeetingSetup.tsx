@@ -325,8 +325,8 @@ export function JoinMeeting() {
                 }
 
                 setMeetingJoined(true);
-                // Explicitly set as participant when joining via Join Meeting
-                useMeetingStore.getState().setIsJoinedAsHost(false);
+                // Correctly set host status based on ID check
+                useMeetingStore.getState().setIsJoinedAsHost(!!isHost);
                 navigate('/meeting');
             } else {
                 alert('Guest session expired. Please sign in to continue.');
@@ -620,7 +620,12 @@ export function CreateMeeting() {
         }
 
         const meetingId = `meeting-${Date.now()}`;
-        const startTime = isScheduled ? new Date(`${formData.date}T${formData.time}`) : new Date();
+        let startTime = new Date();
+        if (isScheduled) {
+            const [year, month, day] = formData.date.split('-').map(Number);
+            const [hours, minutes] = formData.time.split(':').map(Number);
+            startTime = new Date(year, month - 1, day, hours, minutes, 0, 0);
+        }
         const duration = formData.duration ? parseInt(formData.duration) : 60;
 
         const newMeeting: any = {
@@ -762,7 +767,9 @@ export function CreateMeeting() {
                             <div className="bg-[#1C1C1C] p-4 rounded-xl border border-[#404040] space-y-3">
                                 <div className="flex items-center justify-between text-sm text-gray-400 px-1">
                                     <span>Meeting ID</span>
-                                    <span>{new Date(scheduledMeetingData.start_time).toLocaleString()}</span>
+                                    <span>
+                                        {new Date(Number(scheduledMeetingData.start_timestamp || 0) || scheduledMeetingData.start_time).toLocaleString()}
+                                    </span>
                                 </div>
                                 <div className="flex gap-2">
                                     <Input
@@ -797,6 +804,8 @@ export function CreateMeeting() {
                                             isScreenSharing: false,
                                             viewMode: 'gallery'
                                         });
+                                        // Explicitly set as host because they just created it
+                                        useMeetingStore.getState().setIsJoinedAsHost(true);
                                         setMeetingJoined(true);
                                         navigate('/meeting');
                                     }}
@@ -1238,7 +1247,7 @@ export function CreateMeeting() {
                         Back to Home
                     </Button>
                 </div>
-            </motion.div>
-        </div>
+            </motion.div >
+        </div >
     );
 }
