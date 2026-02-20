@@ -774,6 +774,7 @@ function ControlBar() {
         updateWhiteboardStroke,
         clearWhiteboardStrokes,
         setWhiteboardStrokes,
+        removeWhiteboardStroke,
 
         // Mic & Video Confirm
         showMicConfirm,
@@ -826,7 +827,7 @@ function ControlBar() {
             setTimeout(() => yesButtonRef.current?.focus(), 100);
         }
     }, [showMicConfirm, showVideoConfirm]);
-    const { unreadCount, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear } = useChatStore();
+    const { unreadCount, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle } = useChatStore();
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
@@ -869,9 +870,18 @@ function ControlBar() {
         (whiteboardEditAccess === 'everyone');
 
     // Whiteboard handlers
-    const openWhiteboard = () => { if (!isWhiteboardOpen) toggleWhiteboard(); };
+    const openWhiteboard = () => {
+        if (!isWhiteboardOpen) {
+            toggleWhiteboard();
+            if (meeting?.id) emitWhiteboardToggle(meeting.id, true);
+        }
+    };
+
     const closeWhiteboard = () => {
-        if (isWhiteboardOpen) toggleWhiteboard();
+        if (isWhiteboardOpen) {
+            toggleWhiteboard();
+            if (meeting?.id) emitWhiteboardToggle(meeting.id, false);
+        }
         setWhiteboardDrawing(false);
         setEraserPath([]);
     };
@@ -931,11 +941,13 @@ function ControlBar() {
             });
 
             if (updatedStrokes.length !== whiteboardStrokes.length) {
+                // Find which ones were removed
+                const removedStrokes = whiteboardStrokes.filter(s => !updatedStrokes.some(us => us.id === s.id));
+                removedStrokes.forEach(s => {
+                    if (meeting?.id) emitWhiteboardDraw(meeting.id, { type: 'erase', id: s.id });
+                });
+
                 setWhiteboardStrokes(updatedStrokes);
-                // Implementation: Eraser also needs sync. For simplicity, we can broadcast the entire state or find removed IDs.
-                // For now, let's keep it simple: if stroke removed, we don't sync eraser perfectly, but pen drawing is synced.
-                // Refined eraser sync: maybe emit a 'clear' and redraw or emit 'remove_stroke'.
-                // Given the time, I'll prioritize pen sync as requested.
             }
         }
     };
@@ -1878,7 +1890,7 @@ function ControlBar() {
                                         <button
                                             type="button"
                                             onClick={() => { closeWhiteboard(); }}
-                                            className="text-gray-500 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                                            className="text-gray-500 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
                                         >
                                             <X className="w-6 h-6" />
                                         </button>
@@ -1941,18 +1953,14 @@ function ControlBar() {
                                                     {[2, 4, 8, 12, 16].map(s => <option key={s} value={s}>{s}px</option>)}
                                                 </select>
                                             </div>
-                                            {isMobile && (
-                                                <>
-                                                    <div className="w-px h-6 bg-gray-200 flex-none" />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { clearWhiteboard(); }}
-                                                        className="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold flex-none"
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                </>
-                                            )}
+                                            <div className="w-px h-6 bg-gray-200 flex-none" />
+                                            <button
+                                                type="button"
+                                                onClick={() => { clearWhiteboard(); }}
+                                                className="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold flex-none"
+                                            >
+                                                Clear
+                                            </button>
                                         </div>
                                     </div>
                                 )}

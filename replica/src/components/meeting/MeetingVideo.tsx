@@ -35,6 +35,7 @@ export function VideoTile({
     onExitFullscreen
 }: VideoTileProps) {
     const {
+        participants,
         updateParticipant,
         toggleParticipantAudio,
         toggleParticipantVideo
@@ -50,7 +51,8 @@ export function VideoTile({
         showMicConfirm,
         showVideoConfirm,
         isAudioMuted: msAudioMuted,
-        isVideoOff: msVideoOff
+        isVideoOff: msVideoOff,
+        isJoinedAsHost
     } = useMeetingStore();
     const { remoteStreams } = useMediaStore();
 
@@ -61,8 +63,12 @@ export function VideoTile({
     const isLocal =
         participant.id === user?.id ||
         participant.id === `participant-${user?.id}` ||
-        participant.id === localUserId ||
-        (user?.role === 'host' && participant.id === 'participant-1');
+        participant.id === localUserId;
+
+    // Get current user role from participants list
+    const currentUserParticipant = participants.find(p => p.id === localUserId || p.id === user?.id || p.id === `participant-${user?.id}`);
+    const currentUserRole = currentUserParticipant?.role || user?.role || 'participant';
+    const isHostOrCoHost = isJoinedAsHost || currentUserRole === 'host' || currentUserRole === 'co-host';
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -95,15 +101,25 @@ export function VideoTile({
     const handleToggleMuteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (showMicConfirm || showVideoConfirm) return;
-        // Only allow local user to toggle their own mic
-        if (isLocal) setMicConfirm(true);
+
+        if (isLocal) {
+            setMicConfirm(true);
+        } else if (isHostOrCoHost) {
+            // Host/Co-host toggling a participant
+            toggleParticipantAudio(participant.id);
+        }
     };
 
     const handleToggleVideoClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (showMicConfirm || showVideoConfirm) return;
-        // Only allow local user to toggle their own video
-        if (isLocal) setVideoConfirm(true);
+
+        if (isLocal) {
+            setVideoConfirm(true);
+        } else if (isHostOrCoHost) {
+            // Host/Co-host toggling a participant
+            toggleParticipantVideo(participant.id);
+        }
     };
 
 
@@ -234,8 +250,8 @@ export function VideoTile({
 
                     {/* Interactive Controls */}
                     <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap">
-                        {/* Only allow toggling if it's participant, co-host OR self */}
-                        {(participant.role === 'participant' || participant.role === 'co-host' || isLocal) ? (
+                        {/* Only allow toggling if it's participant, co-host OR self OR current user is Host/Co-host */}
+                        {(participant.role === 'participant' || participant.role === 'co-host' || isLocal || isHostOrCoHost) ? (
                             <>
                                 <div className="relative">
                                     <button

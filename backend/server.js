@@ -147,10 +147,11 @@ io.on('connection', (socket) => {
     socket.on('join_meeting', async (data) => {
         const { meetingId, user, initialState } = typeof data === 'string' ? { meetingId: data, user: null, initialState: {} } : data;
 
+        let meeting;
         try {
             // Check meeting start time enforcement
             const meetingResult = await db.query('SELECT host_id, start_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
-            const meeting = meetingResult.rows[0];
+            meeting = meetingResult.rows[0];
 
             if (meeting) {
                 const isHost = user?.id && (user.id === meeting.host_id || user.id === 'host'); // Basic check, ideally verify auth
@@ -192,10 +193,12 @@ io.on('connection', (socket) => {
             }
         }
 
+        const isHost = user?.id && (user.id === meeting?.host_id || user.id === 'host');
+
         const participantData = {
             id: userId,
             name: user?.name || 'Guest',
-            role: user?.role || 'participant',
+            role: isHost ? 'host' : (user?.role || 'participant'),
             socketId: socket.id,
             joinedAt: new Date(),
             // Capture initial state or default to OFF (safe default)
@@ -324,6 +327,12 @@ io.on('connection', (socket) => {
         const { meeting_id } = data;
         // Broadcast clear signal to everyone else in the room
         socket.to(meeting_id).emit('whiteboard_clear');
+    });
+
+    socket.on('whiteboard_toggle', (data) => {
+        const { meeting_id, isOpen } = data;
+        // Broadcast toggle signal to everyone else in the room
+        socket.to(meeting_id).emit('whiteboard_toggle', { isOpen });
     });
 
     // --- Signaling for WebRTC ---

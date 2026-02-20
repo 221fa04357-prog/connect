@@ -22,6 +22,7 @@ interface ChatState {
   emitReaction: (meetingId: string, reaction: any) => void;
   emitWhiteboardDraw: (meetingId: string, stroke: any) => void;
   emitWhiteboardClear: (meetingId: string) => void;
+  emitWhiteboardToggle: (meetingId: string, isOpen: boolean) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -229,13 +230,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('whiteboard_draw', (data: { type: 'start' | 'update', stroke?: any, id?: string, points?: [number, number][] }) => {
+    socket.on('whiteboard_draw', (data: { type: 'start' | 'update' | 'erase', stroke?: any, id?: string, points?: [number, number][] }) => {
       import('./useMeetingStore').then((meetingStore) => {
         const ms = meetingStore.useMeetingStore.getState();
         if (data.type === 'start' && data.stroke) {
           ms.addWhiteboardStroke(data.stroke);
+          // Auto-open board when drawing starts for others
+          if (!ms.isWhiteboardOpen) {
+            ms.toggleWhiteboard();
+          }
         } else if (data.type === 'update' && data.id && data.points) {
           ms.updateWhiteboardStroke(data.id, data.points);
+          // Auto-open if board is closed but drawing is happening (just in case)
+          if (!ms.isWhiteboardOpen) {
+            ms.toggleWhiteboard();
+          }
+        } else if (data.type === 'erase' && data.id) {
+          ms.removeWhiteboardStroke(data.id);
         }
       });
     });
@@ -243,6 +254,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('whiteboard_clear', () => {
       import('./useMeetingStore').then((meetingStore) => {
         meetingStore.useMeetingStore.getState().clearWhiteboardStrokes();
+      });
+    });
+
+    socket.on('whiteboard_toggle', (data: { isOpen: boolean }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (data.isOpen && !ms.isWhiteboardOpen) {
+          ms.toggleWhiteboard();
+        } else if (!data.isOpen && ms.isWhiteboardOpen) {
+          ms.toggleWhiteboard();
+        }
       });
     });
 
@@ -371,6 +393,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitWhiteboardClear: (meetingId) => {
     get().socket?.emit('whiteboard_clear', { meeting_id: meetingId });
+  },
+
+  emitWhiteboardToggle: (meetingId, isOpen) => {
+    get().socket?.emit('whiteboard_toggle', { meeting_id: meetingId, isOpen });
   },
 
   muteAll: (meetingId) => {
