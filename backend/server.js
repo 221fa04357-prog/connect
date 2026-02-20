@@ -91,6 +91,9 @@ async function initializeDatabase() {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meetings' AND column_name='start_timestamp') THEN
                     ALTER TABLE meetings ADD COLUMN start_timestamp BIGINT;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meetings' AND column_name='end_timestamp') THEN
+                    ALTER TABLE meetings ADD COLUMN end_timestamp BIGINT;
+                END IF;
             END $$;
 
             CREATE TABLE IF NOT EXISTS users (
@@ -149,7 +152,7 @@ io.on('connection', (socket) => {
 
         try {
             // Check meeting start time enforcement
-            const meetingResult = await db.query('SELECT host_id, start_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
+            const meetingResult = await db.query('SELECT host_id, start_timestamp, end_timestamp, status FROM meetings WHERE id = $1', [meetingId]);
             const meeting = meetingResult.rows[0];
 
             if (meeting) {
@@ -166,6 +169,20 @@ io.on('connection', (socket) => {
                         code: 'MEETING_NOT_STARTED',
                         message: 'This meeting has not started yet. Please join at the scheduled time.',
                         startTime: startTime
+                    });
+                    return;
+                }
+
+                // Check for ended meeting
+                const endTime = meeting.end_timestamp ? Number(meeting.end_timestamp) : null;
+                const isEnded = meeting.status === 'ended' || (endTime && now > endTime);
+
+                if (isEnded && !isHost) {
+                    console.log(`User ${user?.name} blocked from joining ended meeting ${meetingId}`);
+                    socket.emit('join_error', {
+                        code: 'MEETING_ENDED',
+                        message: 'This meeting has already ended.',
+                        endTime: endTime
                     });
                     return;
                 }
@@ -232,29 +249,29 @@ io.on('connection', (socket) => {
                 // Find recipient socket(s) in the meeting room
                 const room = rooms.get(meeting_id);
                 let sentToRecipient = false;
-                
+
                 if (room) {
                     for (const [sId, p] of room.entries()) {
-                         if (p.id === recipient_id) {
-                             io.to(sId).emit('receive_message', savedMessage);
-                             sentToRecipient = true;
-                         }
+                        if (p.id === recipient_id) {
+                            io.to(sId).emit('receive_message', savedMessage);
+                            sentToRecipient = true;
+                        }
                     }
                 }
-                
+
                 // Always send back to sender so it appears on their screen
                 // We do this by emitting to the sender's socket directly.
                 // If sender has multiple tabs (same user ID), ideally we'd emit to all their sockets too.
                 // For now, emitting to current socket + ensuring we broadcast to all sockets of that user if we could.
                 // Simpler: iterate room again for sender
-                 if (room) {
+                if (room) {
                     for (const [sId, p] of room.entries()) {
-                         if (p.id === sender_id) {
-                             io.to(sId).emit('receive_message', savedMessage);
-                         }
+                        if (p.id === sender_id) {
+                            io.to(sId).emit('receive_message', savedMessage);
+                        }
                     }
                 }
-                
+
             } else {
                 // Broadcast to everyone in the meeting room (public)
                 io.to(meeting_id).emit('receive_message', savedMessage);
@@ -571,13 +588,18 @@ app.get('/api/recaps/:id', async (req, res) => {
 app.post('/api/meetings', async (req, res) => {
     const { id, title, host_id, start_time, duration, settings, password } = req.body;
     try {
+        const startTimeMs = req.body.start_timestamp || new Date(start_time).getTime();
+        const endTimeMs = startTimeMs + (duration * 60 * 1000);
+
         const result = await db.query(
-            `INSERT INTO meetings (id, title, host_id, start_time, start_timestamp, duration, settings, password)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO meetings (id, title, host_id, start_time, start_timestamp, end_timestamp, duration, settings, password)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-            [id, title, host_id, start_time, req.body.start_timestamp || null, duration, JSON.stringify(settings || {}), password]
+            [id, title, host_id, start_time, startTimeMs, endTimeMs, duration, JSON.stringify(settings || {}), password]
         );
-        res.json(result.rows[0]);
+        const meeting = result.rows[0];
+        meeting.endTime = Number(meeting.end_timestamp);
+        res.json(meeting);
     } catch (err) {
         console.error('Error creating meeting:', err);
         res.status(500).json({ error: 'Failed to create meeting' });
@@ -592,6 +614,14 @@ app.get('/api/meetings/:id', async (req, res) => {
         }
         const meeting = result.rows[0];
         meeting.settings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : meeting.settings;
+
+        // Ensure endTime is populated
+        if (meeting.end_timestamp) {
+            meeting.endTime = Number(meeting.end_timestamp);
+        } else if (meeting.start_timestamp && meeting.duration) {
+            meeting.endTime = Number(meeting.start_timestamp) + (meeting.duration * 60 * 1000);
+        }
+
         res.json(meeting);
     } catch (err) {
         console.error('Error fetching meeting:', err);
@@ -600,8 +630,21 @@ app.get('/api/meetings/:id', async (req, res) => {
 });
 
 app.patch('/api/meetings/:id', async (req, res) => {
-    const { status, settings } = req.body;
+    const { status, settings, duration } = req.body;
     try {
+        // If duration is updated, we must update end_timestamp too
+        let updateEndTime = false;
+        let newEndTime = null;
+
+        if (duration) {
+            const current = await db.query('SELECT start_timestamp FROM meetings WHERE id = $1', [req.params.id]);
+            if (current.rows.length > 0 && current.rows[0].start_timestamp) {
+                const start = Number(current.rows[0].start_timestamp);
+                newEndTime = start + (duration * 60 * 1000);
+                updateEndTime = true;
+            }
+        }
+
         let query = 'UPDATE meetings SET updated_at = NOW()';
         const params = [req.params.id];
         let paramCount = 2;
@@ -614,6 +657,14 @@ app.patch('/api/meetings/:id', async (req, res) => {
             query += `, settings = $${paramCount++}`;
             params.push(JSON.stringify(settings));
         }
+        if (duration) {
+            query += `, duration = $${paramCount++}`;
+            params.push(duration);
+        }
+        if (updateEndTime) {
+            query += `, end_timestamp = $${paramCount++}`;
+            params.push(newEndTime);
+        }
 
         query += ' WHERE id = $1 RETURNING *';
         const result = await db.query(query, params);
@@ -624,6 +675,8 @@ app.patch('/api/meetings/:id', async (req, res) => {
 
         const meeting = result.rows[0];
         meeting.settings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : meeting.settings;
+        if (meeting.end_timestamp) meeting.endTime = Number(meeting.end_timestamp);
+
         res.json(meeting);
     } catch (err) {
         console.error('Error updating meeting:', err);

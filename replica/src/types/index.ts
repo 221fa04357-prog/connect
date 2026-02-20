@@ -80,6 +80,7 @@ export interface Meeting {
   viewMode: ViewMode;
   password?: string;
   isLocked?: boolean; // From meeting.ts
+  endTime?: number;
 }
 
 export interface PollOption {
