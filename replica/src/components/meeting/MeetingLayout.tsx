@@ -370,18 +370,19 @@ export function ParticipantsPanel() {
         allowVideoAll,
         setVideoAllowed,
     } = useParticipantsStore();
+    const { localUserId } = useChatStore();
 
     const [searchQuery, setSearchQuery] = useState('');
 
     const { user } = useAuthStore();
     const { meeting, isJoinedAsHost } = useMeetingStore();
 
-    /** Resolve host status strictly by isJoinedAsHost flag */
-    const isHost = isJoinedAsHost;
-
     /** Current participant from store */
     const currentUserParticipant = participants.find(p => p.id === user?.id);
     const currentRole = (currentUserParticipant && (transientRoles[currentUserParticipant.id] || currentUserParticipant.role)) || 'participant';
+
+    /** Resolve host status dynamically from state or participant list */
+    const isHost = isJoinedAsHost || currentRole === 'host';
 
     const isCoHost = currentRole === 'co-host';
     const canControl = isHost || isCoHost;
@@ -408,7 +409,14 @@ export function ParticipantsPanel() {
         }
         toggleAudio();
         if (currentUserParticipant) {
-            updateParticipant(currentUserParticipant.id, { isAudioMuted: !currentIsMuted });
+            const nextMuted = !currentIsMuted;
+            updateParticipant(currentUserParticipant.id, { isAudioMuted: nextMuted });
+
+            // Broadcast update to others
+            const { meetingId, emitParticipantUpdate } = useChatStore.getState();
+            if (meetingId) {
+                emitParticipantUpdate(meetingId, currentUserParticipant.id, { isAudioMuted: nextMuted });
+            }
         }
     };
 
@@ -431,7 +439,14 @@ export function ParticipantsPanel() {
         }
         toggleVideo();
         if (currentUserParticipant) {
-            updateParticipant(currentUserParticipant.id, { isVideoOff: !currentIsVideoOff });
+            const nextVideoOff = !currentIsVideoOff;
+            updateParticipant(currentUserParticipant.id, { isVideoOff: nextVideoOff });
+
+            // Broadcast update to others
+            const { meetingId, emitParticipantUpdate } = useChatStore.getState();
+            if (meetingId) {
+                emitParticipantUpdate(meetingId, currentUserParticipant.id, { isVideoOff: nextVideoOff });
+            }
         }
     };
 
@@ -599,6 +614,7 @@ export function ParticipantsPanel() {
                             const isCurrentUser =
                                 participant.id === user?.id ||
                                 participant.id === `participant-${user?.id}` ||
+                                participant.id === localUserId ||
                                 (user?.role === 'host' && participant.id === 'participant-1');
 
                             return (

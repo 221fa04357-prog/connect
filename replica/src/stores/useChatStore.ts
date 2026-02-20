@@ -95,6 +95,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
       import('./useParticipantsStore').then((store) => {
         store.useParticipantsStore.getState().updateParticipant(data.userId, data.updates);
       });
+
+      // Hardware Sync: If the update is for ME, update my local meeting store
+      const localUserId = get().localUserId;
+      if (data.userId === localUserId) {
+        import('./useMeetingStore').then((meetingStore) => {
+          const ms = meetingStore.useMeetingStore.getState();
+
+          if (data.updates.role) {
+            if (data.updates.role === 'host') {
+              ms.setIsJoinedAsHost(true);
+              import('sonner').then(({ toast }) => {
+                toast.success('You have been promoted to Host!');
+              });
+            } else if (ms.isJoinedAsHost && (data.updates.role === 'participant' || data.updates.role === 'co-host')) {
+              ms.setIsJoinedAsHost(false);
+              import('sonner').then(({ toast }) => {
+                toast.info(`Your role has been changed to ${data.updates.role}.`);
+              });
+            }
+          }
+
+          if (data.updates.isAudioMuted !== undefined) {
+            if (ms.isAudioMuted !== data.updates.isAudioMuted) {
+              ms.setAudioMuted(data.updates.isAudioMuted);
+              import('sonner').then(({ toast }) => {
+                toast.info(data.updates.isAudioMuted ? 'Your microphone has been muted.' : 'Your microphone has been unmuted.');
+              });
+            }
+          }
+
+          if (data.updates.isVideoOff !== undefined) {
+            if (ms.isVideoOff !== data.updates.isVideoOff) {
+              ms.setVideoOff(data.updates.isVideoOff);
+              import('sonner').then(({ toast }) => {
+                toast.info(data.updates.isVideoOff ? 'Your video has been stopped.' : 'Your video has been started.');
+              });
+            }
+          }
+        });
+      }
     });
 
     socket.on('receive_reaction', (reaction: any) => {
@@ -124,11 +164,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           if (participant && participant.role !== 'host') {
             // I am a participant, so I must mute
-            ms.toggleAudio(); // This toggles. We need setAudioMuted(true).
-            // useMeetingStore doesn't have setAudioMuted, it has toggleAudio.
-            // Let's check state first.
             if (!ms.isAudioMuted) {
-              ms.toggleAudio();
+              ms.setAudioMuted(true);
               import('sonner').then(({ toast }) => toast.info('The host has muted everyone.'));
             }
           }
@@ -153,7 +190,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // This implies state sync. 
             // Let's UN-MUTE them to match the "Enable All" request, but maybe show a toast.
             if (ms.isAudioMuted) {
-              ms.toggleAudio();
+              ms.setAudioMuted(false);
               import('sonner').then(({ toast }) => toast.info('The host has unmuted everyone.'));
             }
           }
@@ -174,7 +211,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (participant && participant.role !== 'host') {
             // Host disabled video for everyone
             if (!ms.isVideoOff) {
-              ms.toggleVideo();
+              ms.setVideoOff(true);
               import('sonner').then(({ toast }) => toast.warning('The host has stopped your video.'));
             }
           }

@@ -49,6 +49,8 @@ interface MeetingState {
   setLocalStream: (stream: MediaStream | null) => void;
   toggleAudio: () => void;
   toggleVideo: () => void;
+  setAudioMuted: (muted: boolean) => void;
+  setVideoOff: (off: boolean) => void;
   extendMeetingTime: (minutes: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleScreenShare: () => void;
@@ -60,7 +62,7 @@ interface MeetingState {
   toggleAICompanion: () => void;
   toggleReactions: () => void;
 
-  setMicConfirm: (show: boolean) => void;
+  setMicConfirm: (val: boolean) => void;
   setVideoConfirm: (show: boolean) => void;
 
   addReaction: (reaction: Reaction) => void;
@@ -145,6 +147,22 @@ export const useMeetingStore = create<MeetingState>()(
 
       toggleSelfView: () =>
         set((state) => ({ showSelfView: !state.showSelfView })),
+
+      setAudioMuted: (muted) =>
+        set((state) => {
+          if (state.localStream) {
+            state.localStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
+          }
+          return { isAudioMuted: muted };
+        }),
+
+      setVideoOff: (off) =>
+        set((state) => {
+          if (state.localStream) {
+            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !off));
+          }
+          return { isVideoOff: off };
+        }),
 
       toggleAudio: () =>
         set((state) => {

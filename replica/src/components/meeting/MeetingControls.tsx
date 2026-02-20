@@ -982,11 +982,10 @@ function ControlBar() {
         isJoinedAsHost
 
     } = useMeetingStore();
-    const isHost = isJoinedAsHost;
     const { user, isSubscribed } = useAuthStore();
-
     const {
         participants,
+        transientRoles,
         updateParticipant,
         toggleHandRaise,
         toggleParticipantAudio,
@@ -999,6 +998,7 @@ function ControlBar() {
         || participants.find(p => p.id === `participant-${currentUserId}`)
         || participants[0];
 
+    const isHost = isJoinedAsHost || (currentParticipant && (transientRoles[currentParticipant.id] || currentParticipant.role)) === 'host';
     const isHandRaised = !!currentParticipant?.isHandRaised;
 
     const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
@@ -1246,7 +1246,14 @@ function ControlBar() {
             || participants.find(p => p.id === 'participant-1');
 
         if (participant) {
-            updateParticipant(participant.id, { isAudioMuted: !currentIsMuted });
+            const nextMuted = !currentIsMuted;
+            updateParticipant(participant.id, { isAudioMuted: nextMuted });
+
+            // Broadcast update to others
+            const { meetingId, emitParticipantUpdate } = useChatStore.getState();
+            if (meetingId) {
+                emitParticipantUpdate(meetingId, participant.id, { isAudioMuted: nextMuted });
+            }
         }
     };
 
@@ -1288,7 +1295,14 @@ function ControlBar() {
             || participants.find(p => p.id === 'participant-1');
 
         if (participant) {
-            updateParticipant(participant.id, { isVideoOff: !currentIsVideoOff });
+            const nextVideoOff = !currentIsVideoOff;
+            updateParticipant(participant.id, { isVideoOff: nextVideoOff });
+
+            // Broadcast update to others
+            const { meetingId, emitParticipantUpdate } = useChatStore.getState();
+            if (meetingId) {
+                emitParticipantUpdate(meetingId, participant.id, { isVideoOff: nextVideoOff });
+            }
         }
     };
 

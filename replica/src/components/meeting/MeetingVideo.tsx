@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui'; // Consolidated import
 import { useMediaStore } from '@/stores/useMediaStore';
@@ -53,12 +54,14 @@ export function VideoTile({
     } = useMeetingStore();
     const { remoteStreams } = useMediaStore();
 
+    const { localUserId } = useChatStore();
+
     // Logic to update local participant id matching. 
     // Matches logic in VideoGrid for consistency.
     const isLocal =
         participant.id === user?.id ||
         participant.id === `participant-${user?.id}` ||
-        participant.id.startsWith('guest-') || // Add guest support
+        participant.id === localUserId ||
         (user?.role === 'host' && participant.id === 'participant-1');
 
     const videoRef = useRef<HTMLVideoElement>(null);
