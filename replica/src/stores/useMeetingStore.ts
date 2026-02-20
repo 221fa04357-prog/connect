@@ -349,7 +349,12 @@ export const useMeetingStore = create<MeetingState>()(
         } else {
           console.log('MeetingStore hydration finished');
         }
-        useMeetingStore.setState({ hasHydrated: true });
+
+        // Fix: Wrap in setTimeout to avoid "Cannot access 'useMeetingStore' before initialization"
+        // if hydration happens synchronously (e.g. sessionStorage)
+        setTimeout(() => {
+          useMeetingStore.setState({ hasHydrated: true });
+        }, 0);
       }
     }
   )
