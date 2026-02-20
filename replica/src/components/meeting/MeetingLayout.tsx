@@ -631,8 +631,7 @@ export function ParticipantsPanel() {
                             const isCurrentUser =
                                 participant.id === user?.id ||
                                 participant.id === `participant-${user?.id}` ||
-                                participant.id === localUserId ||
-                                (user?.role === 'host' && participant.id === 'participant-1');
+                                participant.id === localUserId;
 
                             return (
                                 <ParticipantItem
@@ -643,7 +642,7 @@ export function ParticipantsPanel() {
                                     canChangeRoles={canChangeRoles}
                                     isOriginalHost={isOriginalHost}
                                     onToggleHand={() => toggleHandRaise(participant.id)}
-                                    onToggleMute={participant.id === user?.id ? handleAudioToggle : () => {
+                                    onToggleMute={isCurrentUser ? handleAudioToggle : () => {
                                         if (participant.isAudioMuted) {
                                             unmuteParticipant(participant.id);
                                         } else {
@@ -655,8 +654,8 @@ export function ParticipantsPanel() {
                                     onRemove={() => removeParticipant(participant.id)}
                                     onRevokeHost={() => revokeHost(participant.id)}
                                     onRevokeCoHost={() => revokeCoHost(participant.id)}
-                                    onToggleVideoAllowed={() => setVideoAllowed(participant.id, !(participant.isVideoAllowed !== false))}
-                                    onToggleVideo={participant.id === user?.id ? handleVideoToggle : undefined}
+                                    onToggleVideoAllowed={() => setVideoAllowed(participant.id, participant.isVideoOff)}
+                                    onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
                                     hostCount={hostCount}
@@ -738,27 +737,27 @@ function ParticipantItem({
                         <button
                             onClick={(isCurrentUser || canControl) ? onToggleMute : undefined}
                             className={cn(
-                                "transition-opacity hover:opacity-80",
-                                (!isCurrentUser && !canControl) && "cursor-default"
+                                "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
+                                (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
                             )}
                         >
                             {participant.isAudioMuted ? (
-                                <MicOff className="w-3 h-3 text-red-500" />
+                                <MicOff className="w-4 h-4 text-red-500" />
                             ) : (
-                                <Mic className="w-3 h-3 text-green-500" />
+                                <Mic className="w-4 h-4 text-green-500" />
                             )}
                         </button>
                         <button
                             onClick={isCurrentUser ? onToggleVideo : (canControl ? onToggleVideoAllowed : undefined)}
                             className={cn(
-                                "transition-opacity hover:opacity-80",
-                                (!isCurrentUser && !canControl) && "cursor-default"
+                                "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
+                                (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
                             )}
                         >
                             {participant.isVideoOff ? (
-                                <VideoOff className="w-3 h-3 text-red-500" />
+                                <VideoOff className="w-4 h-4 text-red-500" />
                             ) : (
-                                <Video className="w-3 h-3 text-green-500" />
+                                <Video className="w-4 h-4 text-green-500" />
                             )}
                         </button>
                         {participant.isHandRaised && (

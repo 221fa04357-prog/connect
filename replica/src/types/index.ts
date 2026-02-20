@@ -21,7 +21,8 @@ export interface Participant {
   isAudioMuted: boolean;
   isVideoOff: boolean;
   isHandRaised: boolean;
-  isScreenSharing?: boolean; // From participant.ts
+  isScreenSharing?: boolean;
+  screenShareStreamId?: string;
   isSpeaking: boolean;
   isPinned: boolean;
   isSpotlighted: boolean;

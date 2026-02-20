@@ -471,6 +471,19 @@ io.on('connection', (socket) => {
         io.to(meetingId).emit('meeting_ended', { meetingId });
     });
 
+    // --- Whiteboard Sync ---
+    socket.on('whiteboard_draw', (data) => {
+        const { meeting_id, stroke } = data;
+        // Broadcast stroke to everyone else in the room
+        socket.to(meeting_id).emit('whiteboard_draw', stroke);
+    });
+
+    socket.on('whiteboard_clear', (data) => {
+        const { meeting_id } = data;
+        // Broadcast clear signal to everyone else in the room
+        socket.to(meeting_id).emit('whiteboard_clear');
+    });
+
     // --- Signaling for WebRTC ---
     socket.on('signal_send', (data) => {
         const { to, signal, from } = data;

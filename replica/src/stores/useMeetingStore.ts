@@ -29,6 +29,7 @@ interface MeetingState {
   localStream: MediaStream | null;
   isAudioMuted: boolean;
   isVideoOff: boolean;
+  whiteboardStrokes: any[];
   hasHydrated: boolean;
 
   // ✅ Confirmation Modals (from main branch)
@@ -79,6 +80,10 @@ interface MeetingState {
   setWhiteboardEditAccess: (
     access: 'hostOnly' | 'coHost' | 'everyone'
   ) => void;
+  addWhiteboardStroke: (stroke: any) => void;
+  updateWhiteboardStroke: (id: string, points: [number, number][]) => void;
+  clearWhiteboardStrokes: () => void;
+  setWhiteboardStrokes: (strokes: any[]) => void;
 
   showSelfView: boolean;
   toggleSelfView: () => void;
@@ -116,6 +121,7 @@ export const useMeetingStore = create<MeetingState>()(
       isAudioMuted: false,
 
       isVideoOff: false,
+      whiteboardStrokes: [],
       hasHydrated: false,
 
       showMicConfirm: false,
@@ -266,6 +272,7 @@ export const useMeetingStore = create<MeetingState>()(
           meetingJoined: false,
           isInsideMeeting: false,
           isMiniVisible: false,
+          whiteboardStrokes: [],
         });
       },
 
@@ -348,6 +355,14 @@ export const useMeetingStore = create<MeetingState>()(
           console.error('Error setting whiteboard access:', err);
         }
       },
+      addWhiteboardStroke: (stroke) => set((state) => ({
+        whiteboardStrokes: [...state.whiteboardStrokes, stroke]
+      })),
+      updateWhiteboardStroke: (id, points) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
+      })),
+      clearWhiteboardStrokes: () => set({ whiteboardStrokes: [] }),
+      setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
     }),
     {
       name: 'meeting-store',

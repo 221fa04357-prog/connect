@@ -291,6 +291,48 @@ export function VideoTile({
     );
 }
 
+// --- ScreenShareView.tsx ---
+
+interface ScreenShareViewProps {
+    participant: Participant;
+    stream: MediaStream;
+    isLocal: boolean;
+}
+
+export function ScreenShareView({ participant, stream, isLocal }: ScreenShareViewProps) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    return (
+        <div className="relative w-full h-full bg-black rounded-xl overflow-hidden group">
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-contain"
+            />
+            {/* Overlay info */}
+            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-white text-sm font-medium">
+                    {participant.name}'s screen
+                </span>
+            </div>
+            {/* Tooltip or Label */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="bg-black/60 backdrop-blur-md px-4 py-1 rounded-full text-xs text-white/80 border border-white/5">
+                    Viewing shared screen
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // --- VideoGrid.tsx ---
 
 export function VideoGrid() {
@@ -304,7 +346,8 @@ export function VideoGrid() {
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
     }, [focusedParticipantId]);
-    const { viewMode, showSelfView } = useMeetingStore();
+    const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing } = useMeetingStore();
+    const { remoteScreenStreams } = useMediaStore();
     const { user } = useAuthStore();
 
     const handlePin = (participantId: string) => {
@@ -326,6 +369,14 @@ export function VideoGrid() {
         }
         return true;
     });
+
+    // Identify who is sharing screen
+    const remoteSharingParticipant = participants.find(p => p.isScreenSharing && !p.id.includes(user?.id || ''));
+    const isLocalSharing = isLocalScreenSharing && screenShareStream;
+    const sharingParticipant = remoteSharingParticipant || (isLocalSharing ? participants.find(p => p.id === user?.id || p.id === `participant-${user?.id}`) : null);
+    const screenStream = remoteSharingParticipant
+        ? remoteScreenStreams[remoteSharingParticipant.socketId || '']
+        : (isLocalSharing ? screenShareStream : null);
 
     // Fullscreen logic
     if (focusedParticipantId) {
@@ -350,7 +401,38 @@ export function VideoGrid() {
         );
     }
 
-    // Responsive Zoom-like Gallery View
+    // Layout when someone is sharing
+    if (sharingParticipant && screenStream) {
+        return (
+            <div className="flex flex-col md:flex-row h-full w-full gap-4 p-4 overflow-hidden pt-[30px] pb-[105px]">
+                {/* Main Screen Share Area */}
+                <div className="flex-1 min-w-0 bg-black rounded-xl overflow-hidden relative">
+                    <ScreenShareView
+                        participant={sharingParticipant}
+                        stream={screenStream}
+                        isLocal={!!isLocalSharing && !remoteSharingParticipant}
+                    />
+                </div>
+
+                {/* Participant Sidebar */}
+                <div className="w-full md:w-64 flex-shrink-0 flex md:flex-col gap-3 overflow-x-auto md:overflow-y-auto no-scrollbar pb-2 md:pb-0">
+                    {visibleParticipants.map((participant) => (
+                        <div key={participant.id} className="w-48 md:w-full flex-shrink-0">
+                            <VideoTile
+                                participant={participant}
+                                isActive={participant.id === activeSpeakerId}
+                                isPinned={pinnedParticipantId === participant.id}
+                                onPin={() => handlePin(participant.id)}
+                                onClick={() => setFocusedParticipant(participant.id)}
+                                className="aspect-video h-auto"
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     const participantCount = visibleParticipants.length;
 
     return (
@@ -367,7 +449,7 @@ export function VideoGrid() {
                     style={{
                         gridTemplateColumns: participantCount === 1
                             ? '1fr'
-                            : window.innerWidth >= 768
+                            : typeof window !== 'undefined' && window.innerWidth >= 768
                                 ? `repeat(auto-fit, minmax(${participantCount === 2 ? '300px' : '200px'}, 1fr))`
                                 : 'repeat(auto-fit, minmax(140px, 1fr))',
                         gridAutoRows: participantCount === 1 ? 'auto' : '1fr',
