@@ -46,12 +46,20 @@ const EMOJIS = ['😀', '😂', '😍', '👍', '🔥', '🎉', '😮', '❤️'
 export function ChatPanel() {
     const { isChatOpen, toggleChat } = useMeetingStore();
     const { participants } = useParticipantsStore();
-    const { messages, sendMessage, sendTypingStatus, markAsRead, typingUsers } = useChatStore();
+    const {
+        messages,
+        sendMessage,
+        sendTypingStatus,
+        markAsRead,
+        typingUsers,
+        activeTab,
+        setActiveTab,
+        selectedRecipientId,
+        setSelectedRecipientId
+    } = useChatStore();
 
-    const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
     const [input, setInput] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -68,13 +76,10 @@ export function ChatPanel() {
         (m.senderId === currentUserId || m.recipientId === currentUserId)
     ).length;
 
-    // Filter private messages for the selected recipient
+    // Filter private messages: Show ALL private messages for the current user (unified view)
     const privateMessages = messages.filter(m =>
         m.type === 'private' &&
-        (selectedRecipientId ? (
-            (m.senderId === currentUserId && m.recipientId === selectedRecipientId) ||
-            (m.senderId === selectedRecipientId && m.recipientId === currentUserId)
-        ) : false)
+        (m.senderId === currentUserId || m.recipientId === currentUserId)
     );
 
     // Get potential recipients (everyone except self)
@@ -144,9 +149,7 @@ export function ChatPanel() {
                     {/* HEADER */}
                     <div className="shrink-0 flex items-center justify-between p-4 border-b border-[#404040]">
                         <h3 className="text-lg font-semibold">Chat</h3>
-                        <Button variant="ghost" size="icon" onClick={toggleChat}>
-                            <X className="w-5 h-5" />
-                        </Button>
+                        {/* Close button moved to TopBar */}
                     </div>
 
                     {/* TABS */}
@@ -183,7 +186,7 @@ export function ChatPanel() {
                         >
                             {/* Recipient Selector */}
                             <div className="shrink-0 p-4 border-b border-[#333]">
-                                <Select value={selectedRecipientId} onValueChange={setSelectedRecipientId}>
+                                <Select value={selectedRecipientId || ''} onValueChange={setSelectedRecipientId}>
                                     <SelectTrigger className="w-full bg-[#2A2A2A] border-[#444] text-white">
                                         <SelectValue placeholder="Select Participant" />
                                     </SelectTrigger>
@@ -205,6 +208,11 @@ export function ChatPanel() {
                                 messages={privateMessages}
                                 participants={participants}
                                 messagesEndRef={messagesEndRef}
+                                onMessageClick={(userId) => {
+                                    if (userId !== currentUserId) {
+                                        setSelectedRecipientId(userId);
+                                    }
+                                }}
                             />
                         </TabsContent>
                     </Tabs>
@@ -270,10 +278,12 @@ function MessageList({
     messages,
     participants,
     messagesEndRef,
+    onMessageClick,
 }: {
     messages: ChatMessage[];
     participants: { id: string; name: string }[];
     messagesEndRef: React.RefObject<HTMLDivElement>;
+    onMessageClick?: (userId: string) => void;
 }) {
     const { typingUsers } = useChatStore();
 
@@ -299,6 +309,11 @@ function MessageList({
                     <div
                         key={msg.id}
                         className={cn('flex flex-col gap-1', isMe ? 'items-end' : 'items-start')}
+                        onClick={() => {
+                            if (msg.type === 'private' && onMessageClick) {
+                                onMessageClick(isMe ? (msg.recipientId || '') : msg.senderId);
+                            }
+                        }}
                     >
                         <div className="text-xs text-gray-400">
                             {displayName} •{' '}
@@ -311,10 +326,10 @@ function MessageList({
 
                         <div
                             className={cn(
-                                'px-4 py-2 rounded-2xl text-sm max-w-[75%]',
+                                'px-4 py-2 rounded-2xl text-sm max-w-[75%] cursor-pointer transition-colors',
                                 isMe
-                                    ? 'bg-[#0B5CFF] text-white rounded-br-none'
-                                    : 'bg-[#2A2A2A] text-gray-200 rounded-bl-none'
+                                    ? 'bg-[#0B5CFF] text-white rounded-br-none hover:bg-[#0046D5]'
+                                    : 'bg-[#2A2A2A] text-gray-200 rounded-bl-none hover:bg-[#333]'
                             )}
                         >
                             {msg.content}
@@ -489,14 +504,7 @@ export function ParticipantsPanel() {
                         <h3 className="text-lg font-semibold">
                             Participants ({participants.length})
                         </h3>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={toggleParticipants}
-                            className="hover:bg-[#2D2D2D]"
-                        >
-                            <X className="w-5 h-5" />
-                        </Button>
+                        {/* Close button moved to TopBar */}
                     </div>
 
                     {/* SEARCH & HOST CONTROLS */}
@@ -595,13 +603,13 @@ export function ParticipantsPanel() {
                                                 <div className="flex gap-4 items-center">
                                                     <Button
                                                         size="sm"
-                                                        onClick={() => admitFromWaitingRoom(person.id)}
+                                                        onClick={() => useChatStore.getState().admitParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
                                                         className="bg-green-500 hover:bg-green-600 text-white font-bold h-8 px-4"
                                                     >
                                                         Admit
                                                     </Button>
                                                     <button
-                                                        onClick={() => removeFromWaitingRoom(person.id)}
+                                                        onClick={() => useChatStore.getState().rejectParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
                                                         className="text-white hover:text-gray-300 text-sm font-medium transition-colors"
                                                     >
                                                         Deny

@@ -81,6 +81,7 @@ export interface Meeting {
   viewMode: ViewMode;
   password?: string;
   isLocked?: boolean; // From meeting.ts
+  endTime?: number;
 }
 
 export interface PollOption {
@@ -115,7 +116,8 @@ export interface Reaction {
 }
 
 export interface WaitingRoomParticipant {
-  id: string;
+  id: string; // userId
+  socketId: string; // Real socket connection ID
   name: string;
   joinedAt: Date;
 }

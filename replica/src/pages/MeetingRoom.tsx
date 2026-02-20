@@ -12,8 +12,10 @@ import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
+import { useNavigate } from 'react-router-dom';
 
 export default function MeetingRoom() {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const {
     participants,
@@ -181,6 +183,29 @@ export default function MeetingRoom() {
 
       const socket = useChatStore.getState().socket;
       if (socket) {
+
+        // Handle join errors (including MEETING_ENDED)
+        socket.on('join_error', (error: any) => {
+          console.error('Join Error:', error);
+          if (error.code === 'MEETING_NOT_STARTED') {
+            import('sonner').then(({ toast }) => {
+              toast.error(error.message, {
+                description: `Scheduled start: ${new Date(Number(error.startTime)).toLocaleString()}`,
+                duration: 5000,
+              });
+            });
+            navigate('/');
+          } else if (error.code === 'MEETING_ENDED') {
+            import('sonner').then(({ toast }) => {
+              toast.error(error.message, {
+                description: 'This meeting is no longer active.',
+                duration: 5000,
+              });
+            });
+            navigate('/');
+          }
+        });
+
         // Handle incoming signals using Perfect Negotiation
         socket.on('signal_receive', async (data: { from: string, signal: any }) => {
           const { from, signal } = data;
@@ -418,12 +443,17 @@ export default function MeetingRoom() {
     }
   }, [connectionQuality]);
 
-  // Sync initial video restriction from meeting settings
+  // Sync initial video restriction and waiting room from meeting settings
   useEffect(() => {
-    if (meeting?.settings?.disableParticipantVideo !== undefined) {
-      setVideoRestriction(meeting.settings.disableParticipantVideo);
+    if (meeting?.settings) {
+      if (meeting.settings.disableParticipantVideo !== undefined) {
+        setVideoRestriction(meeting.settings.disableParticipantVideo);
+      }
+      if (meeting.settings.enableWaitingRoom !== undefined) {
+        useParticipantsStore.getState().setWaitingRoomEnabled(meeting.settings.enableWaitingRoom);
+      }
     }
-  }, [meeting?.settings?.disableParticipantVideo, setVideoRestriction]);
+  }, [meeting?.settings, setVideoRestriction]);
 
 
 
@@ -568,18 +598,88 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
-  const [waiting, setWaiting] = useState(false);
   const isHost = meeting?.hostId === user?.id;
 
-  /* ---------------- WAITING ROOM LOGIC ---------------- */
+  /* ---------------- AUTO-END LOGIC ---------------- */
+
+  // 1. Listen for meeting_ended event (Server broadcast)
+  const socket = useChatStore(state => state.socket);
 
   useEffect(() => {
-    if (user && waitingRoom.some(w => w.name === user.name)) {
-      setWaiting(true);
-    } else {
-      setWaiting(false);
-    }
-  }, [user, waitingRoom]);
+    if (!socket) return;
+
+    const onMeetingEnded = () => {
+      console.log("Meeting ended by host/server. Leaving...");
+      import('sonner').then(({ toast }) => {
+        toast.info('Meeting Ended', {
+          description: 'The meeting has been ended.',
+          duration: 3000,
+        });
+      });
+      useMeetingStore.getState().leaveMeeting();
+      navigate('/');
+    };
+
+    const onMeetingExtended = (updatedMeeting: any) => {
+      console.log("Meeting extended:", updatedMeeting);
+      useMeetingStore.getState().setMeeting({
+        ...useMeetingStore.getState().meeting!,
+        ...updatedMeeting,
+        endTime: updatedMeeting.endTime // Ensure this is synced
+      });
+      import('sonner').then(({ toast }) => {
+        toast.success('Meeting Extended', {
+          description: `New end time: ${new Date(updatedMeeting.endTime).toLocaleTimeString()}`,
+          duration: 3000,
+        });
+      });
+    };
+
+    socket.on('meeting_ended', onMeetingEnded);
+    socket.on('meeting_extended', onMeetingExtended);
+
+    return () => {
+      socket.off('meeting_ended', onMeetingEnded);
+      socket.off('meeting_extended', onMeetingExtended);
+    };
+  }, [socket, navigate]);
+
+  // 2. Timer Enforcement
+  useEffect(() => {
+    if (!meeting) return;
+    if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
+
+    const checkTime = () => {
+      let endTime = 0;
+      if (meeting.endTime) {
+        endTime = Number(meeting.endTime);
+      } else if (meeting.startTime && meeting.duration) {
+        const start = new Date(meeting.startTime).getTime();
+        endTime = start + (meeting.duration * 60 * 1000);
+      } else {
+        return;
+      }
+
+      const now = Date.now();
+      if (now >= endTime) {
+        if (isHost && now < endTime + 10000) {
+          if (socket) {
+            socket.emit('end_meeting', { meetingId: meeting.id });
+          } else {
+            useChatStore.getState().socket?.emit('end_meeting', { meetingId: meeting.id });
+          }
+        }
+        if (now >= endTime + 5000) {
+          console.log("Auto-end timer expired. Forcing leave.");
+          useMeetingStore.getState().leaveMeeting();
+          navigate('/');
+        }
+      }
+    };
+
+    const interval = setInterval(checkTime, 1000);
+    return () => clearInterval(interval);
+  }, [meeting, isHost, navigate, socket]);
 
   /* ---------------- RECORDING TIMER ---------------- */
 
@@ -605,23 +705,42 @@ export default function MeetingRoom() {
       const randomParticipant =
         participants[Math.floor(Math.random() * participants.length)];
       if (randomParticipant && !randomParticipant.isAudioMuted) {
-        useParticipantsStore.getState().setActiveSpeaker(randomParticipant.id);
-        setTimeout(() => useParticipantsStore.getState().setActiveSpeaker(null), 2000);
+        setActiveSpeaker(randomParticipant.id);
+        setTimeout(() => setActiveSpeaker(null), 2000);
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [participants]);
+  }, [participants, setActiveSpeaker]);
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
-  const activeSpeaker = participants.find(p => p.id === activeSpeakerId) || participants[0];
+  const isWaiting = useMeetingStore(state => state.isWaiting);
 
-  if (waiting) {
+  if (isWaiting) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#1C1C1C]">
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-8 py-10">
-          <h2 className="text-2xl text-white mb-4">Waiting Room</h2>
-          <p className="text-gray-300">Host will let you in soon…</p>
-        </div>
+      <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-[#232323] p-8 rounded-2xl max-w-md w-full text-center border border-[#404040] shadow-2xl"
+        >
+          <div className="w-16 h-16 bg-[#0B5CFF]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <RefreshCw className="w-8 h-8 text-[#0B5CFF] animate-spin" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Waiting Room</h2>
+          <p className="text-gray-400 mb-6">
+            The host has been notified. Please wait while they admit you to the meeting.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              useMeetingStore.getState().leaveMeeting();
+              navigate('/');
+            }}
+            className="w-full border-[#404040] hover:bg-[#2D2D2D] hover:text-white"
+          >
+            Leave Waiting Room
+          </Button>
+        </motion.div>
       </div>
     );
   }

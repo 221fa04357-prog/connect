@@ -3,7 +3,7 @@ import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
 import { Label } from '@/components/ui';
 import { Switch } from '@/components/ui';
-import { Video, Mic, MicOff, VideoOff, Calendar, Clock, Check, Copy } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Calendar, Clock, Check, Copy, RefreshCw } from 'lucide-react';
 // Helper for generating days in a month
 function getDaysInMonth(year: number, month: number) {
     return new Date(year, month + 1, 0).getDate();
@@ -34,6 +34,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { useIsMobile } from '@/hooks';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -317,6 +318,30 @@ export function JoinMeeting() {
 
             // Allow join if authenticated or guest session is active
             if (isAuthenticated || guestSessionActive) {
+                // Initialize socket before navigating to handle waiting room
+                const isHost = !!(user?.id && (user.id === meetingData.host_id || user.id === 'host'));
+                const identity = user ? {
+                    id: user.id,
+                    name: user.name || 'Anonymous',
+                    role: isHost ? 'host' : 'participant'
+                } : {
+                    id: `guest-${Math.random().toString(36).substr(2, 9)}`,
+                    name: name || 'Guest',
+                    role: isHost ? 'host' : 'participant'
+                };
+
+                const initialState = {
+                    isAudioMuted: useMeetingStore.getState().isAudioMuted,
+                    isVideoOff: useMeetingStore.getState().isVideoOff,
+                    isHandRaised: false
+                };
+
+                // Trigger socket join - this will emit 'join_meeting'
+                useChatStore.getState().initSocket(meetingId, identity, initialState);
+
+                // Set as host if applicable
+                useMeetingStore.getState().setIsJoinedAsHost(isHost);
+
                 // Trigger Fullscreen
                 if (document.documentElement.requestFullscreen) {
                     document.documentElement.requestFullscreen().catch(err => {
@@ -325,8 +350,6 @@ export function JoinMeeting() {
                 }
 
                 setMeetingJoined(true);
-                // Correctly set host status based on ID check
-                useMeetingStore.getState().setIsJoinedAsHost(!!isHost);
                 navigate('/meeting');
             } else {
                 alert('Guest session expired. Please sign in to continue.');
@@ -337,6 +360,38 @@ export function JoinMeeting() {
             alert('A network error occurred. Please try again.');
         }
     };
+
+    const isWaiting = useMeetingStore(state => state.isWaiting);
+
+    if (isWaiting) {
+        return (
+            <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-[#232323] p-8 rounded-2xl max-w-md w-full text-center border border-[#404040] shadow-2xl"
+                >
+                    <div className="w-16 h-16 bg-[#0B5CFF]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <RefreshCw className="w-8 h-8 text-[#0B5CFF] animate-spin" />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">Waiting Room</h2>
+                    <p className="text-gray-400 mb-6">
+                        The host has been notified. Please wait while they admit you to the meeting.
+                    </p>
+                    <Button
+                        variant="outline"
+                        onClick={() => {
+                            useMeetingStore.getState().leaveMeeting();
+                            navigate('/');
+                        }}
+                        className="w-full border-[#404040] hover:bg-[#2D2D2D] hover:text-white"
+                    >
+                        Leave Waiting Room
+                    </Button>
+                </motion.div>
+            </div>
+        );
+    }
 
     if (waitingForStart && scheduledStartTime) {
         return (
