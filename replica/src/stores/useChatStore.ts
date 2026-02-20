@@ -22,6 +22,8 @@ interface ChatState {
   emitReaction: (meetingId: string, reaction: any) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
+  stopVideoAll: (meetingId: string) => void;
+  allowVideoAll: (meetingId: string) => void;
   endMeeting: (meetingId: string) => void;
   markAsRead: () => void;
   reset: () => void;
@@ -159,6 +161,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('stop_video_all', () => {
+      import('./useParticipantsStore').then((participantStore) => {
+        const ps = participantStore.useParticipantsStore.getState();
+        ps.stopVideoAll();
+
+        import('./useMeetingStore').then((meetingStore) => {
+          const ms = meetingStore.useMeetingStore.getState();
+          const myId = get().localUserId;
+          const participant = ps.participants.find(p => p.id === myId);
+
+          if (participant && participant.role !== 'host') {
+            // Host disabled video for everyone
+            if (!ms.isVideoOff) {
+              ms.toggleVideo();
+              import('sonner').then(({ toast }) => toast.warning('The host has stopped your video.'));
+            }
+          }
+        });
+      });
+    });
+
+    socket.on('allow_video_all', () => {
+      import('./useParticipantsStore').then((participantStore) => {
+        const ps = participantStore.useParticipantsStore.getState();
+        ps.allowVideoAll();
+
+        import('./useMeetingStore').then((meetingStore) => {
+          const ms = meetingStore.useMeetingStore.getState();
+          const myId = get().localUserId;
+          const participant = ps.participants.find(p => p.id === myId);
+
+          if (participant && participant.role !== 'host') {
+            // Host allowed video. We don't auto-start video (privacy), just allow it.
+            // The UI button should become enabled.
+            // If they were forced to stop, they can now start.
+            import('sonner').then(({ toast }) => toast.info('The host has allowed video.'));
+          }
+        });
+      });
+    });
+
     socket.on('meeting_ended', () => {
       console.log('Meeting has been ended by the host');
       import('./useMeetingStore').then((store) => {
@@ -290,6 +333,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   unmuteAll: (meetingId) => {
     get().socket?.emit('unmute_all', { meeting_id: meetingId });
+  },
+
+  stopVideoAll: (meetingId) => {
+    get().socket?.emit('stop_video_all', { meeting_id: meetingId });
+  },
+
+  allowVideoAll: (meetingId) => {
+    get().socket?.emit('allow_video_all', { meeting_id: meetingId });
   },
 
   endMeeting: (meetingId) => {

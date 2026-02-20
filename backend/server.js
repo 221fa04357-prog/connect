@@ -314,6 +314,16 @@ io.on('connection', (socket) => {
         io.to(meeting_id).emit('unmute_all');
     });
 
+    socket.on('stop_video_all', (data) => {
+        const { meeting_id } = data;
+        io.to(meeting_id).emit('stop_video_all');
+    });
+
+    socket.on('allow_video_all', (data) => {
+        const { meeting_id } = data;
+        io.to(meeting_id).emit('allow_video_all');
+    });
+
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);

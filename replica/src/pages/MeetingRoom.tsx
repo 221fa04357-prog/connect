@@ -39,7 +39,8 @@ export default function MeetingRoom() {
     isAudioMuted: meetingStoreAudioMuted,
     isVideoOff: meetingStoreVideoOff,
     connectionQuality,
-    setConnectionQuality
+    setConnectionQuality,
+    hasHydrated
   } = useMeetingStore();
 
   const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
@@ -151,7 +152,9 @@ export default function MeetingRoom() {
         isHandRaised: false
       };
 
-      initSocket(meeting.id, identity, initialState);
+      if (hasHydrated) {
+        initSocket(meeting.id, identity, initialState);
+      }
 
       const socket = useChatStore.getState().socket;
       if (socket) {
@@ -235,7 +238,7 @@ export default function MeetingRoom() {
         });
       }
     }
-  }, [meeting?.id, user, initSocket, createPeerConnection]);
+  }, [meeting?.id, user, initSocket, createPeerConnection, hasHydrated]);
 
   // Sync local participant state with MeetingStore when joining
   useEffect(() => {
@@ -459,9 +462,9 @@ export default function MeetingRoom() {
 
   useEffect(() => {
     const initCamera = async () => {
-      // Robust Guard 1: Do not initialize if we are not supposed to be joined
-      if (!meetingJoined) {
-        if (localStream) {
+      // Robust Guard 1: Do not initialize if we are not supposed to be joined or not hydrated
+      if (!meetingJoined || !hasHydrated) {
+        if (localStream && !meetingJoined) {
           localStream.getTracks().forEach(t => t.stop());
           setLocalStream(null);
           console.log("MeetingRoom: Meeting ended, force stopping tracks and clearing stream");
@@ -527,7 +530,7 @@ export default function MeetingRoom() {
     };
 
     initCamera();
-  }, [meetingStoreVideoOff, localStream, setLocalStream, meetingStoreAudioMuted]);
+  }, [meetingStoreVideoOff, localStream, setLocalStream, meetingStoreAudioMuted, meetingJoined, hasHydrated]);
 
   // Cleanup on unmount - no longer stopping tracks here to allow persistence for floating preview
   useEffect(() => {

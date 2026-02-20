@@ -29,6 +29,7 @@ interface MeetingState {
   localStream: MediaStream | null;
   isAudioMuted: boolean;
   isVideoOff: boolean;
+  hasHydrated: boolean;
 
   // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
@@ -109,7 +110,9 @@ export const useMeetingStore = create<MeetingState>()(
       showSelfView: true,
       localStream: null,
       isAudioMuted: false,
+
       isVideoOff: false,
+      hasHydrated: false,
 
       showMicConfirm: false,
       showVideoConfirm: false,
@@ -331,7 +334,7 @@ export const useMeetingStore = create<MeetingState>()(
         const { localStream, screenShareStream, ...rest } = state;
         return rest;
       },
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
         if (state && state.meeting) {
           if (state.meeting.start_timestamp) {
             state.meeting.startTime = new Date(Number(state.meeting.start_timestamp));
@@ -340,6 +343,13 @@ export const useMeetingStore = create<MeetingState>()(
             state.meeting.startTime = new Date(typeof st === 'string' && !st.endsWith('Z') && !st.includes('+') ? (st.includes(' ') ? st.replace(' ', 'T') + 'Z' : st + 'Z') : st);
           }
         }
+
+        if (error) {
+          console.error('An error happened during hydration', error);
+        } else {
+          console.log('MeetingStore hydration finished');
+        }
+        useMeetingStore.setState({ hasHydrated: true });
       }
     }
   )

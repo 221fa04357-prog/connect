@@ -532,12 +532,12 @@ export function ParticipantsPanel() {
                                     onClick={() => {
                                         if (videoRestricted) {
                                             if (confirm('Allow participants to start video?')) {
-                                                allowVideoAll();
+                                                useChatStore.getState().allowVideoAll(useMeetingStore.getState().meeting?.id || '');
                                                 setVideoRestriction(false);
                                             }
                                         } else {
                                             if (confirm('Stop all participant videos and restrict them?')) {
-                                                stopVideoAll();
+                                                useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
                                                 setVideoRestriction(true);
                                             }
                                         }
