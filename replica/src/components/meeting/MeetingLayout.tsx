@@ -603,13 +603,13 @@ export function ParticipantsPanel() {
                                                 <div className="flex gap-4 items-center">
                                                     <Button
                                                         size="sm"
-                                                        onClick={() => useChatStore.getState().admitParticipant(useMeetingStore.getState().meeting?.id || '', person.id)}
+                                                        onClick={() => useChatStore.getState().admitParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
                                                         className="bg-green-500 hover:bg-green-600 text-white font-bold h-8 px-4"
                                                     >
                                                         Admit
                                                     </Button>
                                                     <button
-                                                        onClick={() => useChatStore.getState().rejectParticipant(useMeetingStore.getState().meeting?.id || '', person.id)}
+                                                        onClick={() => useChatStore.getState().rejectParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
                                                         className="text-white hover:text-gray-300 text-sm font-medium transition-colors"
                                                     >
                                                         Deny

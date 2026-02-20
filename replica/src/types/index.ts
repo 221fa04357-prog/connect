@@ -115,7 +115,8 @@ export interface Reaction {
 }
 
 export interface WaitingRoomParticipant {
-  id: string;
+  id: string; // userId
+  socketId: string; // Real socket connection ID
   name: string;
   joinedAt: Date;
 }
