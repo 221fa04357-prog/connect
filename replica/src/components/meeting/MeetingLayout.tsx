@@ -501,9 +501,13 @@ export function ParticipantsPanel() {
                                 <Button
                                     onClick={() => {
                                         if (allMuted) {
-                                            if (confirm('Unmute all participants?')) unmuteAll();
+                                            if (confirm('Unmute all participants?')) {
+                                                useChatStore.getState().unmuteAll(useMeetingStore.getState().meeting?.id || '');
+                                            }
                                         } else {
-                                            if (confirm('Mute all participants?')) muteAll();
+                                            if (confirm('Mute all participants?')) {
+                                                useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
+                                            }
                                         }
                                     }}
                                     variant="ghost"
