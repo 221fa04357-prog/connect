@@ -82,6 +82,7 @@ interface MeetingState {
   ) => void;
   addWhiteboardStroke: (stroke: any) => void;
   updateWhiteboardStroke: (id: string, points: [number, number][]) => void;
+  removeWhiteboardStroke: (id: string) => void;
   clearWhiteboardStrokes: () => void;
   setWhiteboardStrokes: (strokes: any[]) => void;
 
@@ -360,6 +361,9 @@ export const useMeetingStore = create<MeetingState>()(
       })),
       updateWhiteboardStroke: (id, points) => set((state) => ({
         whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
+      })),
+      removeWhiteboardStroke: (id) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.filter(s => s.id !== id)
       })),
       clearWhiteboardStrokes: () => set({ whiteboardStrokes: [] }),
       setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
