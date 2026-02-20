@@ -10,12 +10,14 @@ interface ChatState {
   socket: Socket | null;
   meetingId: string | null;
   localUserId: string | null;
+  selectedRecipientId: string | null;
 
   // Actions
   initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
+  setSelectedRecipientId: (id: string | null) => void;
   sendMessage: (content: string, type: ChatType, recipientId?: string) => void;
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
@@ -25,6 +27,9 @@ interface ChatState {
   stopVideoAll: (meetingId: string) => void;
   allowVideoAll: (meetingId: string) => void;
   endMeeting: (meetingId: string) => void;
+  admitParticipant: (meetingId: string, socketId: string) => void;
+  rejectParticipant: (meetingId: string, socketId: string) => void;
+  toggleWaitingRoom: (meetingId: string, enabled: boolean) => void;
   markAsRead: () => void;
   reset: () => void;
 }
@@ -39,6 +44,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   socket: null,
   meetingId: null,
   localUserId: null,
+  selectedRecipientId: null,
 
   initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
@@ -236,11 +242,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     });
 
+    socket.on('waiting_room_status', (data: { status: 'waiting' | 'admitted' | 'rejected', message?: string }) => {
+      console.log('Waiting room status update:', data);
+      if (data.status === 'admitted') {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setIsWaiting(false);
+          // If they were already in the meeting setup, this will trigger the navigation
+        });
+      } else if (data.status === 'waiting') {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setIsWaiting(true);
+        });
+      } else if (data.status === 'rejected') {
+        import('sonner').then(({ toast }) => toast.error(data.message || 'Access denied'));
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().leaveMeeting();
+          window.location.replace('/#/');
+        });
+      }
+    });
+
+    socket.on('waiting_room_update', (waitingParticipants: any[]) => {
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().syncWaitingRoom(waitingParticipants);
+      });
+    });
+
+    socket.on('waiting_room_setting_updated', (data: { enabled: boolean }) => {
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().setWaitingRoomEnabled(data.enabled);
+      });
+      import('sonner').then(({ toast }) => {
+        toast.info(`Waiting room has been ${data.enabled ? 'enabled' : 'disabled'} by the host.`);
+      });
+    });
+
     set({ socket, meetingId });
 
     // Fetch initial messages
-    console.log(`useChatStore: Fetching chat history for ${meetingId} from ${API || '/api'}`);
-    fetch(`${API}/api/messages/${meetingId}`)
+    const fetchUserId = user?.id || `guest-${socket.id}`;
+    console.log(`useChatStore: Fetching chat history for ${meetingId} from ${API || '/api'} (User: ${fetchUserId})`);
+    fetch(`${API}/api/messages/${meetingId}`, {
+      headers: {
+        'x-user-id': fetchUserId
+      }
+    })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
@@ -278,6 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setSelectedRecipientId: (id) => set({ selectedRecipientId: id }),
 
   sendMessage: (content, type, recipientId) => {
     const { socket, meetingId } = get();
@@ -347,6 +394,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('end_meeting', { meetingId });
   },
 
+  admitParticipant: (meetingId, socketId) => {
+    get().socket?.emit('admit_participant', { meetingId, socketId });
+  },
+
+  rejectParticipant: (meetingId, socketId) => {
+    get().socket?.emit('reject_participant', { meetingId, socketId });
+  },
+
+  toggleWaitingRoom: (meetingId, enabled) => {
+    get().socket?.emit('toggle_waiting_room', { meetingId, enabled });
+  },
+
   markAsRead: () => set({ unreadCount: 0 }),
 
   reset: () => {
@@ -361,7 +420,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       unreadCount: 0,
       socket: null,
       meetingId: null,
-      localUserId: null
+      localUserId: null,
+      selectedRecipientId: null
     });
   },
 }));

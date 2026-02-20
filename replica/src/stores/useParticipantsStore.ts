@@ -46,6 +46,7 @@ interface ParticipantsState {
   setWaitingRoomEnabled: (enabled: boolean) => void;
   admitFromWaitingRoom: (id: string) => void;
   removeFromWaitingRoom: (id: string) => void;
+  syncWaitingRoom: (participants: WaitingRoomParticipant[]) => void;
 
   // Video Controls
   setVideoRestriction: (restricted: boolean) => void;
@@ -353,6 +354,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles, waitingRoom: useParticipantsStore.getState().waitingRoom }, { source: INSTANCE_ID }));
         return res;
       }),
+      syncWaitingRoom: (waitingParticipants) => set({ waitingRoom: waitingParticipants }),
 
       setVideoRestriction: (restricted) => set((state) => {
         const res = { videoRestricted: restricted };

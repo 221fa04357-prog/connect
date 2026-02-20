@@ -390,12 +390,17 @@ export default function MeetingRoom() {
     }
   }, [connectionQuality]);
 
-  // Sync initial video restriction from meeting settings
+  // Sync initial video restriction and waiting room from meeting settings
   useEffect(() => {
-    if (meeting?.settings?.disableParticipantVideo !== undefined) {
-      setVideoRestriction(meeting.settings.disableParticipantVideo);
+    if (meeting?.settings) {
+      if (meeting.settings.disableParticipantVideo !== undefined) {
+        setVideoRestriction(meeting.settings.disableParticipantVideo);
+      }
+      if (meeting.settings.enableWaitingRoom !== undefined) {
+        useParticipantsStore.getState().setWaitingRoomEnabled(meeting.settings.enableWaitingRoom);
+      }
     }
-  }, [meeting?.settings?.disableParticipantVideo, setVideoRestriction]);
+  }, [meeting?.settings, setVideoRestriction]);
 
 
 
@@ -540,18 +545,7 @@ export default function MeetingRoom() {
   }, []);
 
   const [elapsedTime, setElapsedTime] = useState("00:00");
-  const [waiting, setWaiting] = useState(false);
   const isHost = meeting?.hostId === user?.id;
-
-  /* ---------------- WAITING ROOM LOGIC ---------------- */
-
-  useEffect(() => {
-    if (user && waitingRoom.some(w => w.name === user.name)) {
-      setWaiting(true);
-    } else {
-      setWaiting(false);
-    }
-  }, [user, waitingRoom]);
 
   /* ---------------- AUTO-END LOGIC ---------------- */
 
@@ -600,14 +594,10 @@ export default function MeetingRoom() {
   // 2. Timer Enforcement
   useEffect(() => {
     if (!meeting) return;
-
-    // Check if we have valid time data
     if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
 
     const checkTime = () => {
       let endTime = 0;
-
-      // PRIORITIZE endTime timestamp if available
       if (meeting.endTime) {
         endTime = Number(meeting.endTime);
       } else if (meeting.startTime && meeting.duration) {
@@ -618,24 +608,14 @@ export default function MeetingRoom() {
       }
 
       const now = Date.now();
-
       if (now >= endTime) {
-        // Meeting time expired
-
-        // Host emits 'end_meeting' signal
         if (isHost && now < endTime + 10000) {
-          // Use the reactive socket we got from the hook above
           if (socket) {
             socket.emit('end_meeting', { meetingId: meeting.id });
           } else {
-            // Fallback if socket isn't ready in store yet (rare)
             useChatStore.getState().socket?.emit('end_meeting', { meetingId: meeting.id });
           }
         }
-
-        // Host & Participants: Force leave if 5 seconds past end time
-        // This is the safety net. If for some reason the socket event 'meeting_ended' 
-        // doesn't come back or isn't handled, this ensures everyone (including host) leaves.
         if (now >= endTime + 5000) {
           console.log("Auto-end timer expired. Forcing leave.");
           useMeetingStore.getState().leaveMeeting();
@@ -672,23 +652,42 @@ export default function MeetingRoom() {
       const randomParticipant =
         participants[Math.floor(Math.random() * participants.length)];
       if (randomParticipant && !randomParticipant.isAudioMuted) {
-        useParticipantsStore.getState().setActiveSpeaker(randomParticipant.id);
-        setTimeout(() => useParticipantsStore.getState().setActiveSpeaker(null), 2000);
+        setActiveSpeaker(randomParticipant.id);
+        setTimeout(() => setActiveSpeaker(null), 2000);
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [participants]);
+  }, [participants, setActiveSpeaker]);
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
-  const activeSpeaker = participants.find(p => p.id === activeSpeakerId) || participants[0];
+  const isWaiting = useMeetingStore(state => state.isWaiting);
 
-  if (waiting) {
+  if (isWaiting) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#1C1C1C]">
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-8 py-10">
-          <h2 className="text-2xl text-white mb-4">Waiting Room</h2>
-          <p className="text-gray-300">Host will let you in soon…</p>
-        </div>
+      <div className="min-h-screen bg-[#1C1C1C] flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-[#232323] p-8 rounded-2xl max-w-md w-full text-center border border-[#404040] shadow-2xl"
+        >
+          <div className="w-16 h-16 bg-[#0B5CFF]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <RefreshCw className="w-8 h-8 text-[#0B5CFF] animate-spin" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Waiting Room</h2>
+          <p className="text-gray-400 mb-6">
+            The host has been notified. Please wait while they admit you to the meeting.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              useMeetingStore.getState().leaveMeeting();
+              navigate('/');
+            }}
+            className="w-full border-[#404040] hover:bg-[#2D2D2D] hover:text-white"
+          >
+            Leave Waiting Room
+          </Button>
+        </motion.div>
       </div>
     );
   }
