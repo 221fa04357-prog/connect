@@ -542,7 +542,7 @@ export function ParticipantsPanel() {
                                 </Button>
                             )}
 
-                            {isHost && (
+                            {canControl && (
                                 <Button
                                     onClick={() => {
                                         if (videoRestricted) {
@@ -728,10 +728,10 @@ function ParticipantItem({
 
                     <div className="flex items-center gap-2 mt-1">
                         <button
-                            onClick={isCurrentUser ? onToggleMute : undefined}
+                            onClick={(isCurrentUser || canControl) ? onToggleMute : undefined}
                             className={cn(
                                 "transition-opacity hover:opacity-80",
-                                !isCurrentUser && "cursor-default"
+                                (!isCurrentUser && !canControl) && "cursor-default"
                             )}
                         >
                             {participant.isAudioMuted ? (
@@ -741,10 +741,10 @@ function ParticipantItem({
                             )}
                         </button>
                         <button
-                            onClick={isCurrentUser ? onToggleVideo : undefined}
+                            onClick={isCurrentUser ? onToggleVideo : (canControl ? onToggleVideoAllowed : undefined)}
                             className={cn(
                                 "transition-opacity hover:opacity-80",
-                                !isCurrentUser && "cursor-default"
+                                (!isCurrentUser && !canControl) && "cursor-default"
                             )}
                         >
                             {participant.isVideoOff ? (

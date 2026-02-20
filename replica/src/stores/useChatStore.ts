@@ -84,15 +84,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const ms = meetingStore.useMeetingStore.getState();
 
           if (data.updates.role) {
-            if (data.updates.role === 'host') {
+            const nextRole = data.updates.role;
+            const hasElevatedRole = nextRole === 'host' || nextRole === 'co-host';
+
+            if (hasElevatedRole) {
               ms.setIsJoinedAsHost(true);
               import('sonner').then(({ toast }) => {
-                toast.success('You have been promoted to Host!');
+                const label = nextRole === 'host' ? 'Host' : 'Co-Host';
+                toast.success(`You have been promoted to ${label}!`);
               });
-            } else if (ms.isJoinedAsHost && (data.updates.role === 'participant' || data.updates.role === 'co-host')) {
+            } else if (ms.isJoinedAsHost && nextRole === 'participant') {
               ms.setIsJoinedAsHost(false);
               import('sonner').then(({ toast }) => {
-                toast.info(`Your role has been changed to ${data.updates.role}.`);
+                toast.info(`Your role has been changed to participant.`);
               });
             }
           }
@@ -211,10 +215,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const participant = ps.participants.find(p => p.id === myId);
 
           if (participant && participant.role !== 'host') {
-            // Host allowed video. We don't auto-start video (privacy), just allow it.
-            // The UI button should become enabled.
-            // If they were forced to stop, they can now start.
-            import('sonner').then(({ toast }) => toast.info('The host has allowed video.'));
+            // Restore video state automatically as requested by the user
+            if (ms.isVideoOff) {
+              ms.setVideoOff(false);
+              import('sonner').then(({ toast }) => toast.info('The host has enabled video. Your camera is now ON.'));
+            } else {
+              import('sonner').then(({ toast }) => toast.info('The host has allowed video.'));
+            }
           }
         });
       });
