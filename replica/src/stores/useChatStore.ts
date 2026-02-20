@@ -51,6 +51,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const userId = user?.id || `guest-${socket.id}`;
       set({ localUserId: userId });
       socket.emit('join_meeting', { meetingId, user, initialState });
+
+      // Update connection quality
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setConnectionQuality('good');
+      });
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.warn('Disconnected from chat server:', reason);
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setConnectionQuality('offline');
+      });
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setConnectionQuality('offline');
+      });
     });
 
     socket.on('participants_update', (participants: any[]) => {
@@ -177,9 +196,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ socket, meetingId });
 
     // Fetch initial messages
-    console.log(`useChatStore: Fetching chat history for ${meetingId}`);
+    console.log(`useChatStore: Fetching chat history for ${meetingId} from ${API || '/api'}`);
     fetch(`${API}/api/messages/${meetingId}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
       .then(messages => {
         console.log(`useChatStore: Loaded ${messages.length} messages`);
         set({
@@ -192,7 +214,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }))
         });
       })
-      .catch(err => console.error('Error fetching chat history:', err));
+      .catch(err => {
+        console.error('Error fetching chat history:', err);
+        // Retry logic could be added here
+      });
   },
 
   setMessages: (messages) => set({ messages }),
