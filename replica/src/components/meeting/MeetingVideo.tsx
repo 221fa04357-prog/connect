@@ -330,6 +330,8 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                 ref={videoRef}
                 autoPlay
                 playsInline
+                muted
+                onLoadedMetadata={(e) => e.currentTarget.play()}
                 className="w-full h-full object-contain"
             />
             {/* Overlay info */}

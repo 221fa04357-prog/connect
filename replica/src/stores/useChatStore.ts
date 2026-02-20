@@ -24,7 +24,7 @@ interface ChatState {
   emitReaction: (meetingId: string, reaction: any) => void;
   emitWhiteboardDraw: (meetingId: string, stroke: any) => void;
   emitWhiteboardClear: (meetingId: string) => void;
-  emitWhiteboardToggle: (meetingId: string, isOpen: boolean) => void;
+  emitWhiteboardToggle: (meetingId: string, isOpen: boolean, userId: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -255,9 +255,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('whiteboard_draw', (data: { type: 'start' | 'update' | 'erase', stroke?: any, id?: string, points?: [number, number][] }) => {
+    socket.on('whiteboard_draw', (data: { type: 'start' | 'update' | 'erase', stroke?: any, id?: string, points?: [number, number][], initiatorId?: string }) => {
       import('./useMeetingStore').then((meetingStore) => {
         const ms = meetingStore.useMeetingStore.getState();
+        if (data.initiatorId) {
+          ms.setWhiteboardInitiatorId(data.initiatorId);
+        }
         if (data.type === 'start' && data.stroke) {
           ms.addWhiteboardStroke(data.stroke);
           // Auto-open board when drawing starts for others
@@ -282,9 +285,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('whiteboard_toggle', (data: { isOpen: boolean }) => {
+    socket.on('whiteboard_toggle', (data: { isOpen: boolean, initiatorId?: string }) => {
       import('./useMeetingStore').then((meetingStore) => {
         const ms = meetingStore.useMeetingStore.getState();
+        if (data.initiatorId !== undefined) {
+          ms.setWhiteboardInitiatorId(data.initiatorId);
+        }
         if (data.isOpen && !ms.isWhiteboardOpen) {
           ms.toggleWhiteboard();
         } else if (!data.isOpen && ms.isWhiteboardOpen) {
@@ -467,8 +473,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('whiteboard_clear', { meeting_id: meetingId });
   },
 
-  emitWhiteboardToggle: (meetingId, isOpen) => {
-    get().socket?.emit('whiteboard_toggle', { meeting_id: meetingId, isOpen });
+  emitWhiteboardToggle: (meetingId, isOpen, userId) => {
+    get().socket?.emit('whiteboard_toggle', { meeting_id: meetingId, isOpen, userId });
   },
 
   muteAll: (meetingId) => {

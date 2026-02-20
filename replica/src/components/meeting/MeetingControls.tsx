@@ -998,6 +998,7 @@ function ControlBar() {
         clearWhiteboardStrokes,
         setWhiteboardStrokes,
         removeWhiteboardStroke,
+        whiteboardInitiatorId,
 
         // Mic & Video Confirm
         showMicConfirm,
@@ -1096,14 +1097,18 @@ function ControlBar() {
     const openWhiteboard = () => {
         if (!isWhiteboardOpen) {
             toggleWhiteboard();
-            if (meeting?.id) emitWhiteboardToggle(meeting.id, true);
+            if (meeting?.id && user?.id) emitWhiteboardToggle(meeting.id, true, user.id);
         }
     };
 
     const closeWhiteboard = () => {
         if (isWhiteboardOpen) {
-            toggleWhiteboard();
-            if (meeting?.id) emitWhiteboardToggle(meeting.id, false);
+            toggleWhiteboard(); // Always close locally
+
+            // Only emit global toggle if current user is the initiator
+            if (meeting?.id && user?.id && user.id === whiteboardInitiatorId) {
+                emitWhiteboardToggle(meeting.id, false, user.id);
+            }
         }
         setWhiteboardDrawing(false);
         setEraserPath([]);

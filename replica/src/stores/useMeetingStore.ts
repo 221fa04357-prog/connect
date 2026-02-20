@@ -85,6 +85,8 @@ interface MeetingState {
   removeWhiteboardStroke: (id: string) => void;
   clearWhiteboardStrokes: () => void;
   setWhiteboardStrokes: (strokes: any[]) => void;
+  whiteboardInitiatorId: string | null;
+  setWhiteboardInitiatorId: (id: string | null) => void;
 
   showSelfView: boolean;
   toggleSelfView: () => void;
@@ -138,6 +140,8 @@ export const useMeetingStore = create<MeetingState>()(
       setIsInsideMeeting: (inside) => set({ isInsideMeeting: inside }),
       setIsJoinedAsHost: (isHost) => set({ isJoinedAsHost: isHost }),
       setIsWaiting: (isWaiting) => set({ isWaiting }),
+      whiteboardInitiatorId: null,
+      setWhiteboardInitiatorId: (id) => set({ whiteboardInitiatorId: id }),
 
       connectionQuality: 'excellent',
 
@@ -274,6 +278,7 @@ export const useMeetingStore = create<MeetingState>()(
           isInsideMeeting: false,
           isMiniVisible: false,
           whiteboardStrokes: [],
+          whiteboardInitiatorId: null,
         });
       },
 

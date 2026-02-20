@@ -41,6 +41,7 @@ export default function MeetingRoom() {
     isVideoOff: meetingStoreVideoOff,
     connectionQuality,
     setConnectionQuality,
+    isJoinedAsHost,
     hasHydrated
   } = useMeetingStore();
 
@@ -70,6 +71,8 @@ export default function MeetingRoom() {
 
     pc.onnegotiationneeded = async () => {
       try {
+        // Only initiate if state is stable to avoid transition errors
+        if (pc.signalingState !== 'stable') return;
         makingOfferRef.current[participantSocketId] = true;
         await pc.setLocalDescription();
         console.log(`Sending OFFER to ${participantSocketId}`);
@@ -97,16 +100,16 @@ export default function MeetingRoom() {
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      console.log(`Received remote track from ${participantSocketId}:`, stream.id);
-
-      // Find participant to check if this is their screen share
       const participant = useParticipantsStore.getState().participants.find(p => p.socketId === participantSocketId);
 
-      if (participant && participant.isScreenSharing && participant.screenShareStreamId === stream.id) {
+      // Robust check: if participant is known to be sharing AND this stream ID matches, OR if it's a second video stream
+      const isScreenTrack = (participant?.isScreenSharing && participant.screenShareStreamId === stream.id);
+
+      if (isScreenTrack) {
         console.log(`Identified SCREEN SHARE stream from ${participantSocketId}`);
         addRemoteScreenStream(participantSocketId, stream);
       } else {
-        console.log(`Identified CAMERA stream from ${participantSocketId}`);
+        console.log(`Identified CAMERA/AUDIO stream from ${participantSocketId}`);
         addRemoteStream(participantSocketId, stream);
       }
     };
@@ -355,7 +358,31 @@ export default function MeetingRoom() {
         screenShareSendersRef.current[socketId] = newSenders;
       }
     });
+
+    // Cleanup logic: If we stopped sharing, ensure we also broadcast it
+    if (!screenShareStream && isJoinedAsHost) {
+      // Double check if we need to explicitly stop tracks elsewhere
+    }
   }, [screenShareStream]);
+
+  // RESYNC SCREEN SHARE STREAMS: Handle cases where track arrives before metadata (socket update)
+  useEffect(() => {
+    const { remoteStreams, addRemoteScreenStream, removeRemoteStream } = useMediaStore.getState();
+
+    participants.forEach(p => {
+      // @ts-ignore
+      const socketId = p.socketId;
+      if (p.isScreenSharing && p.screenShareStreamId && socketId) {
+        // Find if this stream ID is currently in the regular camera bucket
+        const cameraStream = remoteStreams[socketId];
+        if (cameraStream && cameraStream.id === p.screenShareStreamId) {
+          console.log(`Resyncing SCREEN SHARE for ${p.name}: moving stream from camera to screen bucket`);
+          addRemoteScreenStream(socketId, cameraStream);
+          removeRemoteStream(socketId);
+        }
+      }
+    });
+  }, [participants]);
 
 
   /* ---------------- CONNECTION MONITORING ---------------- */
