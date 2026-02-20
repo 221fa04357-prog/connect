@@ -109,6 +109,38 @@ function TopBar() {
     const host = participants.find(p => p.id === meeting?.hostId);
     const hostName = host ? host.name : 'Host';
 
+    const [timeLeft, setTimeLeft] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!meeting) return;
+        if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
+
+        const updateTimer = () => {
+            let endTime = 0;
+            if (meeting.endTime) {
+                endTime = Number(meeting.endTime);
+            } else if (meeting.startTime && meeting.duration) {
+                const start = new Date(meeting.startTime).getTime();
+                endTime = start + (meeting.duration * 60 * 1000);
+            }
+
+            const now = Date.now();
+            const diff = endTime - now;
+
+            if (diff <= 0) {
+                setTimeLeft("00:00");
+            } else {
+                const m = Math.floor(diff / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                setTimeLeft(`${m}:${s.toString().padStart(2, '0')}`);
+            }
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [meeting]);
+
     // Meeting Link
     const inviteLink = meeting?.id
         ? `${window.location.origin}/#/join/${meeting.id}`
@@ -326,6 +358,17 @@ function TopBar() {
             </div>
 
             <div className="absolute top-4 right-4 pointer-events-auto flex items-center gap-3">
+                {timeLeft && (
+                    <div className={cn(
+                        "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
+                        (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
+                            ? "bg-red-500/80 text-white animate-pulse"
+                            : "bg-black/40 text-gray-200"
+                    )}>
+                        <Clock className="w-3 h-3" />
+                        <span className="text-xs font-mono font-medium">{timeLeft}</span>
+                    </div>
+                )}
                 {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
                     <div
                         className={cn(

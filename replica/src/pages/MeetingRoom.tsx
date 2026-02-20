@@ -12,8 +12,10 @@ import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
+import { useNavigate } from 'react-router-dom';
 
 export default function MeetingRoom() {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const {
     participants,
@@ -153,6 +155,29 @@ export default function MeetingRoom() {
 
       const socket = useChatStore.getState().socket;
       if (socket) {
+
+        // Handle join errors (including MEETING_ENDED)
+        socket.on('join_error', (error: any) => {
+          console.error('Join Error:', error);
+          if (error.code === 'MEETING_NOT_STARTED') {
+            import('sonner').then(({ toast }) => {
+              toast.error(error.message, {
+                description: `Scheduled start: ${new Date(Number(error.startTime)).toLocaleString()}`,
+                duration: 5000,
+              });
+            });
+            navigate('/');
+          } else if (error.code === 'MEETING_ENDED') {
+            import('sonner').then(({ toast }) => {
+              toast.error(error.message, {
+                description: 'This meeting is no longer active.',
+                duration: 5000,
+              });
+            });
+            navigate('/');
+          }
+        });
+
         // Handle incoming signals using Perfect Negotiation
         socket.on('signal_receive', async (data: { from: string, signal: any }) => {
           const { from, signal } = data;
@@ -524,6 +549,74 @@ export default function MeetingRoom() {
       setWaiting(false);
     }
   }, [user, waitingRoom]);
+
+  /* ---------------- AUTO-END LOGIC ---------------- */
+
+  // 1. Listen for meeting_ended event (Server broadcast)
+  useEffect(() => {
+    const socket = useChatStore.getState().socket;
+    if (!socket) return;
+
+    const onMeetingEnded = () => {
+      console.log("Meeting ended by host/server. Leaving...");
+      import('sonner').then(({ toast }) => {
+        toast.info('Meeting Ended', {
+          description: 'The meeting has been ended.',
+          duration: 3000,
+        });
+      });
+      useMeetingStore.getState().leaveMeeting();
+      navigate('/');
+    };
+
+    socket.on('meeting_ended', onMeetingEnded);
+    return () => {
+      socket.off('meeting_ended', onMeetingEnded);
+    };
+  }, [navigate]);
+
+  // 2. Timer Enforcement
+  useEffect(() => {
+    if (!meeting) return;
+
+    // Check if we have valid time data
+    if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
+
+    const checkTime = () => {
+      let endTime = 0;
+
+      // PRIORITIZE endTime timestamp if available
+      if (meeting.endTime) {
+        endTime = Number(meeting.endTime);
+      } else if (meeting.startTime && meeting.duration) {
+        const start = new Date(meeting.startTime).getTime();
+        endTime = start + (meeting.duration * 60 * 1000);
+      } else {
+        return;
+      }
+
+      const now = Date.now();
+
+      if (now >= endTime) {
+        // Meeting time expired
+
+        // Host emits 'end_meeting' signal
+        // Allowed within a modest window after end time to ensure it fires but doesn't spam forever
+        if (isHost && now < endTime + 10000) {
+          useChatStore.getState().socket?.emit('end_meeting', { meetingId: meeting.id });
+        }
+
+        // Host & Participants: Force leave if 5 seconds past end time
+        if (now >= endTime + 5000) {
+          useMeetingStore.getState().leaveMeeting();
+          navigate('/');
+        }
+      }
+    };
+
+    const interval = setInterval(checkTime, 1000);
+    return () => clearInterval(interval);
+  }, [meeting, isHost, navigate]);
 
   /* ---------------- RECORDING TIMER ---------------- */
 
