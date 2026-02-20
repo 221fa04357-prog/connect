@@ -20,6 +20,8 @@ interface ChatState {
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
   emitReaction: (meetingId: string, reaction: any) => void;
+  emitWhiteboardDraw: (meetingId: string, stroke: any) => void;
+  emitWhiteboardClear: (meetingId: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -227,6 +229,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('whiteboard_draw', (data: { type: 'start' | 'update', stroke?: any, id?: string, points?: [number, number][] }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (data.type === 'start' && data.stroke) {
+          ms.addWhiteboardStroke(data.stroke);
+        } else if (data.type === 'update' && data.id && data.points) {
+          ms.updateWhiteboardStroke(data.id, data.points);
+        }
+      });
+    });
+
+    socket.on('whiteboard_clear', () => {
+      import('./useMeetingStore').then((meetingStore) => {
+        meetingStore.useMeetingStore.getState().clearWhiteboardStrokes();
+      });
+    });
+
     socket.on('meeting_ended', () => {
       console.log('Meeting has been ended by the host');
       import('./useMeetingStore').then((store) => {
@@ -344,6 +363,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitReaction: (meetingId, reaction) => {
     get().socket?.emit('send_reaction', { meeting_id: meetingId, reaction });
+  },
+
+  emitWhiteboardDraw: (meetingId, stroke) => {
+    get().socket?.emit('whiteboard_draw', { meeting_id: meetingId, stroke });
+  },
+
+  emitWhiteboardClear: (meetingId) => {
+    get().socket?.emit('whiteboard_clear', { meeting_id: meetingId });
   },
 
   muteAll: (meetingId) => {

@@ -34,6 +34,7 @@ export default function MeetingRoom() {
     recordingStartTime,
     localStream,
     setLocalStream,
+    screenShareStream,
     isAudioMuted: meetingStoreAudioMuted,
     isVideoOff: meetingStoreVideoOff,
     connectionQuality,
@@ -42,12 +43,13 @@ export default function MeetingRoom() {
   } = useMeetingStore();
 
   const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
-  const { addRemoteStream, removeRemoteStream, clearRemoteStreams } = useMediaStore();
+  const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   /* ---------------- SIGNALING STATE ---------------- */
   const makingOfferRef = useRef<Record<string, boolean>>({});
   const ignoreOfferRef = useRef<Record<string, boolean>>({});
   const isSettingRemoteAnswerPending = useRef<Record<string, boolean>>({});
+  const screenShareSendersRef = useRef<Record<string, RTCRtpSender[]>>({}); // socketId -> senders[]
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
@@ -92,8 +94,19 @@ export default function MeetingRoom() {
     };
 
     pc.ontrack = (event) => {
-      console.log(`Received remote track from ${participantSocketId}:`, event.streams[0].id);
-      addRemoteStream(participantSocketId, event.streams[0]);
+      const stream = event.streams[0];
+      console.log(`Received remote track from ${participantSocketId}:`, stream.id);
+
+      // Find participant to check if this is their screen share
+      const participant = useParticipantsStore.getState().participants.find(p => p.socketId === participantSocketId);
+
+      if (participant && participant.isScreenSharing && participant.screenShareStreamId === stream.id) {
+        console.log(`Identified SCREEN SHARE stream from ${participantSocketId}`);
+        addRemoteScreenStream(participantSocketId, stream);
+      } else {
+        console.log(`Identified CAMERA stream from ${participantSocketId}`);
+        addRemoteStream(participantSocketId, stream);
+      }
     };
 
     // Add local tracks if they exist
@@ -101,6 +114,18 @@ export default function MeetingRoom() {
       localStream.getTracks().forEach(track => {
         pc.addTrack(track, localStream);
       });
+    }
+
+    // Add screen share tracks if they exist
+    const currentScreenShare = useMeetingStore.getState().screenShareStream;
+    if (currentScreenShare) {
+      console.log(`Adding existing screen share tracks to new PC for ${participantSocketId}`);
+      const senders: RTCRtpSender[] = [];
+      currentScreenShare.getTracks().forEach(track => {
+        const sender = pc.addTrack(track, currentScreenShare);
+        senders.push(sender);
+      });
+      screenShareSendersRef.current[participantSocketId] = senders;
     }
 
     peerConnections.current[participantSocketId] = pc;
@@ -279,6 +304,33 @@ export default function MeetingRoom() {
       });
     }
   }, [localStream]);
+
+  // SCREEN SHARE TRACK UPDATE: Add/Remove screen share tracks when screenShareStream changes
+  useEffect(() => {
+    Object.entries(peerConnections.current).forEach(([socketId, pc]) => {
+      // 1. Remove existing screen share tracks if they are no longer needed or changed
+      const existingSenders = screenShareSendersRef.current[socketId] || [];
+      existingSenders.forEach(sender => {
+        try {
+          pc.removeTrack(sender);
+        } catch (err) {
+          console.warn(`Error removing screen share track for ${socketId}:`, err);
+        }
+      });
+      delete screenShareSendersRef.current[socketId];
+
+      // 2. Add new screen share tracks if stream exists
+      if (screenShareStream) {
+        console.log(`Adding screen share tracks to PC ${socketId}`);
+        const newSenders: RTCRtpSender[] = [];
+        screenShareStream.getTracks().forEach(track => {
+          const sender = pc.addTrack(track, screenShareStream);
+          newSenders.push(sender);
+        });
+        screenShareSendersRef.current[socketId] = newSenders;
+      }
+    });
+  }, [screenShareStream]);
 
 
   /* ---------------- CONNECTION MONITORING ---------------- */
