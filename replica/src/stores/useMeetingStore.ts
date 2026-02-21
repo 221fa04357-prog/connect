@@ -46,10 +46,20 @@ interface MeetingState {
   setIsInsideMeeting: (inside: boolean) => void;
   setIsJoinedAsHost: (isHost: boolean) => void;
   setIsWaiting: (isWaiting: boolean) => void;
+  audioDevices: MediaDeviceInfo[];
+  videoDevices: MediaDeviceInfo[];
+  speakerDevices: MediaDeviceInfo[];
+  selectedAudioId: string;
+  selectedVideoId: string;
+  selectedSpeakerId: string;
 
   // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
+  enumerateDevices: () => Promise<void>;
+  setAudioDevice: (id: string) => Promise<void>;
+  setVideoDevice: (id: string) => Promise<void>;
+  setSpeakerDevice: (id: string) => void;
   toggleAudio: () => void;
   toggleVideo: () => void;
   setAudioMuted: (muted: boolean) => void;
@@ -152,6 +162,13 @@ export const useMeetingStore = create<MeetingState>()(
 
       connectionQuality: 'excellent',
 
+      audioDevices: [],
+      videoDevices: [],
+      speakerDevices: [],
+      selectedAudioId: 'default',
+      selectedVideoId: 'default',
+      selectedSpeakerId: 'default',
+
       // ================= ACTIONS =================
 
       setMeeting: (meeting) => set({ meeting }),
@@ -165,6 +182,86 @@ export const useMeetingStore = create<MeetingState>()(
         }
         return { localStream: stream };
       }),
+
+      enumerateDevices: async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          set({
+            audioDevices: devices.filter(d => d.kind === 'audioinput'),
+            videoDevices: devices.filter(d => d.kind === 'videoinput'),
+            speakerDevices: devices.filter(d => d.kind === 'audiooutput')
+          });
+        } catch (err) {
+          console.error('Error enumerating devices:', err);
+        }
+      },
+
+      setAudioDevice: async (id) => {
+        set({ selectedAudioId: id });
+        const state = get();
+        if (state.localStream) {
+          try {
+            const videoTrack = state.localStream.getVideoTracks()[0];
+            const nextMuted = state.isAudioMuted;
+
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: { deviceId: id !== 'default' ? { exact: id } : undefined }
+            });
+
+            const newAudioTrack = newStream.getAudioTracks()[0];
+            newAudioTrack.enabled = !nextMuted;
+
+            const combinedStream = new MediaStream([newAudioTrack]);
+            if (videoTrack) {
+              combinedStream.addTrack(videoTrack);
+            }
+
+            // setLocalStream handles stopping old tracks
+            get().setLocalStream(combinedStream);
+          } catch (err) {
+            console.error('Error switching audio device:', err);
+          }
+        }
+      },
+
+      setVideoDevice: async (id) => {
+        set({ selectedVideoId: id });
+        const state = get();
+        if (state.localStream) {
+          try {
+            const audioTrack = state.localStream.getAudioTracks()[0];
+            const nextVideoOff = state.isVideoOff;
+
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: id !== 'default' ? { exact: id } : undefined,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 }
+              }
+            });
+
+            const newVideoTrack = newStream.getVideoTracks()[0];
+            newVideoTrack.enabled = !nextVideoOff;
+
+            const combinedStream = new MediaStream([newVideoTrack]);
+            if (audioTrack) {
+              combinedStream.addTrack(audioTrack);
+            }
+
+            get().setLocalStream(combinedStream);
+          } catch (err) {
+            console.error('Error switching video device:', err);
+          }
+        }
+      },
+
+      setSpeakerDevice: (id) => {
+        set({ selectedSpeakerId: id });
+        // Setting audio output device (speaker) requires sinkId on HTMLMediaElement
+        // This is typically handled in the components rendering video/audio elements.
+      },
+
       setViewMode: (mode) => set({ viewMode: mode }),
 
       toggleSelfView: () =>

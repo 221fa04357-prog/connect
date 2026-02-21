@@ -13,11 +13,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
 import { Video, Mic, Monitor, Keyboard, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useMeetingStore } from '@/stores/useMeetingStore';
 
 const API = import.meta.env.VITE_API_URL || '';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const {
+    audioDevices,
+    videoDevices,
+    speakerDevices,
+    selectedAudioId,
+    selectedVideoId,
+    selectedSpeakerId,
+    enumerateDevices,
+    setAudioDevice,
+    setVideoDevice,
+    setSpeakerDevice
+  } = useMeetingStore();
+
   const [settings, setSettings] = useState({
     audioInput: 'default',
     audioOutput: 'default',
@@ -32,6 +46,11 @@ export default function Settings() {
 
   const [loading, setLoading] = useState(false);
 
+  // Enumerate devices on mount
+  useEffect(() => {
+    enumerateDevices();
+  }, [enumerateDevices]);
+
   // Fetch settings on mount
   useEffect(() => {
     const fetchSettings = async () => {
@@ -42,7 +61,7 @@ export default function Settings() {
         if (res.ok) {
           const data = await res.json();
           // Merge with defaults if data exists
-          if (Object.keys(data).length > 0) {
+          if (data && Object.keys(data).length > 0) {
             setSettings(prev => ({ ...prev, ...data }));
           }
         }
@@ -129,16 +148,22 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label>Microphone</Label>
                 <Select
-                  value={settings.audioInput}
-                  onValueChange={(value) => setSettings({ ...settings, audioInput: value })}
+                  value={selectedAudioId}
+                  onValueChange={(value) => {
+                    setSettings({ ...settings, audioInput: value });
+                    setAudioDevice(value);
+                  }}
                 >
                   <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#232323] border-[#404040]">
                     <SelectItem value="default">Default Microphone</SelectItem>
-                    <SelectItem value="mic1">Built-in Microphone</SelectItem>
-                    <SelectItem value="mic2">External Microphone</SelectItem>
+                    {audioDevices.map((device) => (
+                      <SelectItem key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -146,16 +171,22 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label>Speaker</Label>
                 <Select
-                  value={settings.audioOutput}
-                  onValueChange={(value) => setSettings({ ...settings, audioOutput: value })}
+                  value={selectedSpeakerId}
+                  onValueChange={(value) => {
+                    setSettings({ ...settings, audioOutput: value });
+                    setSpeakerDevice(value);
+                  }}
                 >
                   <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#232323] border-[#404040]">
                     <SelectItem value="default">Default Speaker</SelectItem>
-                    <SelectItem value="speaker1">Built-in Speaker</SelectItem>
-                    <SelectItem value="speaker2">External Speaker</SelectItem>
+                    {speakerDevices.map((device) => (
+                      <SelectItem key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Speaker ${device.deviceId.slice(0, 5)}`}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -175,16 +206,22 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label>Camera</Label>
                 <Select
-                  value={settings.videoInput}
-                  onValueChange={(value) => setSettings({ ...settings, videoInput: value })}
+                  value={selectedVideoId}
+                  onValueChange={(value) => {
+                    setSettings({ ...settings, videoInput: value });
+                    setVideoDevice(value);
+                  }}
                 >
                   <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#232323] border-[#404040]">
                     <SelectItem value="default">Default Camera</SelectItem>
-                    <SelectItem value="cam1">Built-in Camera</SelectItem>
-                    <SelectItem value="cam2">External Camera</SelectItem>
+                    {videoDevices.map((device) => (
+                      <SelectItem key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Camera ${device.deviceId.slice(0, 5)}`}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
