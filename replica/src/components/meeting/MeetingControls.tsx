@@ -1265,18 +1265,16 @@ function ControlBar() {
 
     // Whiteboard handlers
     const openWhiteboard = () => {
-        if (!canEditWhiteboard) return;
         if (!isWhiteboardOpen) {
             toggleWhiteboard();
-            if (meeting?.id && currentUserId) emitWhiteboardToggle(meeting.id, true, currentUserId);
+            // Only broadcast global open if the user has edit permissions (Host/Co-host)
+            if (canEditWhiteboard && meeting?.id && currentUserId) {
+                emitWhiteboardToggle(meeting.id, true, currentUserId);
+            }
         }
     };
 
-    useEffect(() => {
-        if (isWhiteboardOpen && !canEditWhiteboard) {
-            closeWhiteboard();
-        }
-    }, [isWhiteboardOpen, canEditWhiteboard]);
+    // Auto-close check removed: participants should be able to view even if they can't edit
 
     const closeWhiteboard = () => {
         if (isWhiteboardOpen) {
@@ -2327,12 +2325,10 @@ function ControlBar() {
                                 </div>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="center" className="bg-[#18181b] border-[#333] text-gray-200 w-56 shadow-xl rounded-lg">
-                                {canEditWhiteboard && (
-                                    <DropdownMenuItem onClick={openWhiteboard} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                                        <Grid3x3 className="w-4 h-4 mr-2" />
-                                        Whiteboard
-                                    </DropdownMenuItem>
-                                )}
+                                <DropdownMenuItem onClick={openWhiteboard} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                    <Grid3x3 className="w-4 h-4 mr-2" />
+                                    Whiteboard
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <Sparkles className="w-4 h-4 mr-2" />
                                     AI Companion
@@ -2486,7 +2482,7 @@ function ControlBar() {
                                             </span>
                                         )}
 
-                                        {/* Close Button — global close for editors, local hide for viewers */}
+                                        {/* Close Button — global close for authorized users, local hide for viewers */}
                                         {canCloseWhiteboardForAll ? (
                                             <button
                                                 type="button"
