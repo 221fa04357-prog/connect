@@ -7,6 +7,7 @@ import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -90,7 +91,7 @@ export default function MeetingRoom() {
       });
     };
 
-    console.log(`Creating PeerConnection for ${participantSocketId} (Polite: ${isPolite})`);
+    console.log(`Creating PeerConnection for ${participantSocketId}(Polite: ${isPolite})`);
 
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -142,7 +143,7 @@ export default function MeetingRoom() {
       const stream = event.streams[0];
       if (!stream) return;
 
-      console.log(`Track received from ${participantSocketId}, stream ID: ${stream.id}`);
+      console.log(`Track received from ${participantSocketId}, stream ID: ${stream.id} `);
 
       // Store stream for potential re-reconciliation if metadata is late
       if (!receivedStreamsRef.current[participantSocketId]) {
@@ -211,8 +212,20 @@ export default function MeetingRoom() {
         useParticipantsStore.getState().reset();
         useChatStore.getState().reset();
       }
+
+      // Check participant admission status on refresh/mount
+      const userId = user?.id || useChatStore.getState().localUserId;
+      if (userId) {
+        useMeetingStore.getState().checkParticipantStatus(meeting.id, userId).then(status => {
+          if (status === 'rejected') {
+            import('sonner').then(({ toast }) => toast.error('Access denied'));
+            useMeetingStore.getState().leaveMeeting();
+            navigate('/');
+          }
+        });
+      }
     }
-  }, [meeting?.id]);
+  }, [meeting?.id, user?.id]);
 
   /* ---------------- CHAT & SIGNALING INITIALIZATION ---------------- */
   useEffect(() => {
@@ -220,6 +233,7 @@ export default function MeetingRoom() {
     if (meeting?.id) {
       // Try to find existing guest participant to get ID/Name
       const existingGuest = participants.find(p => p.id.startsWith('guest-'));
+      const persistentGuestId = useGuestSessionStore.getState().guestId;
 
       const isJoinedAsHost = useMeetingStore.getState().isJoinedAsHost;
       const identity = user ? {
@@ -227,7 +241,7 @@ export default function MeetingRoom() {
         name: user.name || 'Anonymous',
         role: isJoinedAsHost ? 'host' : 'participant'
       } : {
-        id: existingGuest?.id || `guest-${Math.random().toString(36).substr(2, 9)}`,
+        id: existingGuest?.id || persistentGuestId || `guest-${Math.random().toString(36).substr(2, 9)}`,
         name: existingGuest?.name || 'Guest',
         role: isJoinedAsHost ? 'host' : 'participant'
       };
@@ -254,7 +268,7 @@ export default function MeetingRoom() {
           if (error.code === 'MEETING_NOT_STARTED') {
             import('sonner').then(({ toast }) => {
               toast.error(error.message, {
-                description: `Scheduled start: ${new Date(Number(error.startTime)).toLocaleString()}`,
+                description: `Scheduled start: ${new Date(Number(error.startTime)).toLocaleString()} `,
                 duration: 5000,
               });
             });
@@ -306,11 +320,11 @@ export default function MeetingRoom() {
                 signal: pc.localDescription
               });
             } else if (signal.type === 'answer') {
-              console.log(`Received ANSWER from ${from}`);
+              console.log(`Received ANSWER from ${from} `);
               if (pc.signalingState === "have-local-offer") {
                 await pc.setRemoteDescription(new RTCSessionDescription(signal));
               } else {
-                console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState}`);
+                console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState} `);
               }
             } else if (signal.candidate) {
               try {
@@ -365,7 +379,7 @@ export default function MeetingRoom() {
       const currentSocketIds = new Set(participants.map(p => (p as any).socketId).filter(Boolean));
       Object.keys(peerConnections.current).forEach(socketId => {
         if (!currentSocketIds.has(socketId)) {
-          console.log(`Cleaning up connection and streams for departed participant: ${socketId}`);
+          console.log(`Cleaning up connection and streams for departed participant: ${socketId} `);
           peerConnections.current[socketId]?.close();
           delete peerConnections.current[socketId];
           delete receivedStreamsRef.current[socketId];
@@ -419,14 +433,14 @@ export default function MeetingRoom() {
         try {
           pc.removeTrack(sender);
         } catch (err) {
-          console.warn(`Error removing screen share track for ${socketId}:`, err);
+          console.warn(`Error removing screen share track for ${socketId}: `, err);
         }
       });
       delete screenShareSendersRef.current[socketId];
 
       // 2. Add new screen share tracks if stream exists
       if (screenShareStream) {
-        console.log(`Adding screen share tracks to PC ${socketId}`);
+        console.log(`Adding screen share tracks to PC ${socketId} `);
         const newSenders: RTCRtpSender[] = [];
         screenShareStream.getTracks().forEach(track => {
           const sender = pc.addTrack(track, screenShareStream);
@@ -550,7 +564,7 @@ export default function MeetingRoom() {
 
   // Derived state for local participant
   const myParticipant = participants.find(p => p.id === user?.id)
-    || participants.find(p => p.id === `participant-${user?.id}`)
+    || participants.find(p => p.id === `participant - ${user?.id} `)
     || participants[0]; // fallback for mock
 
   const isAudioMutedLocal = meetingStoreAudioMuted;
@@ -592,13 +606,13 @@ export default function MeetingRoom() {
       localStream.getAudioTracks().forEach(t => {
         if (t.enabled !== !isAudioMutedLocal) {
           t.enabled = !isAudioMutedLocal;
-          console.log(`MeetingRoom: Audio track ${t.enabled ? 'enabled' : 'disabled'}`);
+          console.log(`MeetingRoom: Audio track ${t.enabled ? 'enabled' : 'disabled'} `);
         }
       });
       localStream.getVideoTracks().forEach(t => {
         if (t.enabled !== !isVideoOffLocal) {
           t.enabled = !isVideoOffLocal;
-          console.log(`MeetingRoom: Video track ${t.enabled ? 'enabled' : 'disabled'}`);
+          console.log(`MeetingRoom: Video track ${t.enabled ? 'enabled' : 'disabled'} `);
         }
       });
     }
@@ -718,7 +732,7 @@ export default function MeetingRoom() {
       });
       import('sonner').then(({ toast }) => {
         toast.success('Meeting Extended', {
-          description: `New end time: ${new Date(updatedMeeting.endTime).toLocaleTimeString()}`,
+          description: `New end time: ${new Date(updatedMeeting.endTime).toLocaleTimeString()} `,
           duration: 3000,
         });
       });
@@ -779,7 +793,7 @@ export default function MeetingRoom() {
         const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
         const minutes = Math.floor(diff / 60).toString().padStart(2, '0');
         const seconds = (diff % 60).toString().padStart(2, '0');
-        setElapsedTime(`${minutes}:${seconds}`);
+        setElapsedTime(`${minutes}:${seconds} `);
       }, 1000);
     } else {
       setElapsedTime("00:00");
@@ -855,7 +869,7 @@ export default function MeetingRoom() {
                     opacity: 1,
                     y: 0,
                     scale: 1,
-                    left: `${x}%`,
+                    left: `${x}% `,
                     bottom: 120
                   }}
                   animate={{

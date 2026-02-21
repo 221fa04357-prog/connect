@@ -27,6 +27,7 @@ interface ChatState {
   emitWhiteboardToggle: (meetingId: string, isOpen: boolean, userId: string) => void;
   emitWhiteboardUndo: (meetingId: string) => void;
   emitWhiteboardRedo: (meetingId: string) => void;
+  emitWhiteboardAccessUpdate: (meetingId: string, access: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -35,6 +36,7 @@ interface ChatState {
   admitParticipant: (meetingId: string, socketId: string) => void;
   rejectParticipant: (meetingId: string, socketId: string) => void;
   toggleWaitingRoom: (meetingId: string, enabled: boolean) => void;
+  updateMeetingSettings: (meetingId: string, settings: Partial<any>) => void;
   markAsRead: () => void;
   reset: () => void;
 }
@@ -61,9 +63,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on('connect', () => {
       console.log('Connected to chat server');
-      const userId = user?.id || `guest-${socket.id}`;
-      set({ localUserId: userId });
-      socket.emit('join_meeting', { meetingId, user, initialState });
+      // Use persistent guest ID if available
+      let userId = user?.id;
+      if (!userId) {
+        import('./useGuestSessionStore').then((guestStore) => {
+          const gId = guestStore.useGuestSessionStore.getState().guestId;
+          userId = gId || `guest-${socket.id}`;
+          set({ localUserId: userId });
+          socket.emit('join_meeting', { meetingId, user, initialState });
+        });
+      } else {
+        set({ localUserId: userId });
+        socket.emit('join_meeting', { meetingId, user, initialState });
+      }
 
       // Update connection quality
       import('./useMeetingStore').then((store) => {
@@ -315,6 +327,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('whiteboard_access_updated', (data: { access: string }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (ms.meeting) {
+          const nextMeeting = {
+            ...ms.meeting,
+            settings: {
+              ...ms.meeting.settings,
+              whiteboardEditAccess: data.access as 'hostOnly' | 'coHost' | 'everyone'
+            }
+          };
+          ms.setMeeting(nextMeeting);
+        }
+      });
+    });
+
     socket.on('meeting_ended', () => {
       console.log('Meeting has been ended by the host');
       import('./useMeetingStore').then((store) => {
@@ -381,6 +409,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
       import('sonner').then(({ toast }) => {
         toast.info(`Waiting room has been ${data.enabled ? 'enabled' : 'disabled'} by the host.`);
+      });
+    });
+
+    socket.on('meeting_controls_updated', (settings: any) => {
+      console.log('Meeting controls updated:', settings);
+      import('./useMeetingStore').then((store) => {
+        const ms = store.useMeetingStore.getState();
+        if (ms.meeting) {
+          ms.setMeeting({ ...ms.meeting, settings });
+
+          // Apply restrictions if I'm not the host
+          if (!ms.isJoinedAsHost) {
+            if (settings.micAllowed === false && !ms.isAudioMuted) {
+              ms.setAudioMuted(true);
+              import('sonner').then(({ toast }) => toast.warning('Host has disabled microphones.'));
+            }
+            if (settings.cameraAllowed === false && !ms.isVideoOff) {
+              ms.setVideoOff(true);
+              import('sonner').then(({ toast }) => toast.warning('Host has disabled cameras.'));
+            }
+            if (settings.screenShareAllowed === false && ms.isScreenSharing) {
+              // Stop sharing tracks
+              if (ms.screenShareStream) {
+                ms.screenShareStream.getTracks().forEach(track => track.stop());
+              }
+              ms.setScreenShareStream(null);
+              if (ms.isScreenSharing) {
+                ms.toggleScreenShare(); // Set isScreenSharing to false
+              }
+              // Notify others
+              const localUserId = get().localUserId;
+              if (ms.meeting?.id && localUserId) {
+                get().emitParticipantUpdate(ms.meeting.id, localUserId, { isScreenSharing: false });
+              }
+              import('sonner').then(({ toast }) => toast.warning('Host has disabled screen sharing.'));
+            }
+          }
+        }
       });
     });
 
@@ -501,6 +567,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('whiteboard_redo', { meeting_id: meetingId });
   },
 
+  emitWhiteboardAccessUpdate: (meetingId, access) => {
+    get().socket?.emit('whiteboard_access_update', { meeting_id: meetingId, access });
+  },
+
   muteAll: (meetingId) => {
     get().socket?.emit('mute_all', { meeting_id: meetingId });
   },
@@ -531,6 +601,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleWaitingRoom: (meetingId, enabled) => {
     get().socket?.emit('toggle_waiting_room', { meetingId, enabled });
+  },
+  updateMeetingSettings: (meetingId, settings) => {
+    get().socket?.emit('update_meeting_settings', { meetingId, settings });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),

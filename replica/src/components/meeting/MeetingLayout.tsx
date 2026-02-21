@@ -20,7 +20,7 @@ import {
     Send, SmilePlus, X, Search, Mic, MicOff, Video, VideoOff,
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
-    Plus, AlertCircle, Download
+    Plus, AlertCircle, Download, Lock as LockIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -57,6 +57,10 @@ export function ChatPanel() {
         selectedRecipientId,
         setSelectedRecipientId
     } = useChatStore();
+    const { meeting, isJoinedAsHost } = useMeetingStore();
+
+    const isHostOrCoHost = isJoinedAsHost; // Simplified for this component context
+    const chatAllowed = isHostOrCoHost || meeting?.settings?.chatAllowed !== false;
 
     const [input, setInput] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -107,6 +111,10 @@ export function ChatPanel() {
 
     const handleSend = () => {
         if (!input.trim()) return;
+        if (!chatAllowed) {
+            toast.error('Host has disabled chat.');
+            return;
+        }
 
         sendMessage(input, activeTab, activeTab === 'private' ? selectedRecipientId : undefined);
         setInput('');
@@ -240,8 +248,9 @@ export function ChatPanel() {
                             <Input
                                 value={input}
                                 onChange={handleInputChange}
-                                placeholder={activeTab === 'private' ? "Type a private message..." : "Type a message..."}
+                                placeholder={!chatAllowed ? "Chat is disabled by host" : (activeTab === 'private' ? "Type a private message..." : "Type a message...")}
                                 className="flex-1 bg-transparent border-none text-white focus-visible:ring-0"
+                                disabled={!chatAllowed}
                                 onBlur={() => sendTypingStatus(false)}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -251,20 +260,20 @@ export function ChatPanel() {
                                 }}
                             />
 
-                            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)}>
+                            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={!chatAllowed}>
                                 <SmilePlus className="w-5 h-5" />
                             </Button>
 
                             <Button
                                 size="icon"
                                 onClick={handleSend}
-                                disabled={!input.trim() || (activeTab === 'private' && !selectedRecipientId)}
+                                disabled={!chatAllowed || !input.trim() || (activeTab === 'private' && !selectedRecipientId)}
                                 className={cn(
-                                    input.trim() ? 'bg-[#0B5CFF]' : 'bg-[#2D2D2D]',
+                                    input.trim() && chatAllowed ? 'bg-[#0B5CFF]' : 'bg-[#2D2D2D]',
                                     'text-white'
                                 )}
                             >
-                                <Send className="w-4 h-4" />
+                                {!chatAllowed ? <LockIcon className="w-4 h-4" /> : <Send className="w-4 h-4" />}
                             </Button>
                         </div>
                     </div>
