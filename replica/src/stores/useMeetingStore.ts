@@ -61,6 +61,7 @@ interface MeetingState {
   toggleChat: () => void;
   toggleParticipants: () => void;
   toggleWhiteboard: () => void;
+  setWhiteboardOpen: (open: boolean) => void;
   toggleSettings: () => void;
   toggleAICompanion: () => void;
   toggleReactions: () => void;
@@ -216,6 +217,8 @@ export const useMeetingStore = create<MeetingState>()(
 
       toggleWhiteboard: () =>
         set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
+
+      setWhiteboardOpen: (open) => set({ isWhiteboardOpen: open }),
 
       toggleSettings: () =>
         set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
