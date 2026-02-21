@@ -46,7 +46,7 @@ export default function MeetingRoom() {
   } = useMeetingStore();
 
   const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
-  const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, clearRemoteStreams } = useMediaStore();
+  const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, removeRemoteScreenStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   /* ---------------- SIGNALING STATE ---------------- */
   const makingOfferRef = useRef<Record<string, boolean>>({});
@@ -55,9 +55,40 @@ export default function MeetingRoom() {
   const screenShareSendersRef = useRef<Record<string, RTCRtpSender[]>>({}); // socketId -> senders[]
   const negotiationTimeoutRef = useRef<Record<string, any>>({});
   const lastScreenShareIdRef = useRef<string | null>(null);
+  const receivedStreamsRef = useRef<Record<string, Set<MediaStream>>>({}); // socketId -> Set of streams
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
+
+    // Helper to reconcile streams based on current participant metadata
+    const reconcileStreams = (socketId: string) => {
+      const streams = receivedStreamsRef.current[socketId];
+      if (!streams) return;
+
+      const participant = useParticipantsStore.getState().participants.find(p => p.socketId === socketId);
+
+      streams.forEach(stream => {
+        const isScreen = participant?.isScreenSharing && participant.screenShareStreamId === stream.id;
+
+        if (isScreen) {
+          console.log(`[StreamReconciler] Categorized SCREEN stream for ${socketId}`);
+          addRemoteScreenStream(socketId, stream);
+        } else {
+          // It's a camera/audio stream IF:
+          // 1. It's not the known screen share ID (even if sharing is off)
+          // 2. AND it's active
+          const isStaleScreen = stream.id === participant?.screenShareStreamId && !participant?.isScreenSharing;
+
+          if (!isStaleScreen && stream.active) {
+            console.log(`[StreamReconciler] Categorized CAMERA stream for ${socketId}`);
+            addRemoteStream(socketId, stream);
+          } else if (isStaleScreen || !stream.active) {
+            // Cleanup if it was previously categorized as screen but is now stale/ended
+            removeRemoteScreenStream(socketId);
+          }
+        }
+      });
+    };
 
     console.log(`Creating PeerConnection for ${participantSocketId} (Polite: ${isPolite})`);
 
@@ -109,18 +140,17 @@ export default function MeetingRoom() {
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      const participant = useParticipantsStore.getState().participants.find(p => p.socketId === participantSocketId);
+      if (!stream) return;
 
-      // Robust check: if participant is known to be sharing AND this stream ID matches, OR if it's a second video stream
-      const isScreenTrack = (participant?.isScreenSharing && participant.screenShareStreamId === stream.id);
+      console.log(`Track received from ${participantSocketId}, stream ID: ${stream.id}`);
 
-      if (isScreenTrack) {
-        console.log(`Identified SCREEN SHARE stream from ${participantSocketId}`);
-        addRemoteScreenStream(participantSocketId, stream);
-      } else {
-        console.log(`Identified CAMERA/AUDIO stream from ${participantSocketId}`);
-        addRemoteStream(participantSocketId, stream);
+      // Store stream for potential re-reconciliation if metadata is late
+      if (!receivedStreamsRef.current[participantSocketId]) {
+        receivedStreamsRef.current[participantSocketId] = new Set();
       }
+      receivedStreamsRef.current[participantSocketId].add(stream);
+
+      reconcileStreams(participantSocketId);
     };
 
     // Add local tracks if they exist
@@ -144,7 +174,29 @@ export default function MeetingRoom() {
 
     peerConnections.current[participantSocketId] = pc;
     return pc;
-  }, [localStream, addRemoteStream]);
+  }, [localStream, addRemoteStream, addRemoteScreenStream]);
+
+  // Effect to re-reconcile streams whenever participants update (handles race conditions)
+  useEffect(() => {
+    Object.keys(peerConnections.current).forEach(socketId => {
+      const streams = receivedStreamsRef.current[socketId];
+      if (!streams || streams.size === 0) return;
+
+      const participant = participants.find(p => p.socketId === socketId);
+      if (!participant) return;
+
+      // Re-run identification logic for each known stream from this participant
+      streams.forEach(stream => {
+        const isScreen = participant.isScreenSharing && participant.screenShareStreamId === stream.id;
+        if (isScreen) {
+          addRemoteScreenStream(socketId, stream);
+        } else {
+          // ensure it stays in remote streams if it's NOT the screen share
+          addRemoteStream(socketId, stream);
+        }
+      });
+    });
+  }, [participants, addRemoteStream, addRemoteScreenStream]);
 
   // Reset AI store if meeting ID changed (isolation)
   useEffect(() => {
@@ -304,15 +356,25 @@ export default function MeetingRoom() {
       participants.forEach(p => {
         // @ts-ignore - p.socketId comes from backend rooms Map
         if (p.socketId && p.socketId !== socket.id && !peerConnections.current[p.socketId]) {
-          // Only initiate if we don't have a connection yet.
-          // Note: In Perfect Negotiation, both sides CAN start, but usually we let the "impolite" one strictly offering isn't required if we handle collision.
-          // However, to kickstart:
           const isPolite = socket.id < p.socketId;
           createPeerConnection(p.socketId, isPolite);
         }
       });
+
+      // CLEANUP: Close connections for participants who are no longer in the list
+      const currentSocketIds = new Set(participants.map(p => (p as any).socketId).filter(Boolean));
+      Object.keys(peerConnections.current).forEach(socketId => {
+        if (!currentSocketIds.has(socketId)) {
+          console.log(`Cleaning up connection and streams for departed participant: ${socketId}`);
+          peerConnections.current[socketId]?.close();
+          delete peerConnections.current[socketId];
+          delete receivedStreamsRef.current[socketId];
+          removeRemoteStream(socketId);
+          removeRemoteScreenStream(socketId);
+        }
+      });
     }
-  }, [participants, createPeerConnection]);
+  }, [participants, createPeerConnection, removeRemoteStream, removeRemoteScreenStream]);
 
   // DYNAMIC TRACK UPDATE: Re-attach tracks when localStream changes
   useEffect(() => {
@@ -383,24 +445,6 @@ export default function MeetingRoom() {
     }
   }, [screenShareStream, meeting?.id, user?.id, isJoinedAsHost, emitParticipantUpdate]);
 
-  // RESYNC SCREEN SHARE STREAMS: Handle cases where track arrives before metadata (socket update)
-  useEffect(() => {
-    const { remoteStreams, addRemoteScreenStream, removeRemoteStream } = useMediaStore.getState();
-
-    participants.forEach(p => {
-      // @ts-ignore
-      const socketId = p.socketId;
-      if (p.isScreenSharing && p.screenShareStreamId && socketId) {
-        // Find if this stream ID is currently in the regular camera bucket
-        const cameraStream = remoteStreams[socketId];
-        if (cameraStream && cameraStream.id === p.screenShareStreamId) {
-          console.log(`Resyncing SCREEN SHARE for ${p.name}: moving stream from camera to screen bucket`);
-          addRemoteScreenStream(socketId, cameraStream);
-          removeRemoteStream(socketId);
-        }
-      }
-    });
-  }, [participants]);
 
 
   /* ---------------- CONNECTION MONITORING ---------------- */
