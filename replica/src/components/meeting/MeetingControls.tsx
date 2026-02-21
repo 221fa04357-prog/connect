@@ -1153,7 +1153,6 @@ function ControlBar() {
         redoWhiteboardStroke,
         whiteboardInitiatorId,
         setWhiteboardInitiatorId,
-        setWhiteboardEditAccess,
 
         // Mic & Video Confirm
         showMicConfirm,
@@ -2370,7 +2369,9 @@ function ControlBar() {
                                                 value={whiteboardAccessLevel}
                                                 onChange={(e) => {
                                                     const val = e.target.value as any;
-                                                    setWhiteboardEditAccess(val);
+                                                    if (meeting?.id) {
+                                                        useChatStore.getState().emitWhiteboardAccessChange(meeting.id, val);
+                                                    }
                                                 }}
                                                 className="bg-gray-100 border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor:pointer hover:bg-gray-200 transition-colors"
                                             >

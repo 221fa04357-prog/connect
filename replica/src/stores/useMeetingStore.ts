@@ -432,7 +432,7 @@ export const useMeetingStore = create<MeetingState>()(
         }
       },
 
-      setWhiteboardEditAccess: async (access: 'HOST' | 'HOST_COHOST' | 'EVERYONE') => {
+      setWhiteboardEditAccess: async (access) => {
         const state = useMeetingStore.getState();
         if (!state.meeting) return;
 
