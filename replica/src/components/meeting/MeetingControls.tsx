@@ -1157,6 +1157,8 @@ function ControlBar() {
         currentParticipant?.role === 'host' ||
         (whiteboardEditAccess === 'coHost' && currentParticipant?.role === 'co-host') ||
         (whiteboardEditAccess === 'everyone');
+    // Only editors can close the whiteboard for everyone (global close)
+    const canCloseWhiteboardForAll = canEditWhiteboard;
 
     // Whiteboard handlers
     const openWhiteboard = () => {
@@ -1177,10 +1179,19 @@ function ControlBar() {
         if (isWhiteboardOpen) {
             toggleWhiteboard(); // Always close locally
 
-            // Only emit global toggle if current user is the initiator
-            if (meeting?.id && currentUserId && currentUserId === whiteboardInitiatorId) {
+            // Only emit global close if the user has edit permissions
+            if (canCloseWhiteboardForAll && meeting?.id && currentUserId) {
                 emitWhiteboardToggle(meeting.id, false, currentUserId);
             }
+        }
+        setWhiteboardDrawing(false);
+        setEraserPath([]);
+    };
+
+    // Non-editors can "hide" their local view without closing for everyone
+    const hideWhiteboardLocally = () => {
+        if (isWhiteboardOpen) {
+            toggleWhiteboard();
         }
         setWhiteboardDrawing(false);
         setEraserPath([]);
@@ -2288,14 +2299,33 @@ function ControlBar() {
                                             </DropdownMenuContent>
                                         </DropdownMenu>
 
-                                        {/* Close Button */}
-                                        <button
-                                            type="button"
-                                            onClick={() => { closeWhiteboard(); }}
-                                            className="text-gray-500 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
-                                        >
-                                            <X className="w-6 h-6" />
-                                        </button>
+                                        {/* View-only badge for non-editors */}
+                                        {!canEditWhiteboard && (
+                                            <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 px-2 py-1 rounded-full font-medium">
+                                                View only
+                                            </span>
+                                        )}
+
+                                        {/* Close Button — global close for editors, local hide for viewers */}
+                                        {canCloseWhiteboardForAll ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => { closeWhiteboard(); }}
+                                                className="text-gray-500 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
+                                                title="Close whiteboard for everyone"
+                                            >
+                                                <X className="w-6 h-6" />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => { hideWhiteboardLocally(); }}
+                                                className="text-gray-400 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
+                                                title="Hide whiteboard (local only)"
+                                            >
+                                                <X className="w-6 h-6" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
