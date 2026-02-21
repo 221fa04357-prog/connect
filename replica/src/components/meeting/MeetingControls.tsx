@@ -1365,7 +1365,7 @@ function ControlBar() {
             });
             ctx.stroke();
         });
-    }, [whiteboardStrokes, canvasDims, whiteboardTool]);
+    }, [whiteboardStrokes, canvasDims, whiteboardTool, isWhiteboardOpen]);
 
     // Resize canvas on open and window resize
     useEffect(() => {
@@ -2415,7 +2415,7 @@ function ControlBar() {
                                     )}
                                     style={{
                                         zIndex: 101,
-                                        pointerEvents: canEditWhiteboard ? 'auto' : 'none',
+                                        pointerEvents: 'auto',
                                         touchAction: 'none'
                                     }}
                                     onPointerDown={handlePointerDown}
