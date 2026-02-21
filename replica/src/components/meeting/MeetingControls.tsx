@@ -460,7 +460,7 @@ function TopBar() {
                 )}
 
                 {/* Timer */}
-                {timeLeft && (
+                {!isWhiteboardOpen && timeLeft && (
                     <div className={cn(
                         "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
                         (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
@@ -1104,11 +1104,18 @@ function ControlBar() {
 
     // Whiteboard handlers
     const openWhiteboard = () => {
+        if (!canEditWhiteboard) return;
         if (!isWhiteboardOpen) {
             toggleWhiteboard();
             if (meeting?.id && currentUserId) emitWhiteboardToggle(meeting.id, true, currentUserId);
         }
     };
+
+    useEffect(() => {
+        if (isWhiteboardOpen && !canEditWhiteboard) {
+            closeWhiteboard();
+        }
+    }, [isWhiteboardOpen, canEditWhiteboard]);
 
     const closeWhiteboard = () => {
         if (isWhiteboardOpen) {
@@ -2052,10 +2059,12 @@ function ControlBar() {
                                 </div>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="center" className="bg-[#18181b] border-[#333] text-gray-200 w-56 shadow-xl rounded-lg">
-                                <DropdownMenuItem onClick={openWhiteboard} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                                    <Grid3x3 className="w-4 h-4 mr-2" />
-                                    Whiteboard
-                                </DropdownMenuItem>
+                                {canEditWhiteboard && (
+                                    <DropdownMenuItem onClick={openWhiteboard} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                        <Grid3x3 className="w-4 h-4 mr-2" />
+                                        Whiteboard
+                                    </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <Sparkles className="w-4 h-4 mr-2" />
                                     AI Companion

@@ -362,6 +362,9 @@ export const useMeetingStore = create<MeetingState>()(
             { meeting: nextMeeting },
             { source: INSTANCE_ID }
           );
+
+          // Emit to other clients
+          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
         } catch (err) {
           console.error('Error setting whiteboard access:', err);
         }
