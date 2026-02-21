@@ -1143,18 +1143,18 @@ function ControlBar() {
         // Whiteboard
         isWhiteboardOpen,
         toggleWhiteboard,
-        whiteboardAccessLevel,
+        setWhiteboardOpen,
+        setWhiteboardEditAccess,
         whiteboardStrokes,
-        whiteboardRedoStack,
         addWhiteboardStroke,
         updateWhiteboardStroke,
         clearWhiteboardStrokes,
         setWhiteboardStrokes,
+        removeWhiteboardStroke,
+        whiteboardInitiatorId,
         undoWhiteboardStroke,
         redoWhiteboardStroke,
-        whiteboardInitiatorId,
-        setWhiteboardInitiatorId,
-        setWhiteboardEditAccess,
+        whiteboardRedoStack,
 
         // Mic & Video Confirm
         showMicConfirm,
@@ -1170,19 +1170,7 @@ function ControlBar() {
         enumerateDevices();
     }, [enumerateDevices]);
 
-    const {
-        unreadCount,
-        localUserId,
-        emitParticipantUpdate,
-        emitWhiteboardDraw,
-        emitWhiteboardErase,
-        emitWhiteboardClear,
-        emitWhiteboardOpen,
-        emitWhiteboardClose,
-        emitWhiteboardAccessChange,
-        emitWhiteboardUndo,
-        emitWhiteboardRedo
-    } = useChatStore();
+    const { unreadCount, localUserId, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle, emitWhiteboardUndo, emitWhiteboardRedo } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
         participants,
@@ -1267,19 +1255,20 @@ function ControlBar() {
     const displayUnreadCount = !isChatOpen ? (unreadCount > 99 ? '99+' : unreadCount) : 0;
 
     // RBAC for Whiteboard
+    const whiteboardEditAccess = meeting?.settings?.whiteboardEditAccess || 'hostOnly';
     const canEditWhiteboard =
         currentParticipant?.role === 'host' ||
-        (whiteboardAccessLevel === 'HOST_COHOST' && currentParticipant?.role === 'co-host') ||
-        (whiteboardAccessLevel === 'EVERYONE');
-
-    const canManageWhiteboard = isHost;
+        (whiteboardEditAccess === 'coHost' && currentParticipant?.role === 'co-host') ||
+        (whiteboardEditAccess === 'everyone');
+    // Only editors can close the whiteboard for everyone (global close)
+    const canCloseWhiteboardForAll = canEditWhiteboard;
 
     // Whiteboard handlers
     const openWhiteboard = () => {
-        if (!canManageWhiteboard) return;
-        if (meeting?.id) {
-            useChatStore.getState().emitWhiteboardOpen(meeting.id, whiteboardAccessLevel);
-            setWhiteboardInitiatorId(currentUserId);
+        if (!canEditWhiteboard) return;
+        if (!isWhiteboardOpen) {
+            toggleWhiteboard();
+            if (meeting?.id && currentUserId) emitWhiteboardToggle(meeting.id, true, currentUserId);
         }
     };
 
@@ -1290,9 +1279,13 @@ function ControlBar() {
     }, [isWhiteboardOpen, canEditWhiteboard]);
 
     const closeWhiteboard = () => {
-        if (!canManageWhiteboard) return;
-        if (meeting?.id) {
-            useChatStore.getState().emitWhiteboardClose(meeting.id);
+        if (isWhiteboardOpen) {
+            toggleWhiteboard(); // Always close locally
+
+            // Only emit global close if the user has edit permissions
+            if (canCloseWhiteboardForAll && meeting?.id && currentUserId) {
+                emitWhiteboardToggle(meeting.id, false, currentUserId);
+            }
         }
         setWhiteboardDrawing(false);
         setEraserPath([]);
@@ -1311,7 +1304,7 @@ function ControlBar() {
         clearWhiteboardStrokes();
         setWhiteboardDrawing(false);
         setEraserPath([]);
-        if (meeting?.id) useChatStore.getState().emitWhiteboardClear(meeting.id);
+        if (meeting?.id) emitWhiteboardClear(meeting.id);
         const canvas = canvasRef.current;
         if (canvas) {
             const ctx = canvas.getContext('2d');
@@ -1471,7 +1464,7 @@ function ControlBar() {
                 // Find which ones were removed
                 const removedStrokes = whiteboardStrokes.filter(s => !updatedStrokes.some(us => us.id === s.id));
                 removedStrokes.forEach(s => {
-                    if (meeting?.id) useChatStore.getState().emitWhiteboardErase(meeting.id, s.id);
+                    if (meeting?.id) emitWhiteboardDraw(meeting.id, { type: 'erase', id: s.id });
                 });
 
                 setWhiteboardStrokes(updatedStrokes);
@@ -2334,7 +2327,7 @@ function ControlBar() {
                                 </div>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="center" className="bg-[#18181b] border-[#333] text-gray-200 w-56 shadow-xl rounded-lg">
-                                {isHost && (
+                                {canEditWhiteboard && (
                                     <DropdownMenuItem onClick={openWhiteboard} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                         <Grid3x3 className="w-4 h-4 mr-2" />
                                         Whiteboard
@@ -2404,16 +2397,13 @@ function ControlBar() {
 
                                         {isHost && (
                                             <select
-                                                value={whiteboardAccessLevel}
-                                                onChange={(e) => {
-                                                    const val = e.target.value as any;
-                                                    setWhiteboardEditAccess(val);
-                                                }}
+                                                value={whiteboardEditAccess}
+                                                onChange={(e) => setWhiteboardEditAccess(e.target.value as any)}
                                                 className="bg-gray-100 border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor:pointer hover:bg-gray-200 transition-colors"
                                             >
-                                                <option value="HOST">Only Host</option>
-                                                <option value="HOST_COHOST">Host + Co-host</option>
-                                                <option value="EVERYONE">Everyone</option>
+                                                <option value="hostOnly">Only Host</option>
+                                                <option value="coHost">Host + Co-host</option>
+                                                <option value="everyone">Everyone</option>
                                             </select>
                                         )}
                                     </div>

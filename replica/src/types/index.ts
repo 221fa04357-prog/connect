@@ -65,7 +65,7 @@ export interface MeetingSettings {
   cameraAllowed?: boolean;
   screenShareAllowed?: boolean;
   chatAllowed?: boolean;
-  whiteboardEditAccess?: 'HOST' | 'HOST_COHOST' | 'EVERYONE';
+  whiteboardEditAccess?: 'hostOnly' | 'coHost' | 'everyone';
   // From meeting.ts
   recordAutomatically?: boolean;
   muteParticipantsOnEntry?: boolean;
