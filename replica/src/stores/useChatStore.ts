@@ -27,6 +27,7 @@ interface ChatState {
   emitWhiteboardToggle: (meetingId: string, isOpen: boolean, userId: string) => void;
   emitWhiteboardUndo: (meetingId: string) => void;
   emitWhiteboardRedo: (meetingId: string) => void;
+  emitWhiteboardAccessUpdate: (meetingId: string, access: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -326,6 +327,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('whiteboard_access_updated', (data: { access: string }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (ms.meeting) {
+          const nextMeeting = {
+            ...ms.meeting,
+            settings: {
+              ...ms.meeting.settings,
+              whiteboardEditAccess: data.access as 'hostOnly' | 'coHost' | 'everyone'
+            }
+          };
+          ms.setMeeting(nextMeeting);
+        }
+      });
+    });
+
     socket.on('meeting_ended', () => {
       console.log('Meeting has been ended by the host');
       import('./useMeetingStore').then((store) => {
@@ -548,6 +565,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitWhiteboardRedo: (meetingId) => {
     get().socket?.emit('whiteboard_redo', { meeting_id: meetingId });
+  },
+
+  emitWhiteboardAccessUpdate: (meetingId, access) => {
+    get().socket?.emit('whiteboard_access_update', { meeting_id: meetingId, access });
   },
 
   muteAll: (meetingId) => {

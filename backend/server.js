@@ -651,6 +651,12 @@ io.on('connection', (socket) => {
         socket.to(meeting_id).emit('whiteboard_redo');
     });
 
+    socket.on('whiteboard_access_update', (data) => {
+        const { meeting_id, access } = data;
+        // Broadcast access change to everyone in the room
+        io.to(meeting_id).emit('whiteboard_access_updated', { access });
+    });
+
     socket.on('whiteboard_toggle', (data) => {
         const { meeting_id, isOpen, userId } = data;
 
