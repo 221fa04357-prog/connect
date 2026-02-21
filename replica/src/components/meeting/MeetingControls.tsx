@@ -568,14 +568,28 @@ function TopBar() {
 // --- SettingsModal.tsx ---
 
 function SettingsModal() {
-    const { isSettingsOpen, toggleSettings, meeting, updateMeetingSettings, isJoinedAsHost } = useMeetingStore();
+    const { user } = useAuthStore();
+    const {
+        isSettingsOpen,
+        toggleSettings,
+        meeting,
+        updateMeetingSettings,
+        isJoinedAsHost,
+        audioDevices,
+        videoDevices,
+        speakerDevices,
+        selectedAudioId,
+        selectedVideoId,
+        selectedSpeakerId,
+        enumerateDevices,
+        setAudioDevice,
+        setVideoDevice,
+        setSpeakerDevice
+    } = useMeetingStore();
     const { waitingRoomEnabled } = useParticipantsStore();
     const { toggleWaitingRoom } = useChatStore();
 
-    const [settings, setSettings] = useState({
-        audioInput: 'default',
-        audioOutput: 'default',
-        videoInput: 'default',
+    const [settings, setSettings] = useState<any>({
         virtualBackground: 'none',
         backgroundBlur: false,
         hd: true,
@@ -584,8 +598,66 @@ function SettingsModal() {
         autoVideo: true
     });
 
-    const handleSave = () => {
-        toggleSettings();
+    const [loading, setLoading] = useState(false);
+    const API = import.meta.env.VITE_API_URL || '';
+
+    // Initial fetch of settings
+    useEffect(() => {
+        if (!isSettingsOpen) return;
+
+        const fetchSettings = async () => {
+            try {
+                const res = await fetch(`${API}/api/user/settings`, {
+                    headers: { 'x-user-id': user?.id || 'default-user' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && Object.keys(data).length > 0) {
+                        setSettings(prev => ({ ...prev, ...data }));
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch settings:', error);
+            }
+        };
+
+        fetchSettings();
+    }, [isSettingsOpen, user?.id, API]);
+
+    const handleSave = async () => {
+        setLoading(true);
+        try {
+            const userId = user?.id || 'default-user';
+            const payload = {
+                ...settings,
+                audioInput: selectedAudioId,
+                videoInput: selectedVideoId,
+                audioOutput: selectedSpeakerId
+            };
+
+            const res = await fetch(`${API}/api/user/settings`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-user-id': userId
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                import('sonner').then(({ toast }) => {
+                    toast.success('Settings saved', {
+                        description: 'Your preferences have been updated.',
+                        duration: 3000
+                    });
+                });
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+        } finally {
+            setLoading(false);
+            toggleSettings();
+        }
     };
 
     if (!isSettingsOpen) return null;
@@ -670,16 +742,19 @@ function SettingsModal() {
                                 <div className="space-y-2">
                                     <Label>Microphone</Label>
                                     <Select
-                                        value={settings.audioInput}
-                                        onValueChange={(value) => setSettings({ ...settings, audioInput: value })}
+                                        value={selectedAudioId}
+                                        onValueChange={setAudioDevice}
                                     >
                                         <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
-                                            <SelectValue />
+                                            <SelectValue placeholder="Select Microphone" />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-[#232323] border-[#404040]">
+                                        <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
                                             <SelectItem value="default">Default Microphone</SelectItem>
-                                            <SelectItem value="mic1">Built-in Microphone</SelectItem>
-                                            <SelectItem value="mic2">External Microphone</SelectItem>
+                                            {audioDevices.map((device) => (
+                                                <SelectItem key={device.deviceId} value={device.deviceId}>
+                                                    {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -687,24 +762,29 @@ function SettingsModal() {
                                 <div className="space-y-2">
                                     <Label>Speaker</Label>
                                     <Select
-                                        value={settings.audioOutput}
-                                        onValueChange={(value) => setSettings({ ...settings, audioOutput: value })}
+                                        value={selectedSpeakerId}
+                                        onValueChange={setSpeakerDevice}
                                     >
                                         <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
-                                            <SelectValue />
+                                            <SelectValue placeholder="Select Speaker" />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-[#232323] border-[#404040]">
+                                        <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
                                             <SelectItem value="default">Default Speaker</SelectItem>
-                                            <SelectItem value="speaker1">Built-in Speaker</SelectItem>
-                                            <SelectItem value="speaker2">External Speaker</SelectItem>
+                                            {speakerDevices.map((device) => (
+                                                <SelectItem key={device.deviceId} value={device.deviceId}>
+                                                    {device.label || `Speaker ${device.deviceId.slice(0, 5)}`}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
 
                                 <div className="flex items-center justify-between pt-4">
-                                    <Label htmlFor="autoMute">Mute microphone when joining</Label>
+                                    <div className="space-y-0.5">
+                                        <Label>Mute microphone when joining</Label>
+                                        <p className="text-xs text-gray-500">You will be muted by default when you join a meeting</p>
+                                    </div>
                                     <Switch
-                                        id="autoMute"
                                         checked={settings.autoMute}
                                         onCheckedChange={(checked) => setSettings({ ...settings, autoMute: checked })}
                                     />
@@ -715,16 +795,19 @@ function SettingsModal() {
                                 <div className="space-y-2">
                                     <Label>Camera</Label>
                                     <Select
-                                        value={settings.videoInput}
-                                        onValueChange={(value) => setSettings({ ...settings, videoInput: value })}
+                                        value={selectedVideoId}
+                                        onValueChange={setVideoDevice}
                                     >
                                         <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
-                                            <SelectValue />
+                                            <SelectValue placeholder="Select Camera" />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-[#232323] border-[#404040]">
+                                        <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
                                             <SelectItem value="default">Default Camera</SelectItem>
-                                            <SelectItem value="cam1">Built-in Camera</SelectItem>
-                                            <SelectItem value="cam2">External Camera</SelectItem>
+                                            {videoDevices.map((device) => (
+                                                <SelectItem key={device.deviceId} value={device.deviceId}>
+                                                    {device.label || `Camera ${device.deviceId.slice(0, 5)}`}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -738,7 +821,7 @@ function SettingsModal() {
                                         <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                                             <SelectValue />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-[#232323] border-[#404040]">
+                                        <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
                                             <SelectItem value="none">None</SelectItem>
                                             <SelectItem value="blur">Blur Background</SelectItem>
                                             <SelectItem value="office">Office Background</SelectItem>
@@ -852,7 +935,7 @@ function SettingsModal() {
                                                 <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                                                     <SelectValue />
                                                 </SelectTrigger>
-                                                <SelectContent className="bg-[#232323] border-[#404040]">
+                                                <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
                                                     <SelectItem value="gallery">Gallery View</SelectItem>
                                                     <SelectItem value="speaker">Speaker View</SelectItem>
                                                 </SelectContent>
@@ -906,9 +989,10 @@ function SettingsModal() {
                         </Button>
                         <Button
                             onClick={handleSave}
+                            disabled={loading}
                             className="bg-[#0B5CFF] hover:bg-blue-600 text-white px-6"
                         >
-                            Save Changes
+                            {loading ? 'Saving...' : 'Save Changes'}
                         </Button>
                     </div>
                 </motion.div>
@@ -1035,6 +1119,18 @@ function ControlBar() {
         showSelfView,
         toggleSelfView,
 
+        // Devices
+        audioDevices,
+        videoDevices,
+        speakerDevices,
+        selectedAudioId,
+        selectedVideoId,
+        selectedSpeakerId,
+        enumerateDevices,
+        setAudioDevice,
+        setVideoDevice,
+        setSpeakerDevice,
+
         // AI Companion
         toggleAICompanion,
         isAICompanionOpen,
@@ -1065,9 +1161,14 @@ function ControlBar() {
         setVideoConfirm,
 
         isJoinedAsHost
-
     } = useMeetingStore();
-    const { unreadCount, localUserId, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle } = useChatStore();
+
+    // Enumerate devices on mount for the control bar dropdowns
+    useEffect(() => {
+        enumerateDevices();
+    }, [enumerateDevices]);
+
+    const { unreadCount, localUserId, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle, emitWhiteboardUndo, emitWhiteboardRedo } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
         participants,
@@ -1956,8 +2057,43 @@ function ControlBar() {
                             </div>
                             <DropdownMenuContent className="bg-[#1A1A1A] border-[#333] text-gray-200">
                                 <DropdownMenuLabel>Select a Microphone</DropdownMenuLabel>
-                                <DropdownMenuItem>Default - Microphone (Realtek)</DropdownMenuItem>
-                                <DropdownMenuItem>Headset (Bluetooth)</DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => setAudioDevice('default')}
+                                    className={cn("cursor-pointer", selectedAudioId === 'default' && "bg-[#2A2A2A] text-blue-400")}
+                                >
+                                    Default Microphone
+                                    {selectedAudioId === 'default' && <Check className="w-4 h-4 ml-auto" />}
+                                </DropdownMenuItem>
+                                {audioDevices.map((device) => (
+                                    <DropdownMenuItem
+                                        key={device.deviceId}
+                                        onClick={() => setAudioDevice(device.deviceId)}
+                                        className={cn("cursor-pointer", selectedAudioId === device.deviceId && "bg-[#2A2A2A] text-blue-400")}
+                                    >
+                                        {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+                                        {selectedAudioId === device.deviceId && <Check className="w-4 h-4 ml-auto" />}
+                                    </DropdownMenuItem>
+                                ))}
+
+                                <DropdownMenuSeparator className="bg-[#333]" />
+                                <DropdownMenuLabel>Select a Speaker</DropdownMenuLabel>
+                                <DropdownMenuItem
+                                    onClick={() => setSpeakerDevice('default')}
+                                    className={cn("cursor-pointer", selectedSpeakerId === 'default' && "bg-[#2A2A2A] text-blue-400")}
+                                >
+                                    Default Speaker
+                                    {selectedSpeakerId === 'default' && <Check className="w-4 h-4 ml-auto" />}
+                                </DropdownMenuItem>
+                                {speakerDevices.map((device) => (
+                                    <DropdownMenuItem
+                                        key={device.deviceId}
+                                        onClick={() => setSpeakerDevice(device.deviceId)}
+                                        className={cn("cursor-pointer", selectedSpeakerId === device.deviceId && "bg-[#2A2A2A] text-blue-400")}
+                                    >
+                                        {device.label || `Speaker ${device.deviceId.slice(0, 5)}`}
+                                        {selectedSpeakerId === device.deviceId && <Check className="w-4 h-4 ml-auto" />}
+                                    </DropdownMenuItem>
+                                ))}
                             </DropdownMenuContent>
                         </DropdownMenu>
 
@@ -1993,8 +2129,23 @@ function ControlBar() {
                             </div>
                             <DropdownMenuContent className="bg-[#1A1A1A] border-[#333] text-gray-200">
                                 <DropdownMenuLabel>Select a Camera</DropdownMenuLabel>
-                                <DropdownMenuItem>Integrated Webcam</DropdownMenuItem>
-                                <DropdownMenuItem>OBS Virtual Camera</DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => setVideoDevice('default')}
+                                    className={cn("cursor-pointer", selectedVideoId === 'default' && "bg-[#2A2A2A] text-blue-400")}
+                                >
+                                    Default Camera
+                                    {selectedVideoId === 'default' && <Check className="w-4 h-4 ml-auto" />}
+                                </DropdownMenuItem>
+                                {videoDevices.map((device) => (
+                                    <DropdownMenuItem
+                                        key={device.deviceId}
+                                        onClick={() => setVideoDevice(device.deviceId)}
+                                        className={cn("cursor-pointer", selectedVideoId === device.deviceId && "bg-[#2A2A2A] text-blue-400")}
+                                    >
+                                        {device.label || `Camera ${device.deviceId.slice(0, 5)}`}
+                                        {selectedVideoId === device.deviceId && <Check className="w-4 h-4 ml-auto" />}
+                                    </DropdownMenuItem>
+                                ))}
                             </DropdownMenuContent>
                         </DropdownMenu>
 
@@ -2663,6 +2814,12 @@ function ControlButton({ icon: Icon, label, onClick, active, isActiveState, clas
 // and confirm no syntax errors remain.
 // I will not change anything significant, just force a save.
 export default function MeetingControls() {
+    const { enumerateDevices } = useMeetingStore();
+
+    useEffect(() => {
+        enumerateDevices();
+    }, [enumerateDevices]);
+
     return (
         <>
             <TopBar />

@@ -55,14 +55,15 @@ export function JoinMeeting() {
     // Use global store for media state
     const {
         localStream,
-
         setLocalStream,
         setMeeting,
         isAudioMuted,
         isVideoOff,
         toggleAudio,
         toggleVideo,
-        setMeetingJoined
+        setMeetingJoined,
+        selectedAudioId,
+        selectedVideoId
     } = useMeetingStore();
 
     const isMobile = useIsMobile();
@@ -90,12 +91,14 @@ export function JoinMeeting() {
                 if (!localStream || !localStream.active) {
                     const stream = await navigator.mediaDevices.getUserMedia({
                         video: {
+                            deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
                             width: { ideal: 1280 },
                             height: { ideal: 720 },
                             aspectRatio: { ideal: 16 / 9 },
                             facingMode: 'user'
                         },
                         audio: {
+                            deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
                             echoCancellation: true,
                             noiseSuppression: true,
                             autoGainControl: true
@@ -125,7 +128,6 @@ export function JoinMeeting() {
                     setPermissionDenied(true);
                 } else if (err.name === 'NotFoundError') {
                     console.error("No camera/microphone found.");
-                    // We could set a different state here if we wanted specific UI
                 }
                 setPermissionDenied(true);
             }

@@ -649,14 +649,17 @@ export default function MeetingRoom() {
 
           try {
             console.log("MeetingRoom: Initializing media stream...");
+            const { selectedAudioId, selectedVideoId, isAudioMuted, isVideoOff } = useMeetingStore.getState();
             const stream = await navigator.mediaDevices.getUserMedia({
               video: {
+                deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 aspectRatio: { ideal: 16 / 9 },
                 facingMode: 'user'
               },
               audio: {
+                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
