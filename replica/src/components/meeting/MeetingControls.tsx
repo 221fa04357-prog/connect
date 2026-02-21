@@ -1013,6 +1013,7 @@ function ControlBar() {
         isJoinedAsHost
 
     } = useMeetingStore();
+    const { unreadCount, localUserId, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
         participants,
@@ -1024,9 +1025,10 @@ function ControlBar() {
     } = useParticipantsStore();
 
     // Find current user participant
-    const currentUserId = user?.id;
+    const currentUserId = localUserId || user?.id;
     const currentParticipant = participants.find(p => p.id === currentUserId)
         || participants.find(p => p.id === `participant-${currentUserId}`)
+        || (user?.id ? (participants.find(p => p.id === user.id) || participants.find(p => p.id === `participant-${user.id}`)) : null)
         || participants[0];
 
     const currentRole = currentParticipant ? (transientRoles[currentParticipant.id] || currentParticipant.role) : 'participant';
@@ -1055,7 +1057,6 @@ function ControlBar() {
             setTimeout(() => yesButtonRef.current?.focus(), 100);
         }
     }, [showMicConfirm, showVideoConfirm]);
-    const { unreadCount, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle } = useChatStore();
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
@@ -1105,7 +1106,7 @@ function ControlBar() {
     const openWhiteboard = () => {
         if (!isWhiteboardOpen) {
             toggleWhiteboard();
-            if (meeting?.id && user?.id) emitWhiteboardToggle(meeting.id, true, user.id);
+            if (meeting?.id && currentUserId) emitWhiteboardToggle(meeting.id, true, currentUserId);
         }
     };
 
@@ -1114,8 +1115,8 @@ function ControlBar() {
             toggleWhiteboard(); // Always close locally
 
             // Only emit global toggle if current user is the initiator
-            if (meeting?.id && user?.id && user.id === whiteboardInitiatorId) {
-                emitWhiteboardToggle(meeting.id, false, user.id);
+            if (meeting?.id && currentUserId && currentUserId === whiteboardInitiatorId) {
+                emitWhiteboardToggle(meeting.id, false, currentUserId);
             }
         }
         setWhiteboardDrawing(false);
