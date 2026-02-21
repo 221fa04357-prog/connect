@@ -1,5 +1,5 @@
-const db = require('./db');
 require('dotenv').config();
+const db = require('./db');
 
 console.log(`Connecting to database: ${process.env.DB_NAME} as user: ${process.env.DB_USER}`);
 
@@ -62,6 +62,17 @@ async function setup() {
         subscription_plan VARCHAR(50) DEFAULT 'free',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS meeting_participants (
+        meeting_id VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'admitted',
+        mic_on BOOLEAN DEFAULT true,
+        camera_on BOOLEAN DEFAULT true,
+        joined_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (meeting_id, user_id)
       );
     `);
 

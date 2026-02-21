@@ -568,7 +568,10 @@ function TopBar() {
 // --- SettingsModal.tsx ---
 
 function SettingsModal() {
-    const { isSettingsOpen, toggleSettings } = useMeetingStore();
+    const { isSettingsOpen, toggleSettings, meeting, updateMeetingSettings, isJoinedAsHost } = useMeetingStore();
+    const { waitingRoomEnabled } = useParticipantsStore();
+    const { toggleWaitingRoom } = useChatStore();
+
     const [settings, setSettings] = useState({
         audioInput: 'default',
         audioOutput: 'default',
@@ -773,22 +776,73 @@ function SettingsModal() {
                                             </p>
                                         </div>
 
-                                        {useMeetingStore.getState().isJoinedAsHost && (
-                                            <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
-                                                <div className="space-y-0.5">
-                                                    <Label htmlFor="waitingRoom">Enable Waiting Room</Label>
-                                                    <p className="text-xs text-gray-500">New participants must be admitted by the host.</p>
+                                        {isJoinedAsHost && (
+                                            <div className="space-y-4 pt-2">
+                                                <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                                                    <div className="space-y-0.5">
+                                                        <Label htmlFor="waitingRoom">Enable Waiting Room</Label>
+                                                        <p className="text-xs text-gray-500">New participants must be admitted by the host.</p>
+                                                    </div>
+                                                    <Switch
+                                                        id="waitingRoom"
+                                                        checked={waitingRoomEnabled}
+                                                        onCheckedChange={(checked) => {
+                                                            if (meeting?.id) {
+                                                                toggleWaitingRoom(meeting.id, checked);
+                                                            }
+                                                        }}
+                                                    />
                                                 </div>
-                                                <Switch
-                                                    id="waitingRoom"
-                                                    checked={useParticipantsStore.getState().waitingRoomEnabled}
-                                                    onCheckedChange={(checked) => {
-                                                        const meetingId = useMeetingStore.getState().meeting?.id;
-                                                        if (meetingId) {
-                                                            useChatStore.getState().toggleWaitingRoom(meetingId, checked);
-                                                        }
-                                                    }}
-                                                />
+
+                                                <div className="p-4 bg-[#1C1C1C] rounded-lg border border-[#404040] space-y-4">
+                                                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Host Controls</h4>
+
+                                                    <div className="space-y-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Microphones</Label>
+                                                                <p className="text-xs text-gray-500">Participants can unmute themselves</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.micAllowed !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ micAllowed: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Cameras</Label>
+                                                                <p className="text-xs text-gray-500">Participants can start their video</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.cameraAllowed !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ cameraAllowed: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Screen Sharing</Label>
+                                                                <p className="text-xs text-gray-500">Participants can share their screen</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.screenShareAllowed !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ screenShareAllowed: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Chat</Label>
+                                                                <p className="text-xs text-gray-500">Participants can send messages</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.chatAllowed !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ chatAllowed: checked })}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 
@@ -1035,8 +1089,10 @@ function ControlBar() {
     const isHost = isJoinedAsHost || currentRole === 'host' || currentRole === 'co-host';
     const isHandRaised = !!currentParticipant?.isHandRaised;
 
-    const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host';
-    const videoAllowed = isHostOrCoHost || currentParticipant?.isVideoAllowed !== false;
+    const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host' || isJoinedAsHost;
+    const micAllowed = isHostOrCoHost || meeting?.settings?.micAllowed !== false;
+    const videoAllowed = isHostOrCoHost || meeting?.settings?.cameraAllowed !== false;
+    const screenShareAllowed = isHostOrCoHost || meeting?.settings?.screenShareAllowed !== false;
 
     // Toggle hand for self
     const handleToggleHand = () => {
@@ -1354,6 +1410,10 @@ function ControlBar() {
     };
 
     const handleAudioToggle = () => {
+        if (!micAllowed) {
+            import('sonner').then(({ toast }) => toast.error('Host has disabled microphones for participants.'));
+            return;
+        }
         setMicConfirm(true);
     };
 
@@ -1401,7 +1461,7 @@ function ControlBar() {
 
     const handleVideoToggle = () => {
         if (!videoAllowed) {
-            alert("The host has disabled video for participants.");
+            import('sonner').then(({ toast }) => toast.error("The host has disabled video for participants."));
             return;
         }
         setVideoConfirm(true);
@@ -1474,6 +1534,10 @@ function ControlBar() {
         if (isScreenSharing) {
             handleStopScreenShare();
         } else {
+            if (!screenShareAllowed) {
+                import('sonner').then(({ toast }) => toast.error('Host has disabled screen sharing for participants.'));
+                return;
+            }
             // Direct start - bypassing intermediate modal
             handleStartScreenShare();
         }
@@ -1853,10 +1917,15 @@ function ControlBar() {
                                     onClick={handleAudioToggle}
                                     className={cn(
                                         "flex flex-col items-center justify-center w-14 h-14 px-1 py-1 gap-1 outline-none",
-                                        isAudioMuted && "text-red-500"
+                                        isAudioMuted && "text-red-500",
+                                        !micAllowed && "opacity-50 cursor-not-allowed"
                                     )}
                                 >
-                                    {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                    {!micAllowed ? (
+                                        <Lock className="w-5 h-5 text-gray-500" />
+                                    ) : (
+                                        isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />
+                                    )}
                                     <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
                                         {isAudioMuted ? 'Unmute' : 'Mute'}
                                     </span>
@@ -1973,12 +2042,20 @@ function ControlBar() {
                         <DropdownMenu>
                             <div className="relative flex-none">
                                 <DropdownMenuTrigger asChild>
-                                    <div className="group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem]">
+                                    <div className={cn(
+                                        "group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem]",
+                                        !screenShareAllowed && "opacity-50 cursor-not-allowed"
+                                    )}
+                                        onClick={() => {
+                                            if (!screenShareAllowed) {
+                                                import('sonner').then(({ toast }) => toast.error('Host has disabled screen sharing.'));
+                                            }
+                                        }}>
                                         <div className={cn(
                                             "relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
                                             "hover:bg-[#333] text-gray-200"
                                         )}>
-                                            <Share2 className="w-5 h-5" strokeWidth={2} />
+                                            {!screenShareAllowed ? <Lock className="w-5 h-5 text-gray-500" /> : <Share2 className="w-5 h-5" strokeWidth={2} />}
                                             <div className="absolute top-0 right-0 -mr-1">
                                                 <ChevronUp className="w-3 h-3 text-gray-400 group-hover:text-white" />
                                             </div>
