@@ -106,7 +106,7 @@ interface MeetingState {
 
 export const useMeetingStore = create<MeetingState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       meeting: null,
 
       viewMode: 'gallery',
