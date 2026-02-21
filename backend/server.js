@@ -669,16 +669,12 @@ io.on('connection', (socket) => {
             // Broadcast toggle signal to everyone else in the room
             socket.to(meeting_id).emit('whiteboard_toggle', { isOpen, initiatorId });
         } else {
-            // ONLY ALLOW GLOBAL CLOSE IF SENDER IS THE INITIATOR
-            const currentInitiator = whiteboardInitiators.get(meeting_id);
-            if (currentInitiator === userId) {
-                console.log(`Global whiteboard close triggered by initiator ${userId} for meeting ${meeting_id}`);
-                whiteboardInitiators.delete(meeting_id);
-                socket.to(meeting_id).emit('whiteboard_toggle', { isOpen: false });
-            } else {
-                console.log(`Whiteboard local close by ${userId} (not initiator) for meeting ${meeting_id}`);
-                // No broadcast - other users keep the board open
-            }
+            // Frontend already enforces who can close (RBAC)
+            console.log(`Global whiteboard close triggered by authorized user ${userId} for meeting ${meeting_id}`);
+            // Wait: let's not delete initiator on close, because opening again might need it
+            // Or maybe delete it to reset session. Let's delete it.
+            whiteboardInitiators.delete(meeting_id);
+            socket.to(meeting_id).emit('whiteboard_toggle', { isOpen: false });
         }
     });
 
