@@ -41,7 +41,13 @@ export default function Settings() {
     hd: true,
     mirrorVideo: true,
     autoMute: false,
-    autoVideo: true
+    autoVideo: true,
+    waitingRoomEnabled: true,
+    micAllowed: true,
+    cameraAllowed: true,
+    screenShareAllowed: true,
+    chatAllowed: true,
+    viewMode: 'gallery'
   });
 
   const [loading, setLoading] = useState(false);
@@ -272,21 +278,87 @@ export default function Settings() {
               </div>
             </TabsContent>
 
-            {/* General Settings */}
             <TabsContent value="general" className="space-y-6">
               <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Meeting Preferences</h3>
+                <h3 className="font-semibold text-lg text-white">Meeting Preferences</h3>
 
                 <div className="space-y-4">
-                  <div className="p-4 bg-[#1C1C1C] rounded-lg">
+                  <div className="p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
                     <p className="text-sm text-gray-400">
                       These settings will be applied to all your meetings
                     </p>
                   </div>
 
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="waitingRoom">Enable Waiting Room</Label>
+                        <p className="text-xs text-gray-500">New participants must be admitted by the host.</p>
+                      </div>
+                      <Switch
+                        id="waitingRoom"
+                        checked={settings.waitingRoomEnabled}
+                        onCheckedChange={(checked) => setSettings({ ...settings, waitingRoomEnabled: checked })}
+                      />
+                    </div>
+
+                    <div className="p-4 bg-[#1C1C1C] rounded-lg border border-[#404040] space-y-4">
+                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Host Controls</h4>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label>Allow Microphones</Label>
+                            <p className="text-xs text-gray-500">Participants can unmute themselves</p>
+                          </div>
+                          <Switch
+                            checked={settings.micAllowed}
+                            onCheckedChange={(checked) => setSettings({ ...settings, micAllowed: checked })}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label>Allow Cameras</Label>
+                            <p className="text-xs text-gray-500">Participants can start their video</p>
+                          </div>
+                          <Switch
+                            checked={settings.cameraAllowed}
+                            onCheckedChange={(checked) => setSettings({ ...settings, cameraAllowed: checked })}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label>Allow Screen Sharing</Label>
+                            <p className="text-xs text-gray-500">Participants can share their screen</p>
+                          </div>
+                          <Switch
+                            checked={settings.screenShareAllowed}
+                            onCheckedChange={(checked) => setSettings({ ...settings, screenShareAllowed: checked })}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label>Allow Chat</Label>
+                            <p className="text-xs text-gray-500">Participants can send messages</p>
+                          </div>
+                          <Switch
+                            checked={settings.chatAllowed}
+                            onCheckedChange={(checked) => setSettings({ ...settings, chatAllowed: checked })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Default View Mode</Label>
-                    <Select defaultValue="gallery">
+                    <Select
+                      value={settings.viewMode}
+                      onValueChange={(value) => setSettings({ ...settings, viewMode: value })}
+                    >
                       <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
                         <SelectValue />
                       </SelectTrigger>
