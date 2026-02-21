@@ -30,6 +30,7 @@ interface MeetingState {
   isAudioMuted: boolean;
   isVideoOff: boolean;
   whiteboardStrokes: any[];
+  whiteboardAccessLevel: "HOST" | "HOST_COHOST" | "EVERYONE";
   hasHydrated: boolean;
 
   // ✅ Confirmation Modals (from main branch)
@@ -88,7 +89,7 @@ interface MeetingState {
   setScreenShareStream: (stream: MediaStream | null) => void;
   setRecordingStartTime: (time: number | null) => void;
   setWhiteboardEditAccess: (
-    access: 'hostOnly' | 'coHost' | 'everyone'
+    access: 'HOST' | 'HOST_COHOST' | 'EVERYONE'
   ) => void;
   addWhiteboardStroke: (stroke: any) => void;
   updateWhiteboardStroke: (id: string, points: [number, number][]) => void;
@@ -98,6 +99,7 @@ interface MeetingState {
   setWhiteboardStrokes: (strokes: any[]) => void;
   undoWhiteboardStroke: () => void;
   redoWhiteboardStroke: () => void;
+  setWhiteboardState: (state: { isOpen: boolean; accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => void;
   whiteboardRedoStack: any[];
   whiteboardInitiatorId: string | null;
   setWhiteboardInitiatorId: (id: string | null) => void;
@@ -137,10 +139,11 @@ export const useMeetingStore = create<MeetingState>()(
       recordingStartTime: null,
       showSelfView: true,
       localStream: null,
-      isAudioMuted: false,
+      isAudioMuted: true,
 
-      isVideoOff: false,
+      isVideoOff: true,
       whiteboardStrokes: [],
+      whiteboardAccessLevel: 'HOST',
       hasHydrated: false,
 
       showMicConfirm: false,
@@ -429,7 +432,7 @@ export const useMeetingStore = create<MeetingState>()(
         }
       },
 
-      setWhiteboardEditAccess: async (access) => {
+      setWhiteboardEditAccess: async (access: 'HOST' | 'HOST_COHOST' | 'EVERYONE') => {
         const state = useMeetingStore.getState();
         if (!state.meeting) return;
 
@@ -466,7 +469,7 @@ export const useMeetingStore = create<MeetingState>()(
           );
 
           // Emit to other clients
-          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
+          useChatStore.getState().emitWhiteboardAccessChange(m.id, access);
         } catch (err) {
           console.error('Error setting whiteboard access:', err);
         }
@@ -501,6 +504,10 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardRedoStack: state.whiteboardRedoStack.slice(0, -1),
           whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
         };
+      }),
+      setWhiteboardState: (state: { isOpen: boolean; accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => set({
+        isWhiteboardOpen: state.isOpen,
+        whiteboardAccessLevel: state.accessLevel
       }),
       checkParticipantStatus: async (meetingId, userId) => {
         try {
