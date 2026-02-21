@@ -100,12 +100,14 @@ interface MeetingState {
   setConnectionQuality: (
     quality: 'excellent' | 'good' | 'poor' | 'offline'
   ) => void;
+  checkParticipantStatus: (meetingId: string, userId: string) => Promise<'admitted' | 'waiting' | 'rejected' | 'not_found' | 'error'>;
+  updateMeetingSettings: (settings: Partial<any>) => void;
 }
 
 
 export const useMeetingStore = create<MeetingState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       meeting: null,
 
       viewMode: 'gallery',
@@ -343,6 +345,9 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardEditAccess: access,
         };
 
+        // Optimistic update
+        set({ meeting: { ...m, settings: nextSettings } });
+
         try {
           const response = await fetch(`${API}/api/meetings/${m.id}`, {
             method: 'PATCH',
@@ -365,6 +370,9 @@ export const useMeetingStore = create<MeetingState>()(
             { meeting: nextMeeting },
             { source: INSTANCE_ID }
           );
+
+          // Emit to other clients
+          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
         } catch (err) {
           console.error('Error setting whiteboard access:', err);
         }
@@ -400,6 +408,46 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
         };
       }),
+      checkParticipantStatus: async (meetingId, userId) => {
+        try {
+          const response = await fetch(`${API}/api/meetings/${meetingId}/participant-status`, {
+            headers: { 'x-user-id': userId }
+          });
+          if (!response.ok) throw new Error('Failed to fetch status');
+          const data = await response.json();
+          const status = data.status;
+
+          if (status === 'admitted') {
+            set({
+              isWaiting: false,
+              isAudioMuted: data.micOn !== undefined ? !data.micOn : get().isAudioMuted,
+              isVideoOff: data.cameraOn !== undefined ? !data.cameraOn : get().isVideoOff
+            });
+          } else if (status === 'waiting') {
+            set({ isWaiting: true });
+          } else if (status === 'rejected') {
+            // Handled by component if needed
+          }
+          return status;
+        } catch (err) {
+          console.error('Error checking participant status:', err);
+          return 'error';
+        }
+      },
+      updateMeetingSettings: (settings) => {
+        const state = get();
+        if (!state.meeting) return;
+
+        // Optimistically update local state
+        const updatedMeeting = {
+          ...state.meeting,
+          settings: { ...state.meeting.settings, ...settings }
+        };
+        set({ meeting: updatedMeeting });
+
+        // Emit to socket
+        useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
+      },
     }),
     {
       name: 'meeting-store',

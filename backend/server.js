@@ -106,6 +106,28 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+
+            CREATE TABLE IF NOT EXISTS meeting_participants (
+                meeting_id VARCHAR(255) NOT NULL,
+                user_id VARCHAR(255) NOT NULL,
+                status VARCHAR(50) NOT NULL DEFAULT 'admitted',
+                mic_on BOOLEAN DEFAULT true,
+                camera_on BOOLEAN DEFAULT true,
+                joined_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (meeting_id, user_id)
+            );
+
+            -- Ensure mic_on and camera_on exist
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_participants' AND column_name='mic_on') THEN
+                    ALTER TABLE meeting_participants ADD COLUMN mic_on BOOLEAN DEFAULT true;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_participants' AND column_name='camera_on') THEN
+                    ALTER TABLE meeting_participants ADD COLUMN camera_on BOOLEAN DEFAULT true;
+                END IF;
+            END $$;
         `);
         console.log('Database initialization successful: all tables ready.');
     } catch (err) {
@@ -198,36 +220,58 @@ io.on('connection', (socket) => {
                 const enableWaitingRoom = meetingSettings.enableWaitingRoom === true;
 
                 if (enableWaitingRoom && !isHost) {
-                    console.log(`User ${user?.name} placed in waiting room for meeting ${meetingId}`);
+                    const userId = user?.id || `guest-${socket.id}`;
 
-                    if (!waitingRooms.has(meetingId)) {
-                        waitingRooms.set(meetingId, new Map());
+                    // Check if already admitted/rejected in DB
+                    const participantCheck = await db.query(
+                        'SELECT status FROM meeting_participants WHERE meeting_id = $1 AND user_id = $2',
+                        [meetingId, userId]
+                    );
+
+                    const existingStatus = participantCheck.rows[0]?.status;
+
+                    if (existingStatus === 'admitted') {
+                        console.log(`User ${user?.name} (${userId}) already admitted to meeting ${meetingId}. Skipping waiting room.`);
+                        // Continue to join logic below
+                    } else if (existingStatus === 'rejected') {
+                        socket.emit('waiting_room_status', {
+                            status: 'rejected',
+                            message: 'The host has denied your entry.'
+                        });
+                        return;
+                    } else {
+                        // Not in DB or in 'waiting' state, place in memory waiting room
+                        console.log(`User ${user?.name} placed in waiting room for meeting ${meetingId}`);
+
+                        if (!waitingRooms.has(meetingId)) {
+                            waitingRooms.set(meetingId, new Map());
+                        }
+                        const waitingRoom = waitingRooms.get(meetingId);
+
+                        const participantData = {
+                            id: userId,
+                            name: user?.name || 'Guest',
+                            role: 'participant',
+                            socketId: socket.id,
+                            joinedAt: new Date(),
+                            isWaiting: true,
+                            isAudioMuted: initialState?.isAudioMuted ?? true,
+                            isVideoOff: initialState?.isVideoOff ?? true,
+                        };
+
+                        waitingRoom.set(socket.id, participantData);
+                        socket.join(meetingId); // Join the meeting room so host can see them, but they are in 'waiting' state
+
+                        socket.emit('waiting_room_status', {
+                            status: 'waiting',
+                            message: 'Wait for the host to let you in.'
+                        });
+
+                        // Notify host about the new waiting participant
+                        const waitingParticipants = Array.from(waitingRoom.values());
+                        io.to(meetingId).emit('waiting_room_update', waitingParticipants);
+                        return;
                     }
-                    const waitingRoom = waitingRooms.get(meetingId);
-
-                    const participantData = {
-                        id: user?.id || `guest-${socket.id}`,
-                        name: user?.name || 'Guest',
-                        role: 'participant',
-                        socketId: socket.id,
-                        joinedAt: new Date(),
-                        isWaiting: true,
-                        isAudioMuted: initialState?.isAudioMuted ?? true,
-                        isVideoOff: initialState?.isVideoOff ?? true,
-                    };
-
-                    waitingRoom.set(socket.id, participantData);
-                    socket.join(meetingId); // Join the meeting room so host can see them, but they are in 'waiting' state
-
-                    socket.emit('waiting_room_status', {
-                        status: 'waiting',
-                        message: 'Wait for the host to let you in.'
-                    });
-
-                    // Notify host about the new waiting participant
-                    const waitingParticipants = Array.from(waitingRoom.values());
-                    io.to(meetingId).emit('waiting_room_update', waitingParticipants);
-                    return;
                 }
             }
         } catch (err) {
@@ -270,6 +314,12 @@ io.on('connection', (socket) => {
 
         console.log(`User ${participantData.name} (${socket.id}) joined meeting: ${meetingId}`);
 
+        // Send current meeting settings to the user who just joined
+        if (meeting && meeting.settings) {
+            const currentSettings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : meeting.settings;
+            socket.emit('meeting_controls_updated', currentSettings);
+        }
+
         // Broadcast updated participant list to everyone in the room
         const roomParticipants = Array.from(room.values());
         io.to(meetingId).emit('participants_update', roomParticipants);
@@ -284,6 +334,14 @@ io.on('connection', (socket) => {
                 waitingRoom.delete(socket.id);
                 io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
             }
+        }
+
+        // Persist admission if not already there (for cases where WR is disabled)
+        if (meetingId && userId) {
+            db.query(
+                'INSERT INTO meeting_participants (meeting_id, user_id, status) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO NOTHING',
+                [meetingId, userId, 'admitted']
+            ).catch(err => console.error('Error persisting participant join:', err));
         }
     });
 
@@ -348,10 +406,68 @@ io.on('connection', (socket) => {
     });
 
     // --- State Sync ---
-    socket.on('update_participant', (data) => {
+    socket.on('update_participant', async (data) => {
         const { meeting_id, userId, updates } = data;
+
+        // Persist media state if provided
+        if (updates && (updates.isAudioMuted !== undefined || updates.isVideoOff !== undefined)) {
+            try {
+                const mic_on = updates.isAudioMuted !== undefined ? !updates.isAudioMuted : undefined;
+                const camera_on = updates.isVideoOff !== undefined ? !updates.isVideoOff : undefined;
+
+                let query = 'UPDATE meeting_participants SET updated_at = NOW()';
+                const params = [meeting_id, userId];
+                let paramCount = 3;
+
+                if (mic_on !== undefined) {
+                    query += `, mic_on = $${paramCount++}`;
+                    params.push(mic_on);
+                }
+                if (camera_on !== undefined) {
+                    query += `, camera_on = $${paramCount++}`;
+                    params.push(camera_on);
+                }
+
+                query += ' WHERE meeting_id = $1 AND user_id = $2';
+                await db.query(query, params);
+            } catch (err) {
+                console.error('Error persisting participant media state:', err);
+            }
+        }
+
+        // Update in-memory room state
+        const room = rooms.get(meeting_id);
+        if (room) {
+            for (const [sId, p] of room.entries()) {
+                if (p.id === userId) {
+                    room.set(sId, { ...p, ...updates });
+                    break;
+                }
+            }
+        }
+
         // Broadcast the update to everyone else
         socket.to(meeting_id).emit('participant_updated', { userId, updates });
+    });
+
+    socket.on('update_meeting_settings', async (data) => {
+        const { meetingId, settings } = data;
+        try {
+            // Update meeting settings in DB
+            const currentRes = await db.query('SELECT settings FROM meetings WHERE id = $1', [meetingId]);
+            if (currentRes.rows.length > 0) {
+                const currentSettings = typeof currentRes.rows[0].settings === 'string' ? JSON.parse(currentRes.rows[0].settings) : (currentRes.rows[0].settings || {});
+                const newSettings = { ...currentSettings, ...settings };
+
+                await db.query('UPDATE meetings SET settings = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(newSettings), meetingId]);
+
+                // Broadcast setting change to everyone in the room
+                io.to(meetingId).emit('meeting_controls_updated', newSettings);
+                console.log(`Meeting settings updated for ${meetingId}:`, newSettings);
+            }
+        } catch (err) {
+            console.error('Error updating meeting settings:', err);
+        }
     });
 
     socket.on('send_reaction', (data) => {
@@ -402,6 +518,12 @@ io.on('connection', (socket) => {
 
             room.set(socketId, participantData);
 
+            // Persist to DB
+            db.query(
+                'INSERT INTO meeting_participants (meeting_id, user_id, status) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()',
+                [meetingId, p.id, 'admitted']
+            ).catch(err => console.error('Error persisting participant admission:', err));
+
             // Notify the admitted user
             io.to(socketId).emit('waiting_room_status', { status: 'admitted' });
 
@@ -420,6 +542,12 @@ io.on('connection', (socket) => {
         if (waitingRoom && waitingRoom.has(socketId)) {
             const p = waitingRoom.get(socketId);
             waitingRoom.delete(socketId);
+
+            // Persist rejection to DB
+            db.query(
+                'INSERT INTO meeting_participants (meeting_id, user_id, status) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()',
+                [meetingId, p.id, 'rejected']
+            ).catch(err => console.error('Error persisting participant rejection:', err));
 
             // Notify the rejected user
             io.to(socketId).emit('waiting_room_status', { status: 'rejected', message: 'The host has denied your entry.' });
@@ -458,6 +586,13 @@ io.on('connection', (socket) => {
                                 joinedAt: new Date()
                             };
                             room.set(sId, participantData);
+
+                            // Persist to DB
+                            db.query(
+                                'INSERT INTO meeting_participants (meeting_id, user_id, status) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()',
+                                [meetingId, p.id, 'admitted']
+                            ).catch(err => console.error('Error persisting participant admission (WR disabled):', err));
+
                             io.to(sId).emit('waiting_room_status', { status: 'admitted' });
                         });
 
@@ -514,6 +649,12 @@ io.on('connection', (socket) => {
         const { meeting_id } = data;
         // Broadcast redo signal to everyone else in the room
         socket.to(meeting_id).emit('whiteboard_redo');
+    });
+
+    socket.on('whiteboard_access_update', (data) => {
+        const { meeting_id, access } = data;
+        // Broadcast access change to everyone in the room
+        io.to(meeting_id).emit('whiteboard_access_updated', { access });
     });
 
     socket.on('whiteboard_toggle', (data) => {
@@ -948,6 +1089,36 @@ app.patch('/api/meetings/:id', async (req, res) => {
     } catch (err) {
         console.error('Error updating meeting:', err);
         res.status(500).json({ error: 'Failed to update meeting' });
+    }
+});
+
+app.get('/api/meetings/:id/participant-status', async (req, res) => {
+    const { id: meetingId } = req.params;
+    const userId = req.headers['x-user-id'];
+
+    if (!userId) {
+        return res.status(401).json({ error: 'User ID is required' });
+    }
+
+    try {
+        const result = await db.query(
+            'SELECT status, mic_on, camera_on FROM meeting_participants WHERE meeting_id = $1 AND user_id = $2',
+            [meetingId, userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({ status: 'not_found' });
+        }
+
+        const row = result.rows[0];
+        res.json({
+            status: row.status,
+            micOn: row.mic_on,
+            cameraOn: row.camera_on
+        });
+    } catch (err) {
+        console.error('Error checking participant status:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

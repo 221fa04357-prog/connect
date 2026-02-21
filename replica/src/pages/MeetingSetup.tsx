@@ -132,6 +132,35 @@ export function JoinMeeting() {
         };
         initCamera();
 
+        // Check if already admitted to skip preview/join
+        if (paramMeetingId) {
+            const guestId = useGuestSessionStore.getState().guestId;
+            const userId = user?.id || guestId || useChatStore.getState().localUserId;
+            if (userId) {
+                useMeetingStore.getState().checkParticipantStatus(paramMeetingId, userId).then(status => {
+                    if (status === 'admitted') {
+                        // Re-initialize meeting state and navigate
+                        fetch(`${API}/api/meetings/${paramMeetingId}`).then(res => res.json()).then(meetingData => {
+                            const startTimeStamp = meetingData.start_timestamp
+                                ? Number(meetingData.start_timestamp)
+                                : new Date(meetingData.start_time).getTime();
+
+                            useMeetingStore.getState().setMeeting({
+                                ...meetingData,
+                                startTime: new Date(startTimeStamp),
+                                hostId: meetingData.host_id,
+                                isRecording: false,
+                                isScreenSharing: false,
+                                viewMode: 'gallery'
+                            });
+                            useMeetingStore.getState().setMeetingJoined(true);
+                            navigate('/meeting');
+                        });
+                    }
+                });
+            }
+        }
+
         // Cleanup: Stop tracks when leaving the preview, UNLESS we are joining the meeting
         return () => {
             if (!isJoiningRef.current) {
@@ -300,7 +329,7 @@ export function JoinMeeting() {
 
             // Create participant for guest
             if (!isAuthenticated && guestSessionActive) {
-                const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
+                const guestId = useGuestSessionStore.getState().guestId || `guest-${Math.random().toString(36).substr(2, 9)}`;
                 addParticipant({
                     id: guestId,
                     name: name || 'Guest',
@@ -320,12 +349,13 @@ export function JoinMeeting() {
             if (isAuthenticated || guestSessionActive) {
                 // Initialize socket before navigating to handle waiting room
                 const isHost = !!(user?.id && (user.id === meetingData.host_id || user.id === 'host'));
+                const guestId = useGuestSessionStore.getState().guestId || `guest-${Math.random().toString(36).substr(2, 9)}`;
                 const identity = user ? {
                     id: user.id,
                     name: user.name || 'Anonymous',
                     role: isHost ? 'host' : 'participant'
                 } : {
-                    id: `guest-${Math.random().toString(36).substr(2, 9)}`,
+                    id: guestId,
                     name: name || 'Guest',
                     role: isHost ? 'host' : 'participant'
                 };
