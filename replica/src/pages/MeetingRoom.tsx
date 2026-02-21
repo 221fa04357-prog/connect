@@ -53,6 +53,8 @@ export default function MeetingRoom() {
   const ignoreOfferRef = useRef<Record<string, boolean>>({});
   const isSettingRemoteAnswerPending = useRef<Record<string, boolean>>({});
   const screenShareSendersRef = useRef<Record<string, RTCRtpSender[]>>({}); // socketId -> senders[]
+  const negotiationTimeoutRef = useRef<Record<string, any>>({});
+  const lastScreenShareIdRef = useRef<string | null>(null);
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
@@ -69,23 +71,30 @@ export default function MeetingRoom() {
       ]
     });
 
-    pc.onnegotiationneeded = async () => {
-      try {
-        // Only initiate if state is stable to avoid transition errors
-        if (pc.signalingState !== 'stable') return;
-        makingOfferRef.current[participantSocketId] = true;
-        await pc.setLocalDescription();
-        console.log(`Sending OFFER to ${participantSocketId}`);
-        useChatStore.getState().socket?.emit('signal_send', {
-          to: participantSocketId,
-          from: useChatStore.getState().socket?.id,
-          signal: pc.localDescription
-        });
-      } catch (err) {
-        console.error("Negotiation error:", err);
-      } finally {
-        makingOfferRef.current[participantSocketId] = false;
+    pc.onnegotiationneeded = () => {
+      // Debounce negotiation to avoid flood of offers during track changes
+      if (negotiationTimeoutRef.current[participantSocketId]) {
+        clearTimeout(negotiationTimeoutRef.current[participantSocketId]);
       }
+
+      negotiationTimeoutRef.current[participantSocketId] = setTimeout(async () => {
+        try {
+          // Only initiate if state is stable to avoid transition errors
+          if (pc.signalingState !== 'stable') return;
+          makingOfferRef.current[participantSocketId] = true;
+          await pc.setLocalDescription();
+          console.log(`Sending OFFER to ${participantSocketId}`);
+          useChatStore.getState().socket?.emit('signal_send', {
+            to: participantSocketId,
+            from: useChatStore.getState().socket?.id,
+            signal: pc.localDescription
+          });
+        } catch (err) {
+          console.error("Negotiation error:", err);
+        } finally {
+          makingOfferRef.current[participantSocketId] = false;
+        }
+      }, 100);
     };
 
     pc.onicecandidate = (event) => {
@@ -335,8 +344,14 @@ export default function MeetingRoom() {
 
   // SCREEN SHARE TRACK UPDATE: Add/Remove screen share tracks when screenShareStream changes
   useEffect(() => {
+    // Only update if the stream reference actually changed or was removed
+    const currentStreamId = screenShareStream?.id || null;
+    if (currentStreamId === lastScreenShareIdRef.current) return;
+
+    lastScreenShareIdRef.current = currentStreamId;
+
     Object.entries(peerConnections.current).forEach(([socketId, pc]) => {
-      // 1. Remove existing screen share tracks if they are no longer needed or changed
+      // 1. Remove existing screen share tracks
       const existingSenders = screenShareSendersRef.current[socketId] || [];
       existingSenders.forEach(sender => {
         try {
@@ -361,9 +376,12 @@ export default function MeetingRoom() {
 
     // Cleanup logic: If we stopped sharing, ensure we also broadcast it
     if (!screenShareStream && isJoinedAsHost) {
-      // Double check if we need to explicitly stop tracks elsewhere
+      // Broadcast that we stopped sharing to ensure others clear their UI
+      if (meeting?.id && user?.id) {
+        emitParticipantUpdate(meeting.id, user.id, { isScreenSharing: false, screenShareStreamId: null });
+      }
     }
-  }, [screenShareStream]);
+  }, [screenShareStream, meeting?.id, user?.id, isJoinedAsHost, emitParticipantUpdate]);
 
   // RESYNC SCREEN SHARE STREAMS: Handle cases where track arrives before metadata (socket update)
   useEffect(() => {

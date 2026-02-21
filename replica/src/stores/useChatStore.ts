@@ -25,6 +25,8 @@ interface ChatState {
   emitWhiteboardDraw: (meetingId: string, stroke: any) => void;
   emitWhiteboardClear: (meetingId: string) => void;
   emitWhiteboardToggle: (meetingId: string, isOpen: boolean, userId: string) => void;
+  emitWhiteboardUndo: (meetingId: string) => void;
+  emitWhiteboardRedo: (meetingId: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -255,7 +257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('whiteboard_draw', (data: { type: 'start' | 'update' | 'erase', stroke?: any, id?: string, points?: [number, number][], initiatorId?: string }) => {
+    socket.on('whiteboard_draw', (data: { type: 'start' | 'update' | 'erase' | 'append', stroke?: any, id?: string, points?: [number, number][], initiatorId?: string }) => {
       import('./useMeetingStore').then((meetingStore) => {
         const ms = meetingStore.useMeetingStore.getState();
         if (data.initiatorId) {
@@ -273,6 +275,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (!ms.isWhiteboardOpen) {
             ms.toggleWhiteboard();
           }
+        } else if (data.type === 'append' && data.id && data.points) {
+          ms.appendWhiteboardPoints(data.id, data.points);
         } else if (data.type === 'erase' && data.id) {
           ms.removeWhiteboardStroke(data.id);
         }
@@ -296,6 +300,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         } else if (!data.isOpen && ms.isWhiteboardOpen) {
           ms.toggleWhiteboard();
         }
+      });
+    });
+
+    socket.on('whiteboard_undo', () => {
+      import('./useMeetingStore').then((meetingStore) => {
+        meetingStore.useMeetingStore.getState().undoWhiteboardStroke();
+      });
+    });
+
+    socket.on('whiteboard_redo', () => {
+      import('./useMeetingStore').then((meetingStore) => {
+        meetingStore.useMeetingStore.getState().redoWhiteboardStroke();
       });
     });
 
@@ -475,6 +491,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   emitWhiteboardToggle: (meetingId, isOpen, userId) => {
     get().socket?.emit('whiteboard_toggle', { meeting_id: meetingId, isOpen, userId });
+  },
+
+  emitWhiteboardUndo: (meetingId) => {
+    get().socket?.emit('whiteboard_undo', { meeting_id: meetingId });
+  },
+
+  emitWhiteboardRedo: (meetingId) => {
+    get().socket?.emit('whiteboard_redo', { meeting_id: meetingId });
   },
 
   muteAll: (meetingId) => {

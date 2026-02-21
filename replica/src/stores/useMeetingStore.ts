@@ -82,9 +82,13 @@ interface MeetingState {
   ) => void;
   addWhiteboardStroke: (stroke: any) => void;
   updateWhiteboardStroke: (id: string, points: [number, number][]) => void;
+  appendWhiteboardPoints: (id: string, newPoints: [number, number][]) => void;
   removeWhiteboardStroke: (id: string) => void;
   clearWhiteboardStrokes: () => void;
   setWhiteboardStrokes: (strokes: any[]) => void;
+  undoWhiteboardStroke: () => void;
+  redoWhiteboardStroke: () => void;
+  whiteboardRedoStack: any[];
   whiteboardInitiatorId: string | null;
   setWhiteboardInitiatorId: (id: string | null) => void;
 
@@ -142,6 +146,7 @@ export const useMeetingStore = create<MeetingState>()(
       setIsWaiting: (isWaiting) => set({ isWaiting }),
       whiteboardInitiatorId: null,
       setWhiteboardInitiatorId: (id) => set({ whiteboardInitiatorId: id }),
+      whiteboardRedoStack: [],
 
       connectionQuality: 'excellent',
 
@@ -362,16 +367,36 @@ export const useMeetingStore = create<MeetingState>()(
         }
       },
       addWhiteboardStroke: (stroke) => set((state) => ({
-        whiteboardStrokes: [...state.whiteboardStrokes, stroke]
+        whiteboardStrokes: [...state.whiteboardStrokes, stroke],
+        whiteboardRedoStack: [] // Clear redo history when drawing something new
       })),
       updateWhiteboardStroke: (id, points) => set((state) => ({
         whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
       })),
+      appendWhiteboardPoints: (id, newPoints) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points: [...(s.points || []), ...newPoints] } : s)
+      })),
       removeWhiteboardStroke: (id) => set((state) => ({
         whiteboardStrokes: state.whiteboardStrokes.filter(s => s.id !== id)
       })),
-      clearWhiteboardStrokes: () => set({ whiteboardStrokes: [] }),
+      clearWhiteboardStrokes: () => set({ whiteboardStrokes: [], whiteboardRedoStack: [] }),
       setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
+      undoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardStrokes.length === 0) return state;
+        const lastStroke = state.whiteboardStrokes[state.whiteboardStrokes.length - 1];
+        return {
+          whiteboardStrokes: state.whiteboardStrokes.slice(0, -1),
+          whiteboardRedoStack: [...state.whiteboardRedoStack, lastStroke]
+        };
+      }),
+      redoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardRedoStack.length === 0) return state;
+        const lastUndoneStroke = state.whiteboardRedoStack[state.whiteboardRedoStack.length - 1];
+        return {
+          whiteboardRedoStack: state.whiteboardRedoStack.slice(0, -1),
+          whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
+        };
+      }),
     }),
     {
       name: 'meeting-store',

@@ -7,7 +7,8 @@ import {
     Video, Mic, Monitor, Keyboard, X,
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
-    Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2
+    Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
+    Undo, Redo, Download
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -999,6 +1000,9 @@ function ControlBar() {
         setWhiteboardStrokes,
         removeWhiteboardStroke,
         whiteboardInitiatorId,
+        undoWhiteboardStroke,
+        redoWhiteboardStroke,
+        whiteboardRedoStack,
 
         // Mic & Video Confirm
         showMicConfirm,
@@ -1083,6 +1087,10 @@ function ControlBar() {
     const [canvasDims, setCanvasDims] = useState({ w: 0, h: 0 });
     const isMobile = useIsMobile();
 
+    // Optimization Refs
+    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastEmittedPointIndexRef = useRef<Record<string, number>>({});
+
     // Chat Badge Logic
     const displayUnreadCount = !isChatOpen ? (unreadCount > 99 ? '99+' : unreadCount) : 0;
 
@@ -1126,6 +1134,63 @@ function ControlBar() {
         }
     };
 
+    const handleUndo = () => {
+        if (!canEditWhiteboard) return;
+        undoWhiteboardStroke();
+        if (meeting?.id) {
+            useChatStore.getState().emitWhiteboardUndo(meeting.id);
+        }
+    };
+
+    const handleRedo = () => {
+        if (!canEditWhiteboard) return;
+        redoWhiteboardStroke();
+        if (meeting?.id) {
+            useChatStore.getState().emitWhiteboardRedo(meeting.id);
+        }
+    };
+
+    const handleExportImage = () => {
+        if (!canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        if (!tempCtx) return;
+
+        // Fill with white background
+        tempCtx.fillStyle = '#FFFFFF';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+        // Draw the current canvas over it
+        tempCtx.drawImage(canvas, 0, 0);
+
+        // Download
+        const link = document.createElement('a');
+        link.download = `whiteboard-${Date.now()}.png`;
+        link.href = tempCanvas.toDataURL('image/png');
+        link.click();
+    };
+
+    // Keyboard shortcuts for Undo/Redo
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!isWhiteboardOpen) return;
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'z') {
+                    e.preventDefault();
+                    handleUndo();
+                } else if (e.key === 'y' || (e.key === 'Z' && e.shiftKey)) {
+                    e.preventDefault();
+                    handleRedo();
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isWhiteboardOpen, whiteboardStrokes, whiteboardRedoStack]); // Dependencies to ensure handlers have fresh state
+
     // Drawing logic (frontend only, no backend)
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!canEditWhiteboard) return;
@@ -1138,6 +1203,7 @@ function ControlBar() {
             setCurrentStrokeId(strokeId);
             const newStroke = { id: strokeId, points: [[x, y]], color: whiteboardColor, size: whiteboardSize, tool: 'pen' };
             addWhiteboardStroke(newStroke);
+            lastEmittedPointIndexRef.current[strokeId] = 0; // Reset emitted index
             if (meeting?.id) emitWhiteboardDraw(meeting.id, { type: 'start', stroke: newStroke });
         } else if (whiteboardTool === 'eraser') {
             setEraserPath([[x, y]]);
@@ -1154,7 +1220,28 @@ function ControlBar() {
             if (stroke) {
                 const newPoints = [...stroke.points, [x, y]];
                 updateWhiteboardStroke(currentStrokeId, newPoints);
-                if (meeting?.id) emitWhiteboardDraw(meeting.id, { type: 'update', id: currentStrokeId, points: newPoints });
+
+                // Throttled and Incremental Emission
+                if (!throttleTimeoutRef.current) {
+                    throttleTimeoutRef.current = setTimeout(() => {
+                        throttleTimeoutRef.current = null;
+                        if (meeting?.id) {
+                            const currentStroke = useMeetingStore.getState().whiteboardStrokes.find(s => s.id === currentStrokeId);
+                            if (currentStroke) {
+                                const lastIndex = lastEmittedPointIndexRef.current[currentStrokeId] || 0;
+                                const deltaPoints = currentStroke.points.slice(lastIndex + 1);
+                                if (deltaPoints.length > 0) {
+                                    emitWhiteboardDraw(meeting.id, {
+                                        type: 'append',
+                                        id: currentStrokeId,
+                                        points: deltaPoints
+                                    });
+                                    lastEmittedPointIndexRef.current[currentStrokeId] = currentStroke.points.length - 1;
+                                }
+                            }
+                        }
+                    }, 50); // Emit every 50ms
+                }
             }
         } else if (whiteboardTool === 'eraser') {
             setEraserPath((prev) => [...prev, [x, y]]);
@@ -2181,6 +2268,45 @@ function ControlBar() {
                                                     {[2, 4, 8, 12, 16].map(s => <option key={s} value={s}>{s}px</option>)}
                                                 </select>
                                             </div>
+                                            <div className="w-px h-6 bg-gray-200 flex-none" />
+
+                                            {/* Undo / Redo */}
+                                            <div className="flex items-center gap-1 flex-none">
+                                                <button
+                                                    onClick={handleUndo}
+                                                    disabled={whiteboardStrokes.length === 0}
+                                                    className={cn(
+                                                        "p-2 rounded-lg transition-colors",
+                                                        whiteboardStrokes.length === 0 ? "text-gray-300 pointer-events-none" : "text-gray-600 hover:bg-gray-100"
+                                                    )}
+                                                    title="Undo (Ctrl+Z)"
+                                                >
+                                                    <Undo className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    onClick={handleRedo}
+                                                    disabled={whiteboardRedoStack.length === 0}
+                                                    className={cn(
+                                                        "p-2 rounded-lg transition-colors",
+                                                        whiteboardRedoStack.length === 0 ? "text-gray-300 pointer-events-none" : "text-gray-600 hover:bg-gray-100"
+                                                    )}
+                                                    title="Redo (Ctrl+Y)"
+                                                >
+                                                    <Redo className="w-5 h-5" />
+                                                </button>
+                                            </div>
+
+                                            <div className="w-px h-6 bg-gray-200 flex-none" />
+
+                                            {/* Export */}
+                                            <button
+                                                onClick={handleExportImage}
+                                                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-none"
+                                                title="Save as Image"
+                                            >
+                                                <Download className="w-5 h-5" />
+                                            </button>
+
                                             <div className="w-px h-6 bg-gray-200 flex-none" />
                                             <button
                                                 type="button"

@@ -504,6 +504,18 @@ io.on('connection', (socket) => {
         socket.to(meeting_id).emit('whiteboard_clear');
     });
 
+    socket.on('whiteboard_undo', (data) => {
+        const { meeting_id } = data;
+        // Broadcast undo signal to everyone else in the room
+        socket.to(meeting_id).emit('whiteboard_undo');
+    });
+
+    socket.on('whiteboard_redo', (data) => {
+        const { meeting_id } = data;
+        // Broadcast redo signal to everyone else in the room
+        socket.to(meeting_id).emit('whiteboard_redo');
+    });
+
     socket.on('whiteboard_toggle', (data) => {
         const { meeting_id, isOpen, userId } = data;
 
