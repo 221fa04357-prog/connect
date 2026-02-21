@@ -340,6 +340,9 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardEditAccess: access,
         };
 
+        // Optimistic update
+        set({ meeting: { ...m, settings: nextSettings } });
+
         try {
           const response = await fetch(`${API}/api/meetings/${m.id}`, {
             method: 'PATCH',

@@ -460,7 +460,7 @@ function TopBar() {
                 )}
 
                 {/* Timer */}
-                {timeLeft && (
+                {timeLeft && !isWhiteboardOpen && (
                     <div className={cn(
                         "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
                         (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
