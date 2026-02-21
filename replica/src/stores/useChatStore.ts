@@ -281,13 +281,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ms.addWhiteboardStroke(data.stroke);
           // Auto-open board when drawing starts for others
           if (!ms.isWhiteboardOpen) {
-            ms.toggleWhiteboard();
+            ms.setWhiteboardOpen(true);
           }
         } else if (data.type === 'update' && data.id && data.points) {
           ms.updateWhiteboardStroke(data.id, data.points);
           // Auto-open if board is closed but drawing is happening (just in case)
           if (!ms.isWhiteboardOpen) {
-            ms.toggleWhiteboard();
+            ms.setWhiteboardOpen(true);
           }
         } else if (data.type === 'append' && data.id && data.points) {
           ms.appendWhiteboardPoints(data.id, data.points);

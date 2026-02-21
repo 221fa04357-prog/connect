@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'; // Re-trigger IDE
+import { createPortal } from 'react-dom';
 
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1296,6 +1297,15 @@ function ControlBar() {
         setWhiteboardDrawing(false);
         setEraserPath([]);
     };
+
+    // Non-editors can "hide" their local view without closing for everyone
+    const hideWhiteboardLocally = () => {
+        if (isWhiteboardOpen) {
+            toggleWhiteboard();
+        }
+        setWhiteboardDrawing(false);
+        setEraserPath([]);
+    };
     const clearWhiteboard = () => {
         if (!canEditWhiteboard) return;
         clearWhiteboardStrokes();
@@ -1310,18 +1320,45 @@ function ControlBar() {
     };
 
     const handleUndo = () => {
-        if (!canEditWhiteboard) return;
+        if (!canEditWhiteboard || whiteboardStrokes.length === 0) return;
         undoWhiteboardStroke();
         if (meeting?.id) {
-            useChatStore.getState().emitWhiteboardUndo(meeting.id);
+            useChatStore.getState().socket?.emit('whiteboard_undo', { meeting_id: meeting.id });
         }
     };
+
+    // --- ENFORCE WHITEBOARD VISIBILITY SYNC ---
+    // Sometimes store mutation from socket events (in useChatStore) might not trigger re-renders
+    // if the state falls out of sync. This direct listener guarantees the overlay shows up.
+    useEffect(() => {
+        const socket = useChatStore.getState().socket;
+        if (!socket) return;
+
+        const handleToggle = (data: { isOpen: boolean, initiatorId?: string }) => {
+            console.log("MeetingControls: Received socket whiteboard_toggle", data);
+            setWhiteboardOpen(data.isOpen);
+        };
+
+        const handleDraw = (data: any) => {
+            if (data.type === 'start' || data.type === 'update') {
+                if (!isWhiteboardOpen) setWhiteboardOpen(true);
+            }
+        };
+
+        socket.on('whiteboard_toggle', handleToggle);
+        socket.on('whiteboard_draw', handleDraw);
+
+        return () => {
+            socket.off('whiteboard_toggle', handleToggle);
+            socket.off('whiteboard_draw', handleDraw);
+        };
+    }, [isWhiteboardOpen, setWhiteboardOpen]);
 
     const handleRedo = () => {
         if (!canEditWhiteboard) return;
         redoWhiteboardStroke();
         if (meeting?.id) {
-            useChatStore.getState().emitWhiteboardRedo(meeting.id);
+            useChatStore.getState().socket?.emit('whiteboard_redo', { meeting_id: meeting.id });
         }
     };
 
@@ -2350,9 +2387,9 @@ function ControlBar() {
                             </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {/* Whiteboard Overlay (must be outside DropdownMenuContent) */}
-                        {isWhiteboardOpen && (
-                            <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
+                        {/* Whiteboard Overlay — rendered via portal to document.body to escape stacking context */}
+                        {isWhiteboardOpen && createPortal(
+                            <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white">
                                 {/* Controls overlay: ensure z-index and pointer-events */}
                                 <div className={cn(
                                     "absolute top-0 left-0 w-full flex items-center justify-between z-[102] bg-white border-b px-6 py-4",
@@ -2452,14 +2489,33 @@ function ControlBar() {
                                             </DropdownMenuContent>
                                         </DropdownMenu>
 
-                                        {/* Close Button */}
-                                        <button
-                                            type="button"
-                                            onClick={() => { closeWhiteboard(); }}
-                                            className="text-gray-500 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
-                                        >
-                                            <X className="w-6 h-6" />
-                                        </button>
+                                        {/* View-only badge for non-editors */}
+                                        {!canEditWhiteboard && (
+                                            <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 px-2 py-1 rounded-full font-medium">
+                                                View only
+                                            </span>
+                                        )}
+
+                                        {/* Close Button — global close for editors, local hide for viewers */}
+                                        {canCloseWhiteboardForAll ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => { closeWhiteboard(); }}
+                                                className="text-gray-500 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
+                                                title="Close whiteboard for everyone"
+                                            >
+                                                <X className="w-6 h-6" />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => { hideWhiteboardLocally(); }}
+                                                className="text-gray-400 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors z-[110] relative"
+                                                title="Hide whiteboard (local only)"
+                                            >
+                                                <X className="w-6 h-6" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -2588,7 +2644,7 @@ function ControlBar() {
                                     onPointerLeave={handlePointerUp}
                                 />
                             </div>
-                        )}
+                            , document.body)}
 
                     </div>
 
