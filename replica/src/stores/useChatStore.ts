@@ -22,14 +22,12 @@ interface ChatState {
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
   emitReaction: (meetingId: string, reaction: any) => void;
-  emitWhiteboardDraw: (meeting_id: string, stroke: any) => void;
-  emitWhiteboardErase: (meeting_id: string, id: string) => void;
-  emitWhiteboardClear: (meeting_id: string) => void;
-  emitWhiteboardOpen: (meeting_id: string, accessLevel: string) => void;
-  emitWhiteboardClose: (meeting_id: string) => void;
-  emitWhiteboardAccessChange: (meeting_id: string, accessLevel: string) => void;
-  emitWhiteboardUndo: (meeting_id: string) => void;
-  emitWhiteboardRedo: (meeting_id: string) => void;
+  emitWhiteboardDraw: (meetingId: string, stroke: any) => void;
+  emitWhiteboardClear: (meetingId: string) => void;
+  emitWhiteboardToggle: (meetingId: string, isOpen: boolean, userId: string) => void;
+  emitWhiteboardUndo: (meetingId: string) => void;
+  emitWhiteboardRedo: (meetingId: string) => void;
+  emitWhiteboardAccessUpdate: (meetingId: string, access: string) => void;
   muteAll: (meetingId: string) => void;
   unmuteAll: (meetingId: string) => void;
   stopVideoAll: (meetingId: string) => void;
@@ -303,45 +301,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('WHITEBOARD_STATE_SYNC', (state: { isOpen: boolean, accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().setWhiteboardState(state);
-      });
-    });
-
-    socket.on('WHITEBOARD_OPEN', (state: { isOpen: boolean, accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().setWhiteboardState(state);
-      });
-    });
-
-    socket.on('WHITEBOARD_CLOSE', (state: { isOpen: boolean, accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().setWhiteboardState(state);
-      });
-    });
-
-    socket.on('WHITEBOARD_ACCESS_CHANGE', (state: { isOpen: boolean, accessLevel: "HOST" | "HOST_COHOST" | "EVERYONE" }) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().setWhiteboardState(state);
-      });
-    });
-
-    socket.on('WHITEBOARD_DRAW', (stroke: any) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().addWhiteboardStroke(stroke);
-      });
-    });
-
-    socket.on('WHITEBOARD_ERASE', (data: { id: string }) => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().removeWhiteboardStroke(data.id);
-      });
-    });
-
-    socket.on('WHITEBOARD_CLEAR', () => {
-      import('./useMeetingStore').then((store) => {
-        store.useMeetingStore.getState().clearWhiteboardStrokes();
+    socket.on('whiteboard_toggle', (data: { isOpen: boolean, initiatorId?: string }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (data.initiatorId !== undefined) {
+          ms.setWhiteboardInitiatorId(data.initiatorId);
+        }
+        // Use absolute set to avoid inversion race with sessionStorage
+        ms.setWhiteboardOpen(data.isOpen);
       });
     });
 
@@ -354,6 +321,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('whiteboard_redo', () => {
       import('./useMeetingStore').then((meetingStore) => {
         meetingStore.useMeetingStore.getState().redoWhiteboardStroke();
+      });
+    });
+
+    socket.on('whiteboard_access_updated', (data: { access: string }) => {
+      import('./useMeetingStore').then((meetingStore) => {
+        const ms = meetingStore.useMeetingStore.getState();
+        if (ms.meeting) {
+          const nextMeeting = {
+            ...ms.meeting,
+            settings: {
+              ...ms.meeting.settings,
+              whiteboardEditAccess: data.access as 'hostOnly' | 'coHost' | 'everyone'
+            }
+          };
+          ms.setMeeting(nextMeeting);
+        }
       });
     });
 
@@ -561,36 +544,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('send_reaction', { meeting_id: meetingId, reaction });
   },
 
-  emitWhiteboardDraw: (meeting_id, stroke) => {
-    get().socket?.emit('WHITEBOARD_DRAW', { meeting_id, stroke });
+  emitWhiteboardDraw: (meetingId, stroke) => {
+    get().socket?.emit('whiteboard_draw', { meeting_id: meetingId, stroke });
   },
 
-  emitWhiteboardErase: (meeting_id, id) => {
-    get().socket?.emit('WHITEBOARD_ERASE', { meeting_id, id });
+  emitWhiteboardClear: (meetingId) => {
+    get().socket?.emit('whiteboard_clear', { meeting_id: meetingId });
   },
 
-  emitWhiteboardClear: (meeting_id) => {
-    get().socket?.emit('WHITEBOARD_CLEAR', { meeting_id });
+  emitWhiteboardToggle: (meetingId, isOpen, userId) => {
+    get().socket?.emit('whiteboard_toggle', { meeting_id: meetingId, isOpen, userId });
   },
 
-  emitWhiteboardOpen: (meeting_id, accessLevel) => {
-    get().socket?.emit('WHITEBOARD_OPEN', { meeting_id, accessLevel });
+  emitWhiteboardUndo: (meetingId) => {
+    get().socket?.emit('whiteboard_undo', { meeting_id: meetingId });
   },
 
-  emitWhiteboardClose: (meeting_id) => {
-    get().socket?.emit('WHITEBOARD_CLOSE', { meeting_id });
+  emitWhiteboardRedo: (meetingId) => {
+    get().socket?.emit('whiteboard_redo', { meeting_id: meetingId });
   },
 
-  emitWhiteboardAccessChange: (meeting_id, accessLevel) => {
-    get().socket?.emit('WHITEBOARD_ACCESS_CHANGE', { meeting_id, accessLevel });
-  },
-
-  emitWhiteboardUndo: (meeting_id) => {
-    get().socket?.emit('whiteboard_undo', { meeting_id });
-  },
-
-  emitWhiteboardRedo: (meeting_id) => {
-    get().socket?.emit('whiteboard_redo', { meeting_id });
+  emitWhiteboardAccessUpdate: (meetingId, access) => {
+    get().socket?.emit('whiteboard_access_update', { meeting_id: meetingId, access });
   },
 
   muteAll: (meetingId) => {
