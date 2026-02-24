@@ -40,6 +40,8 @@ interface ChatState {
   rejectParticipant: (meetingId: string, socketId: string) => void;
   toggleWaitingRoom: (meetingId: string, enabled: boolean) => void;
   updateMeetingSettings: (meetingId: string, settings: Partial<any>) => void;
+  deleteMessageForMe: (messageId: string) => void;
+  deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
   reset: () => void;
 }
@@ -362,7 +364,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         recipientId: message.recipient_id || message.recipientId,
         timestamp: new Date(message.timestamp),
         replyTo: message.reply_to || message.replyTo,
-        isPinned: message.is_pinned || message.isPinned
+        isPinned: message.is_pinned || message.isPinned,
+        isDeletedEveryone: message.is_deleted_everyone || message.isDeletedEveryone,
+        deletedFor: message.deleted_for || message.deletedFor || []
       };
       get().addMessage(processedMessage, false);
     });
@@ -396,6 +400,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('user_stopped_typing', (data: { userId: string }) => {
       set((state) => ({
         typingUsers: state.typingUsers.filter(u => u.userId !== data.userId)
+      }));
+    });
+
+    socket.on('message_deleted_everyone', (data: { messageId: string }) => {
+      set((state) => ({
+        messages: state.messages.map(m =>
+          m.id === data.messageId ? { ...m, isDeletedEveryone: true } : m
+        )
       }));
     });
 
@@ -496,7 +508,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             recipientId: m.recipient_id || m.recipientId,
             timestamp: new Date(m.timestamp),
             replyTo: m.reply_to || m.replyTo,
-            isPinned: m.is_pinned || m.isPinned
+            isPinned: m.is_pinned || m.isPinned,
+            isDeletedEveryone: m.is_deleted_everyone || m.isDeletedEveryone,
+            deletedFor: m.deleted_for || m.deletedFor || []
           }))
         });
       })
@@ -580,6 +594,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     });
+  },
+
+  deleteMessageForMe: (messageId: string) => {
+    const { socket, meetingId, localUserId } = get();
+    if (!localUserId) return;
+
+    set((state) => ({
+      messages: state.messages.map(m =>
+        m.id === messageId
+          ? { ...m, deletedFor: [...(m.deletedFor || []), localUserId] }
+          : m
+      )
+    }));
+
+    if (socket && meetingId) {
+      socket.emit('delete_message_for_me', { meeting_id: meetingId, messageId, userId: localUserId });
+    }
+  },
+
+  deleteMessageForEveryone: (messageId: string) => {
+    const { socket, meetingId } = get();
+    if (!socket || !meetingId) return;
+    socket.emit('delete_message_for_everyone', { meeting_id: meetingId, messageId });
   },
 
   emitParticipantUpdate: (meetingId, userId, updates) => {

@@ -49,6 +49,8 @@ export interface ChatMessage {
     senderName: string;
     content: string;
   };
+  isDeletedEveryone?: boolean;
+  deletedFor?: string[]; // Array of user IDs who deleted this message for themselves
 }
 
 export interface MessageReaction {

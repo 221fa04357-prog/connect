@@ -54,6 +54,12 @@ async function initializeDatabase() {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='reactions') THEN
                     ALTER TABLE messages ADD COLUMN reactions JSONB DEFAULT '[]';
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='is_deleted_everyone') THEN
+                    ALTER TABLE messages ADD COLUMN is_deleted_everyone BOOLEAN DEFAULT FALSE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='deleted_for') THEN
+                    ALTER TABLE messages ADD COLUMN deleted_for JSONB DEFAULT '[]';
+                END IF;
             END $$;
 
             CREATE TABLE IF NOT EXISTS recaps (
@@ -470,6 +476,35 @@ io.on('connection', (socket) => {
             io.to(meeting_id).emit('message_reacted', { messageId, reactions });
         } catch (err) {
             console.error('Error reacting to message:', err);
+        }
+    });
+
+    socket.on('delete_message_for_me', async (data) => {
+        const { messageId, userId } = data;
+        try {
+            const result = await db.query('SELECT deleted_for FROM messages WHERE id = $1', [messageId]);
+            if (result.rows.length === 0) return;
+
+            let deletedFor = result.rows[0].deleted_for;
+            if (typeof deletedFor === 'string') deletedFor = JSON.parse(deletedFor);
+            if (!Array.isArray(deletedFor)) deletedFor = [];
+
+            if (!deletedFor.includes(userId)) {
+                deletedFor.push(userId);
+                await db.query('UPDATE messages SET deleted_for = $1 WHERE id = $2', [JSON.stringify(deletedFor), messageId]);
+            }
+        } catch (err) {
+            console.error('Error deleting message for me:', err);
+        }
+    });
+
+    socket.on('delete_message_for_everyone', async (data) => {
+        const { meeting_id, messageId } = data;
+        try {
+            await db.query('UPDATE messages SET is_deleted_everyone = TRUE WHERE id = $1', [messageId]);
+            io.to(meeting_id).emit('message_deleted_everyone', { messageId });
+        } catch (err) {
+            console.error('Error deleting message for everyone:', err);
         }
     });
 
