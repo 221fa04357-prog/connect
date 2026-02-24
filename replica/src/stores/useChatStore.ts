@@ -18,7 +18,10 @@ interface ChatState {
   addMessage: (message: ChatMessage, isChatOpen: boolean) => void;
   setActiveTab: (tab: ChatType) => void;
   setSelectedRecipientId: (id: string | null) => void;
-  sendMessage: (content: string, type: ChatType, recipientId?: string) => void;
+  sendMessage: (content: string, type: ChatType, recipientId?: string, replyTo?: ChatMessage['replyTo']) => void;
+  pinMessage: (messageId: string) => void;
+  unpinMessage: (messageId: string) => void;
+  addReaction: (messageId: string, emoji: string) => void;
   sendTypingStatus: (isTyping: boolean) => void;
   emitParticipantUpdate: (meetingId: string, userId: string, updates: Partial<any>) => void;
   emitReaction: (meetingId: string, reaction: any) => void;
@@ -356,10 +359,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...message,
         senderId: message.sender_id || message.senderId,
         senderName: message.sender_name || message.senderName,
-        recipientId: message.recipient_id || message.recipientId, // Added mapping
-        timestamp: new Date(message.timestamp)
+        recipientId: message.recipient_id || message.recipientId,
+        timestamp: new Date(message.timestamp),
+        replyTo: message.reply_to || message.replyTo,
+        isPinned: message.is_pinned || message.isPinned
       };
       get().addMessage(processedMessage, false);
+    });
+
+    socket.on('message_pinned', (data: { messageId: string }) => {
+      set((state) => ({
+        messages: state.messages.map(m => m.id === data.messageId ? { ...m, isPinned: true } : m)
+      }));
+    });
+
+    socket.on('message_unpinned', (data: { messageId: string }) => {
+      set((state) => ({
+        messages: state.messages.map(m => m.id === data.messageId ? { ...m, isPinned: false } : m)
+      }));
+    });
+
+    socket.on('message_reacted', (data: { messageId: string, reactions: any[] }) => {
+      set((state) => ({
+        messages: state.messages.map(m =>
+          m.id === data.messageId ? { ...m, reactions: data.reactions } : m
+        )
+      }));
     });
 
     socket.on('user_typing', (data: { userId: string, userName: string }) => {
@@ -468,8 +493,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...m,
             senderId: m.sender_id || m.senderId,
             senderName: m.sender_name || m.senderName,
-            recipientId: m.recipient_id || m.recipientId, // Added mapping
-            timestamp: new Date(m.timestamp)
+            recipientId: m.recipient_id || m.recipientId,
+            timestamp: new Date(m.timestamp),
+            replyTo: m.reply_to || m.replyTo,
+            isPinned: m.is_pinned || m.isPinned
           }))
         });
       })
@@ -496,7 +523,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   setSelectedRecipientId: (id) => set({ selectedRecipientId: id }),
 
-  sendMessage: (content, type, recipientId) => {
+  sendMessage: (content, type, recipientId, replyTo) => {
     const { socket, meetingId } = get();
     if (!socket || !meetingId) return;
 
@@ -509,10 +536,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
         content,
         type,
         meeting_id: meetingId,
-        recipientId
+        recipientId,
+        reply_to: replyTo
       };
       socket.emit('send_message', messageData);
     });
+  },
+
+  pinMessage: (messageId) => {
+    const { socket, meetingId } = get();
+    if (!socket || !meetingId) return;
+    socket.emit('pin_message', { meeting_id: meetingId, messageId });
+  },
+
+  unpinMessage: (messageId) => {
+    const { socket, meetingId } = get();
+    if (!socket || !meetingId) return;
+    socket.emit('unpin_message', { meeting_id: meetingId, messageId });
+  },
+
+  addReaction: (messageId, emoji) => {
+    const { socket, meetingId, localUserId } = get();
+    if (!socket || !meetingId || !localUserId) return;
+    socket.emit('react_to_message', { meeting_id: meetingId, messageId, emoji, userId: localUserId });
   },
 
   sendTypingStatus: (isTyping) => {
