@@ -24,6 +24,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuSeparator,
 } from '@/components/ui';
 import {
     Send, SmilePlus, X, Search, Mic, MicOff, Video, VideoOff,
@@ -476,46 +477,46 @@ function MessageList({
                         )}
 
                         <div className="relative flex items-center group/msg">
-                            {/* Actions on hover (displayed always on mobile for accessibility, or just group-hover) */}
+                            {/* Actions on hover */}
                             <div className={cn(
-                                "flex items-center gap-1 bg-[#1C1C1C] border border-[#404040] rounded-full px-2 py-1 absolute top-[-20px] z-10 opacity-0 group-hover:opacity-100 transition-opacity",
+                                "absolute top-[-24px] z-20 opacity-0 group-hover:opacity-100 transition-opacity",
                                 isMe ? "right-0" : "left-0"
                             )}>
-                                <button
-                                    onClick={() => onReply?.(msg)}
-                                    className="p-1 hover:bg-[#333] rounded-full transition-colors text-gray-400 hover:text-white"
-                                    title="Reply"
-                                >
-                                    <Reply className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                    onClick={() => msg.isPinned ? unpinMessage(msg.id) : pinMessage(msg.id)}
-                                    className={cn(
-                                        "p-1 hover:bg-[#333] rounded-full transition-colors",
-                                        msg.isPinned ? "text-blue-500" : "text-gray-400 hover:text-white"
-                                    )}
-                                    title={msg.isPinned ? "Unpin" : "Pin"}
-                                >
-                                    <Pin className="w-3.5 h-3.5" />
-                                </button>
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <button className="p-1 hover:bg-[#333] rounded-full transition-colors text-gray-400 hover:text-white">
-                                            <SmilePlus className="w-3.5 h-3.5" />
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <button className="flex items-center justify-center bg-[#1C1C1C] border border-[#404040] rounded-full h-8 w-8 text-gray-400 hover:text-white hover:bg-[#333] transition-colors shadow-lg">
+                                            <MoreVertical className="w-4 h-4" />
                                         </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-2 bg-[#232323] border-[#404040] flex gap-2">
-                                        {EMOJIS.slice(0, 6).map(emoji => (
-                                            <button
-                                                key={emoji}
-                                                onClick={() => addReaction(msg.id, emoji)}
-                                                className="hover:scale-125 transition-transform text-lg"
-                                            >
-                                                {emoji}
-                                            </button>
-                                        ))}
-                                    </PopoverContent>
-                                </Popover>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align={isMe ? "end" : "start"} className="w-56 bg-[#232323] border-[#404040] text-gray-200 p-1">
+                                        <div className="flex items-center justify-between px-2 py-2 border-b border-[#333] mb-1">
+                                            {EMOJIS.slice(0, 6).map(emoji => (
+                                                <button
+                                                    key={emoji}
+                                                    onClick={() => addReaction(msg.id, emoji)}
+                                                    className="hover:scale-125 transition-transform text-lg p-1 rounded-md hover:bg-[#333]"
+                                                    title={emoji}
+                                                >
+                                                    {emoji}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <DropdownMenuItem
+                                            onClick={() => onReply?.(msg)}
+                                            className="hover:bg-[#333] focus:bg-[#333] cursor-pointer py-2.5"
+                                        >
+                                            <Reply className="w-4 h-4 mr-2" />
+                                            <span>Reply</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => msg.isPinned ? unpinMessage(msg.id) : pinMessage(msg.id)}
+                                            className="hover:bg-[#333] focus:bg-[#333] cursor-pointer py-2.5"
+                                        >
+                                            <Pin className={cn("w-4 h-4 mr-2", msg.isPinned && "text-blue-400")} />
+                                            <span>{msg.isPinned ? "Unpin Message" : "Pin Message"}</span>
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
                             </div>
 
                             <div
