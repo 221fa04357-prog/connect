@@ -732,10 +732,15 @@ function ParticipantItem({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-medium truncate">
-                            {participant.name} {isCurrentUser && '(You)'}
+                            {participant.name} {isCurrentUser && effectiveRole !== 'host' && '(You)'}
                         </span>
                         {effectiveRole === 'host' && (
-                            <Crown className="w-4 h-4 text-yellow-500" />
+                            <div className="flex items-center gap-1.5">
+                                <span className="bg-[#3B82F6] text-white text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide">
+                                    Host
+                                </span>
+                                <Crown className="w-4 h-4 text-[#F59E0B] fill-[#F59E0B]/10" />
+                            </div>
                         )}
                         {effectiveRole === 'co-host' && (
                             <Shield className="w-4 h-4 text-purple-500" />
