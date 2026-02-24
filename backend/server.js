@@ -146,6 +146,16 @@ async function initializeDatabase() {
                     ALTER TABLE meeting_participants ADD COLUMN camera_on BOOLEAN DEFAULT true;
                 END IF;
             END $$;
+            CREATE TABLE IF NOT EXISTS meeting_analytics (
+                meeting_id VARCHAR(255) PRIMARY KEY,
+                total_joined INTEGER DEFAULT 0,
+                left_early INTEGER DEFAULT 0,
+                stayed_until_end INTEGER DEFAULT 0,
+                participant_data JSONB DEFAULT '{}',
+                calculated_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
         `);
         console.log('Database initialization successful: all tables ready.');
     } catch (err) {
@@ -155,6 +165,52 @@ async function initializeDatabase() {
 
 // Start database initialization
 initializeDatabase();
+
+async function finalizeAnalytics(meetingId) {
+    const stats = analyticsTracker.get(meetingId);
+    if (!stats || stats.calculated) return;
+
+    stats.calculated = true;
+    const participants = stats.participants;
+    const participantIds = Object.keys(participants);
+
+    const totalJoined = participantIds.length;
+    let stayedUntilEnd = 0;
+
+    for (const userId of participantIds) {
+        if (participants[userId].isPresent) {
+            stayedUntilEnd++;
+        }
+    }
+
+    const leftEarly = totalJoined - stayedUntilEnd;
+
+    try {
+        await db.query(
+            `INSERT INTO meeting_analytics (meeting_id, total_joined, left_early, stayed_until_end, participant_data, calculated_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             ON CONFLICT (meeting_id) DO UPDATE SET
+                total_joined = EXCLUDED.total_joined,
+                left_early = EXCLUDED.left_early,
+                stayed_until_end = EXCLUDED.stayed_until_end,
+                participant_data = EXCLUDED.participant_data,
+                calculated_at = EXCLUDED.calculated_at,
+                updated_at = NOW()`,
+            [meetingId, totalJoined, leftEarly, stayedUntilEnd, JSON.stringify(participants)]
+        );
+        console.log(`Analytics finalized for meeting ${meetingId}:`, { totalJoined, leftEarly, stayedUntilEnd });
+
+        // Notify host if they are still in the meeting
+        io.to(meetingId).emit('analytics_updated', {
+            totalJoined,
+            leftEarly,
+            stayedUntilEnd,
+            isFinal: true
+        });
+    } catch (err) {
+        console.error(`Error finalizing analytics for ${meetingId}:`, err);
+    }
+}
 
 const io = new Server(server, {
     cors: {
@@ -185,6 +241,8 @@ app.get("/", (req, res) => {
 const rooms = new Map(); // meetingId -> Map of socketId -> participantData
 const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
 const whiteboardInitiators = new Map(); // meetingId -> userId
+const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
+const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
@@ -312,6 +370,51 @@ io.on('connection', (socket) => {
                 console.log(`Cleaning up old session for user ${userId} (socket ${existingSocketId})`);
                 room.delete(existingSocketId);
             }
+        }
+
+        // --- Analytics Tracking ---
+        if (!analyticsTracker.has(meetingId)) {
+            const meetingStartTime = meeting?.start_timestamp ? Number(meeting.start_timestamp) : Date.now();
+            analyticsTracker.set(meetingId, {
+                startTime: meetingStartTime,
+                participants: {}
+            });
+
+            // Set a timer to finalize analytics after 20 minutes from meeting start
+            const timeElapsed = Date.now() - meetingStartTime;
+            const timeRemaining = ANALYTICS_WINDOW_MS - timeElapsed;
+
+            if (timeRemaining > 0) {
+                setTimeout(() => finalizeAnalytics(meetingId), timeRemaining);
+            } else {
+                // If 20 mins already passed, define analytics as calculated or finalize
+                finalizeAnalytics(meetingId);
+            }
+        }
+
+        const analyticsStats = analyticsTracker.get(meetingId);
+        if (analyticsStats && !analyticsStats.calculated) {
+            if (!analyticsStats.participants[userId]) {
+                analyticsStats.participants[userId] = {
+                    joinTime: Date.now(),
+                    isPresent: true
+                };
+            } else {
+                analyticsStats.participants[userId].isPresent = true;
+                analyticsStats.participants[userId].lastJoinTime = Date.now();
+            }
+
+            // Emit real-time update (not final)
+            const pIds = Object.keys(analyticsStats.participants);
+            const totalJ = pIds.length;
+            let stayed = 0;
+            pIds.forEach(id => { if (analyticsStats.participants[id].isPresent) stayed++; });
+            io.to(meetingId).emit('analytics_updated', {
+                totalJoined: totalJ,
+                leftEarly: totalJ - stayed,
+                stayedUntilEnd: stayed,
+                isFinal: false
+            });
         }
 
         const isHost = user?.id && (user.id === meeting?.host_id || user.id === 'host');
@@ -844,6 +947,27 @@ io.on('connection', (socket) => {
                 if (participants.size === 0) {
                     rooms.delete(meetingId);
                 }
+
+                // --- Analytics Tracking ---
+                const stats = analyticsTracker.get(meetingId);
+                if (stats && !stats.calculated) {
+                    if (stats.participants[p.id]) {
+                        stats.participants[p.id].isPresent = false;
+                        stats.participants[p.id].leaveTime = Date.now();
+
+                        // Emit real-time update
+                        const pIds = Object.keys(stats.participants);
+                        const totalJ = pIds.length;
+                        let stayed = 0;
+                        pIds.forEach(id => { if (stats.participants[id].isPresent) stayed++; });
+                        io.to(meetingId).emit('analytics_updated', {
+                            totalJoined: totalJ,
+                            leftEarly: totalJ - stayed,
+                            stayedUntilEnd: stayed,
+                            isFinal: false
+                        });
+                    }
+                }
             }
         });
 
@@ -1117,6 +1241,44 @@ app.get('/api/recaps/:id', async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching recap details', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Analytics API
+app.get('/api/meetings/:id/analytics', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query('SELECT * FROM meeting_analytics WHERE meeting_id = $1', [id]);
+        if (result.rows.length === 0) {
+            // Check if it's currently being tracked in memory
+            const stats = analyticsTracker.get(id);
+            if (stats) {
+                const participantIds = Object.keys(stats.participants);
+                const totalJoined = participantIds.length;
+                let stayedUntilEnd = 0;
+                for (const userId of participantIds) {
+                    if (stats.participants[userId].isPresent) stayedUntilEnd++;
+                }
+                const leftEarly = totalJoined - stayedUntilEnd;
+                return res.json({
+                    meeting_id: id,
+                    total_joined: totalJoined,
+                    left_early: leftEarly,
+                    stayed_until_end: stayedUntilEnd,
+                    is_live: true,
+                    is_final: !!stats.calculated
+                });
+            }
+            return res.status(404).json({ error: 'Analytics not found for this meeting' });
+        }
+        res.json({
+            ...result.rows[0],
+            is_live: false,
+            is_final: true
+        });
+    } catch (err) {
+        console.error('Error fetching analytics', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
