@@ -1169,7 +1169,6 @@ function ControlBar() {
         setMicConfirm,
         setVideoConfirm,
 
-        meeting,
         isJoinedAsHost,
         showUpgradeModal,
         setShowUpgradeModal,

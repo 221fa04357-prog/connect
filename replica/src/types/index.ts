@@ -77,6 +77,7 @@ export interface MeetingSettings {
   // From meeting.ts
   recordAutomatically?: boolean;
   muteParticipantsOnEntry?: boolean;
+  recordingAllowedForAll?: boolean;
 }
 
 export interface Meeting {
