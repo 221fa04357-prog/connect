@@ -68,7 +68,8 @@ function TopBar() {
         isParticipantsOpen,
         isChatOpen,
         toggleParticipants,
-        toggleChat
+        toggleChat,
+        setShowUpgradeModal
     } = useMeetingStore();
     const isMobile = useIsMobile();
     const { participants } = useParticipantsStore();
@@ -190,7 +191,10 @@ function TopBar() {
                     description: 'You need a Pro plan to extend meetings.',
                     action: {
                         label: 'Upgrade',
-                        onClick: () => window.open('/pricing', '_blank')
+                        onClick: () => {
+                            setShowUpgradeModal(true);
+                            setShowExtendPopup(false);
+                        }
                     }
                 });
             });
@@ -544,7 +548,10 @@ function TopBar() {
                             ) : (
                                 <div className="space-y-3">
                                     <Button
-                                        onClick={() => window.open('/pricing', '_blank')}
+                                        onClick={() => {
+                                            setShowUpgradeModal(true);
+                                            setShowExtendPopup(false);
+                                        }}
                                         className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold h-11"
                                     >
                                         Upgrade to Extend
@@ -1162,7 +1169,9 @@ function ControlBar() {
         setMicConfirm,
         setVideoConfirm,
 
-        isJoinedAsHost
+        isJoinedAsHost,
+        showUpgradeModal,
+        setShowUpgradeModal
     } = useMeetingStore();
 
     // Enumerate devices on mount for the control bar dropdowns
@@ -1206,7 +1215,6 @@ function ControlBar() {
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
     const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
     const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const yesButtonRef = useRef<HTMLButtonElement>(null);
 

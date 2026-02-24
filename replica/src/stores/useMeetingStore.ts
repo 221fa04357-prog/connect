@@ -106,6 +106,9 @@ interface MeetingState {
   showSelfView: boolean;
   toggleSelfView: () => void;
 
+  showUpgradeModal: boolean;
+  setShowUpgradeModal: (show: boolean) => void;
+
   connectionQuality: 'excellent' | 'good' | 'poor' | 'offline';
   setConnectionQuality: (
     quality: 'excellent' | 'good' | 'poor' | 'offline'
@@ -139,6 +142,9 @@ export const useMeetingStore = create<MeetingState>()(
       showSelfView: true,
       localStream: null,
       isAudioMuted: false,
+
+      showUpgradeModal: false,
+      setShowUpgradeModal: (show) => set({ showUpgradeModal: show }),
 
       isVideoOff: false,
       whiteboardStrokes: [],
