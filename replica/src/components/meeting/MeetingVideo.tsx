@@ -1,6 +1,6 @@
 
 import { Participant } from '@/types';
-import { Mic, MicOff, Video, VideoOff, Pin, Hand, StopCircle, MousePointer2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Pin, Hand, StopCircle, MousePointer2, Crown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
@@ -237,12 +237,12 @@ export function VideoTile({
                             {participant.name} {isLocal && '(You)'}
                         </span>
                         {participant.role === 'host' && (
-                            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded flex-shrink-0">
+                            <span className="text-[10px] bg-[#3B82F6] text-white px-1.5 py-0.5 rounded font-medium tracking-wide flex-shrink-0">
                                 Host
                             </span>
                         )}
                         {participant.role === 'co-host' && (
-                            <span className="text-xs bg-purple-500 text-white px-1.5 py-0.5 rounded flex-shrink-0">
+                            <span className="text-[10px] bg-[#8B5CF6] text-white px-1.5 py-0.5 rounded font-medium tracking-wide flex-shrink-0">
                                 Co-Host
                             </span>
                         )}
