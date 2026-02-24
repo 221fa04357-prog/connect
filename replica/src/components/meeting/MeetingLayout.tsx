@@ -31,7 +31,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply
+    Pin, Reply, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -425,10 +425,11 @@ function MessageList({
     const currentUserId = user?.id || 'current-user';
 
     const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+    const { deleteMessageForMe, deleteMessageForEveryone } = useChatStore();
 
     return (
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 no-scrollbar">
-            {messages.map(msg => {
+            {messages.filter(m => !m.deletedFor?.includes(currentUserId)).map(msg => {
                 const isMe = msg.senderId === currentUserId;
 
                 let displayName = msg.senderName;
@@ -515,6 +516,23 @@ function MessageList({
                                             <Pin className={cn("w-4 h-4 mr-2", msg.isPinned && "text-blue-400")} />
                                             <span>{msg.isPinned ? "Unpin Message" : "Pin Message"}</span>
                                         </DropdownMenuItem>
+                                        <DropdownMenuSeparator className="bg-[#333]" />
+                                        <DropdownMenuItem
+                                            onClick={() => deleteMessageForMe(msg.id)}
+                                            className="hover:bg-red-500/10 focus:bg-red-500/10 text-red-400 cursor-pointer py-2.5"
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            <span>Delete for Me</span>
+                                        </DropdownMenuItem>
+                                        {isMe && (
+                                            <DropdownMenuItem
+                                                onClick={() => deleteMessageForEveryone(msg.id)}
+                                                className="hover:bg-red-500/10 focus:bg-red-500/10 text-red-500 cursor-pointer py-2.5"
+                                            >
+                                                <Trash2 className="w-4 h-4 mr-2" />
+                                                <span>Delete for Everyone</span>
+                                            </DropdownMenuItem>
+                                        )}
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </div>
@@ -533,7 +551,11 @@ function MessageList({
                                     }
                                 }}
                             >
-                                {msg.content}
+                                {msg.isDeletedEveryone ? (
+                                    <span className="italic opacity-60 flex items-center gap-1.5">
+                                        <X className="w-3 h-3" /> This message was deleted
+                                    </span>
+                                ) : msg.content}
                             </div>
                         </div>
 
