@@ -47,6 +47,7 @@ export default function Settings() {
     cameraAllowed: true,
     screenShareAllowed: true,
     chatAllowed: true,
+    recordingAllowedForAll: false,
     viewMode: 'gallery'
   });
 
@@ -347,6 +348,17 @@ export default function Settings() {
                           <Switch
                             checked={settings.chatAllowed}
                             onCheckedChange={(checked) => setSettings({ ...settings, chatAllowed: checked })}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label>Allow Recording</Label>
+                            <p className="text-xs text-gray-500">Participants can record the meeting</p>
+                          </div>
+                          <Switch
+                            checked={settings.recordingAllowedForAll}
+                            onCheckedChange={(checked) => setSettings({ ...settings, recordingAllowedForAll: checked })}
                           />
                         </div>
                       </div>
