@@ -1171,7 +1171,12 @@ function ControlBar() {
 
         isJoinedAsHost,
         showUpgradeModal,
-        setShowUpgradeModal
+        setShowUpgradeModal,
+
+        recordingPermissionStatus,
+        setRecordingPermissionStatus,
+        showHostMutePopup,
+        setShowHostMutePopup
     } = useMeetingStore();
 
     // Enumerate devices on mount for the control bar dropdowns
@@ -1179,7 +1184,19 @@ function ControlBar() {
         enumerateDevices();
     }, [enumerateDevices]);
 
-    const { unreadCount, localUserId, emitParticipantUpdate, emitWhiteboardDraw, emitWhiteboardClear, emitWhiteboardToggle, emitWhiteboardUndo, emitWhiteboardRedo } = useChatStore();
+    const {
+        unreadCount,
+        localUserId,
+        emitParticipantUpdate,
+        emitWhiteboardDraw,
+        emitWhiteboardClear,
+        emitWhiteboardToggle,
+        emitWhiteboardUndo,
+        emitWhiteboardRedo,
+        requestRecordingPermission,
+        grantRecordingPermission,
+        denyRecordingPermission
+    } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
         participants,
@@ -1814,23 +1831,57 @@ function ControlBar() {
             // Start Recording
             try {
                 if (typeof MediaRecorder === 'undefined') {
-                    alert("Media recording is not supported in this browser.");
+                    import('sonner').then(({ toast }) => toast.error("Media recording is not supported in this browser."));
                     return;
                 }
 
-                // Check if both mic and camera are on
-                if (isAudioMuted || isVideoOff) {
-                    alert("Please turn ON both your camera and microphone to start recording.");
+                const isHost = isJoinedAsHost;
+                const isGlobalAllowed = meeting?.settings?.recordingAllowedForAll;
+
+                if (!isHost && !isGlobalAllowed && recordingPermissionStatus !== 'granted') {
+                    if (recordingPermissionStatus === 'requesting') {
+                        import('sonner').then(({ toast }) => toast.info("Your recording request is pending host approval."));
+                        return;
+                    }
+
+                    // Request permission
+                    const { meetingId } = useChatStore.getState();
+                    if (meetingId && localUserId) {
+                        requestRecordingPermission(meetingId, localUserId, user?.name || 'Participant');
+                        setRecordingPermissionStatus('requesting');
+                        import('sonner').then(({ toast }) => toast.info("Recording request sent to host."));
+                    } else {
+                        import('sonner').then(({ toast }) => toast.error("Unable to request recording permission: Meeting or User ID missing."));
+                    }
                     return;
                 }
 
-                // Use local stream (User Camera) to start instantly without Browser Picker Dialog
-                const stream = useMeetingStore.getState().localStream;
+                // If host and muted, show popup but don't block
+                if (isHost && isAudioMuted) {
+                    setShowHostMutePopup(true);
+                    import('sonner').then(({ toast }) => {
+                        toast.info("You are muted. Please unmute to include your audio in recording.", {
+                            duration: 5000,
+                        });
+                    });
+                }
+
+                // Use local stream (User Camera) to start instantly
+                let stream = useMeetingStore.getState().localStream;
 
                 if (!stream) {
-                    console.error("No local camera stream available to record.");
-                    alert("Unable to access camera or microphone stream.");
-                    return;
+                    // Try to get a basic stream if none exists
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: true,
+                            video: true
+                        });
+                        setLocalStream(stream);
+                    } catch (e) {
+                        console.error("No local stream available and failed to acquire one.", e);
+                        import('sonner').then(({ toast }) => toast.error("Unable to access camera or microphone stream for recording."));
+                        return;
+                    }
                 }
 
                 // Check for supported mime types
@@ -1844,8 +1895,7 @@ function ControlBar() {
                 const supportedType = types.find(type => MediaRecorder.isTypeSupported(type));
 
                 if (!supportedType) {
-                    console.error("No supported mime type found for MediaRecorder");
-                    alert("Recording is not supported on this browser.");
+                    import('sonner').then(({ toast }) => toast.error("Recording is not supported on this browser."));
                     return;
                 }
 
@@ -1871,8 +1921,6 @@ function ControlBar() {
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
-
-                    // NOTE: Do NOT stop tracks here, as this is the live camera stream.
                 };
 
                 mediaRecorder.start();
@@ -1881,7 +1929,7 @@ function ControlBar() {
 
             } catch (err) {
                 console.error("Error starting recording:", err);
-                alert(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`);
+                import('sonner').then(({ toast }) => toast.error(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`));
             }
         }
     };
@@ -2307,10 +2355,10 @@ function ControlBar() {
                         {/* Record Button */}
                         <ControlButton
                             icon={Circle}
-                            label={isRecording ? "Stop Recording" : "Record"}
+                            label={isRecording ? "Stop Recording" : (recordingPermissionStatus === 'requesting' ? "Requesting..." : "Record")}
                             onClick={handleToggleValidRecording}
-                            active={isRecording}
-                            className={isRecording ? "text-red-500" : ""}
+                            active={isRecording || recordingPermissionStatus === 'requesting'}
+                            className={isRecording ? "text-red-500" : (recordingPermissionStatus === 'requesting' ? "text-yellow-500 animate-pulse" : "")}
                         />
 
                         {/* Fullscreen Button */}

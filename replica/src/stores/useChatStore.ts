@@ -12,6 +12,11 @@ interface ChatState {
   localUserId: string | null;
   selectedRecipientId: string | null;
 
+  // Recording Permission methods
+  requestRecordingPermission: (meetingId: string, userId: string, userName: string) => void;
+  grantRecordingPermission: (meetingId: string, userId: string) => void;
+  denyRecordingPermission: (meetingId: string, userId: string) => void;
+
   // Actions
   initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
   setMessages: (messages: ChatMessage[]) => void;
@@ -183,14 +188,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Check if I am a scalable participant (not host)
         import('./useMeetingStore').then((meetingStore) => {
           const ms = meetingStore.useMeetingStore.getState();
-          // If I am not the host, I should mute my audio
-          // Logic: check if my user ID matches host. 
-          // However, 'muteAll' usually means "everyone but the sender/host".
-          // The socket broadcast sends to everyone.
-          // We need to check if *I* initiated it? 
-          // Actually, standard behavior: Mute everyone except the person who triggered it?
-          // Or if host triggers it, host stays unmuted?
-          // Let's rely on role.
           const myId = get().localUserId;
           const participant = ps.participants.find(p => p.id === myId);
 
@@ -217,10 +214,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const participant = ps.participants.find(p => p.id === myId);
 
           if (participant && participant.role !== 'host') {
-            // Should we auto-unmute? Usually privacy concerns say NO.
-            // But user requirement: "changes should be synchronized and visible... immediately"
-            // This implies state sync. 
-            // Let's UN-MUTE them to match the "Enable All" request, but maybe show a toast.
             if (ms.isAudioMuted) {
               ms.setAudioMuted(false);
               import('sonner').then(({ toast }) => toast.info('The host has unmuted everyone.'));
@@ -416,7 +409,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (data.status === 'admitted') {
         import('./useMeetingStore').then((store) => {
           store.useMeetingStore.getState().setIsWaiting(false);
-          // If they were already in the meeting setup, this will trigger the navigation
         });
       } else if (data.status === 'waiting') {
         import('./useMeetingStore').then((store) => {
@@ -427,6 +419,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
         import('./useMeetingStore').then((store) => {
           store.useMeetingStore.getState().leaveMeeting();
           window.location.replace('/#/');
+        });
+      }
+    });
+
+    socket.on('recording_requested', (data: { userId: string, userName: string }) => {
+      import('./useMeetingStore').then((store) => {
+        const ms = store.useMeetingStore.getState();
+        if (ms.isJoinedAsHost) {
+          import('sonner').then(({ toast }) => {
+            toast.info(`${data.userName} is requesting to record the meeting.`, {
+              action: {
+                label: 'Allow',
+                onClick: () => get().grantRecordingPermission(meetingId, data.userId)
+              },
+              duration: 10000
+            });
+          });
+        }
+      });
+    });
+
+    socket.on('recording_granted', (data: { userId?: string, all?: boolean }) => {
+      const localId = get().localUserId;
+      if (data.all || data.userId === localId) {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setRecordingPermissionStatus('granted');
+          import('sonner').then(({ toast }) => toast.success('Recording permission granted. You can now start recording.'));
+        });
+      }
+    });
+
+    socket.on('recording_denied', (data: { userId: string }) => {
+      const ms = get().localUserId;
+      if (data.userId === ms) {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setRecordingPermissionStatus('denied');
+          import('sonner').then(({ toast }) => toast.error('Recording permission denied by the host.'));
         });
       }
     });
@@ -447,13 +476,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('meeting_controls_updated', (settings: any) => {
-      console.log('Meeting controls updated:', settings);
       import('./useMeetingStore').then((store) => {
         const ms = store.useMeetingStore.getState();
         if (ms.meeting) {
           ms.setMeeting({ ...ms.meeting, settings });
 
-          // Apply restrictions if I'm not the host
           if (!ms.isJoinedAsHost) {
             if (settings.micAllowed === false && !ms.isAudioMuted) {
               ms.setAudioMuted(true);
@@ -464,15 +491,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               import('sonner').then(({ toast }) => toast.warning('Host has disabled cameras.'));
             }
             if (settings.screenShareAllowed === false && ms.isScreenSharing) {
-              // Stop sharing tracks
               if (ms.screenShareStream) {
                 ms.screenShareStream.getTracks().forEach(track => track.stop());
               }
               ms.setScreenShareStream(null);
               if (ms.isScreenSharing) {
-                ms.toggleScreenShare(); // Set isScreenSharing to false
+                ms.toggleScreenShare();
               }
-              // Notify others
               const localUserId = get().localUserId;
               if (ms.meeting?.id && localUserId) {
                 get().emitParticipantUpdate(ms.meeting.id, localUserId, { isScreenSharing: false });
@@ -486,20 +511,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set({ socket, meetingId });
 
-    // Fetch initial messages
     const fetchUserId = user?.id || `guest-${socket.id}`;
-    console.log(`useChatStore: Fetching chat history for ${meetingId} from ${API || '/api'} (User: ${fetchUserId})`);
     fetch(`${API}/api/messages/${meetingId}`, {
-      headers: {
-        'x-user-id': fetchUserId
-      }
+      headers: { 'x-user-id': fetchUserId }
     })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
+      .then(res => res.json())
       .then(messages => {
-        console.log(`useChatStore: Loaded ${messages.length} messages`);
         set({
           messages: messages.map((m: any) => ({
             ...m,
@@ -514,20 +531,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }))
         });
       })
-      .catch(err => {
-        console.error('Error fetching chat history:', err);
-        // Retry logic could be added here
-      });
+      .catch(err => console.error('Error fetching chat history:', err));
   },
 
   setMessages: (messages) => set({ messages }),
 
   addMessage: (message, isChatOpen) => set((state) => {
-    // identify local user by checking against state.localUserId 
-    // fallback if not yet set
     const isFromMe = message.senderId === state.localUserId || message.senderId === 'current-user';
     const shouldIncrement = !isChatOpen && !isFromMe;
-
     return {
       messages: [...state.messages, message],
       unreadCount: shouldIncrement ? state.unreadCount + 1 : (isChatOpen ? 0 : state.unreadCount)
@@ -541,10 +552,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { socket, meetingId } = get();
     if (!socket || !meetingId) return;
 
-    // Import auth store here to avoid circular dependency
     import('./useAuthStore').then((auth) => {
       const user = auth.useAuthStore.getState().user;
-      const messageData = {
+      socket.emit('send_message', {
         sender_id: user?.id || 'guest',
         sender_name: user?.name || 'Guest',
         content,
@@ -552,27 +562,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         meeting_id: meetingId,
         recipientId,
         reply_to: replyTo
-      };
-      socket.emit('send_message', messageData);
+      });
     });
   },
 
   pinMessage: (messageId) => {
     const { socket, meetingId } = get();
-    if (!socket || !meetingId) return;
-    socket.emit('pin_message', { meeting_id: meetingId, messageId });
+    if (socket && meetingId) socket.emit('pin_message', { meeting_id: meetingId, messageId });
   },
 
   unpinMessage: (messageId) => {
     const { socket, meetingId } = get();
-    if (!socket || !meetingId) return;
-    socket.emit('unpin_message', { meeting_id: meetingId, messageId });
+    if (socket && meetingId) socket.emit('unpin_message', { meeting_id: meetingId, messageId });
   },
 
   addReaction: (messageId, emoji) => {
     const { socket, meetingId, localUserId } = get();
-    if (!socket || !meetingId || !localUserId) return;
-    socket.emit('react_to_message', { meeting_id: meetingId, messageId, emoji, userId: localUserId });
+    if (socket && meetingId && localUserId) socket.emit('react_to_message', { meeting_id: meetingId, messageId, emoji, userId: localUserId });
   },
 
   sendTypingStatus: (isTyping) => {
@@ -582,16 +588,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     import('./useAuthStore').then((auth) => {
       const user = auth.useAuthStore.getState().user;
       if (isTyping) {
-        socket.emit('typing_start', {
-          meeting_id: meetingId,
-          userId: user?.id || 'guest',
-          userName: user?.name || 'Guest'
-        });
+        socket.emit('typing_start', { meeting_id: meetingId, userId: user?.id || 'guest', userName: user?.name || 'Guest' });
       } else {
-        socket.emit('typing_stop', {
-          meeting_id: meetingId,
-          userId: user?.id || 'guest'
-        });
+        socket.emit('typing_stop', { meeting_id: meetingId, userId: user?.id || 'guest' });
       }
     });
   },
@@ -599,24 +598,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteMessageForMe: (messageId: string) => {
     const { socket, meetingId, localUserId } = get();
     if (!localUserId) return;
-
     set((state) => ({
-      messages: state.messages.map(m =>
-        m.id === messageId
-          ? { ...m, deletedFor: [...(m.deletedFor || []), localUserId] }
-          : m
-      )
+      messages: state.messages.map(m => m.id === messageId ? { ...m, deletedFor: [...(m.deletedFor || []), localUserId] } : m)
     }));
-
-    if (socket && meetingId) {
-      socket.emit('delete_message_for_me', { meeting_id: meetingId, messageId, userId: localUserId });
-    }
+    if (socket && meetingId) socket.emit('delete_message_for_me', { meeting_id: meetingId, messageId, userId: localUserId });
   },
 
   deleteMessageForEveryone: (messageId: string) => {
     const { socket, meetingId } = get();
-    if (!socket || !meetingId) return;
-    socket.emit('delete_message_for_everyone', { meeting_id: meetingId, messageId });
+    if (socket && meetingId) socket.emit('delete_message_for_everyone', { meeting_id: meetingId, messageId });
   },
 
   emitParticipantUpdate: (meetingId, userId, updates) => {
@@ -682,17 +672,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toggleWaitingRoom: (meetingId, enabled) => {
     get().socket?.emit('toggle_waiting_room', { meetingId, enabled });
   },
+
   updateMeetingSettings: (meetingId, settings) => {
     get().socket?.emit('update_meeting_settings', { meetingId, settings });
+  },
+
+  requestRecordingPermission: (meetingId, userId, userName) => {
+    get().socket?.emit('request_recording', { meetingId, userId, userName });
+  },
+
+  grantRecordingPermission: (meetingId, userId) => {
+    get().socket?.emit('grant_recording', { meetingId, userId });
+  },
+
+  denyRecordingPermission: (meetingId, userId) => {
+    get().socket?.emit('deny_recording', { meeting_id: meetingId, userId });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),
 
   reset: () => {
     const { socket } = get();
-    if (socket) {
-      socket.disconnect();
-    }
+    if (socket) socket.disconnect();
     set({
       messages: [],
       activeTab: 'public',
