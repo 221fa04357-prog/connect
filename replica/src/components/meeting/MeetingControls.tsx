@@ -932,6 +932,17 @@ function SettingsModal() {
                                                                 onCheckedChange={(checked) => updateMeetingSettings({ chatAllowed: checked })}
                                                             />
                                                         </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Recording</Label>
+                                                                <p className="text-xs text-gray-500">Participants can record the meeting</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.recordingAllowedForAll === true}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ recordingAllowedForAll: checked })}
+                                                            />
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
