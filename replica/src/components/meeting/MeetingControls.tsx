@@ -9,7 +9,7 @@ import {
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
     Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
-    Undo, Redo, Download
+    Undo, Redo, Download, BarChart3, AlertCircle
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -55,6 +55,8 @@ import { useChatStore } from '@/stores/useChatStore';
 import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
+
+const API = import.meta.env.VITE_API_URL || '';
 
 // --- TopBar.tsx ---
 
@@ -1187,7 +1189,9 @@ function ControlBar() {
         recordingPermissionStatus,
         setRecordingPermissionStatus,
         showHostMutePopup,
-        setShowHostMutePopup
+        setShowHostMutePopup,
+        isAnalyticsOpen,
+        toggleAnalytics
     } = useMeetingStore();
 
     // Enumerate devices on mount for the control bar dropdowns
@@ -2416,6 +2420,12 @@ function ControlBar() {
                                     <Settings className="w-4 h-4 mr-2" />
                                     Settings
                                 </DropdownMenuItem>
+                                {isHost && (
+                                    <DropdownMenuItem onClick={toggleAnalytics} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                        <BarChart3 className="w-4 h-4 mr-2" />
+                                        Meeting Analytics
+                                    </DropdownMenuItem>
+                                )}
                                 {isHost && !isSubscribed && (
                                     <DropdownMenuItem onClick={() => setShowUpgradeModal(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                         <Clock className="w-4 h-4 mr-2" />
@@ -2772,6 +2782,8 @@ function ControlBar() {
                 )}
             </AnimatePresence>
 
+            <AnalyticsModal />
+
             {/* Mic Confirmation Modal */}
             <AnimatePresence>
                 {showMicConfirm && (
@@ -2857,6 +2869,127 @@ function ControlBar() {
             </AnimatePresence>
         </>
     ); // End of ControlBar return
+}
+
+// --- AnalyticsModal ---
+function AnalyticsModal() {
+    const { isAnalyticsOpen, toggleAnalytics, meeting } = useMeetingStore();
+    const [analytics, setAnalytics] = useState<any>(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isAnalyticsOpen || !meeting?.id) return;
+
+        const fetchAnalytics = async () => {
+            setLoading(true);
+            try {
+                const res = await fetch(`${API}/api/meetings/${meeting.id}/analytics`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setAnalytics(data);
+                }
+            } catch (err) {
+                console.error('Error fetching analytics:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAnalytics();
+
+        // Setup real-time listener
+        const { socket } = useChatStore.getState();
+        if (socket) {
+            socket.on('analytics_updated', (data: any) => {
+                setAnalytics(data);
+            });
+            return () => {
+                socket.off('analytics_updated');
+            };
+        }
+    }, [isAnalyticsOpen, meeting?.id]);
+
+    if (!isAnalyticsOpen) return null;
+
+    return (
+        <Dialog open={isAnalyticsOpen} onOpenChange={toggleAnalytics}>
+            <DialogContent className="bg-[#1C1C1C] border-[#333] text-white p-6 max-w-md w-full rounded-2xl shadow-2xl overflow-hidden">
+                <DialogHeader className="mb-6">
+                    <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+                        <BarChart3 className="w-6 h-6 text-blue-400" />
+                        Meeting Analytics
+                    </DialogTitle>
+                    <DialogDescription className="text-gray-400 text-sm mt-1">
+                        Tracking participant activity for the first 20 minutes.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {loading && !analytics ? (
+                    <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                        <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-gray-500 font-medium tracking-wide">Fetching data...</p>
+                    </div>
+                ) : analytics ? (
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-1 gap-4">
+                            {/* Total Joined */}
+                            <div className="bg-[#232323] p-5 rounded-2xl border border-[#333] flex items-center justify-between transition-all hover:border-blue-500/30">
+                                <div>
+                                    <div className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Total Joined</div>
+                                    <p className="text-gray-500 text-xs">Unique participants</p>
+                                </div>
+                                <div className="text-4xl font-black text-blue-400 font-mono">{analytics.total_joined || analytics.totalJoined || 0}</div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Left Early */}
+                                <div className="bg-[#232323] p-5 rounded-2xl border border-[#333] transition-all hover:border-red-500/30">
+                                    <div className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Left Early</div>
+                                    <div className="text-3xl font-black text-red-500 font-mono">{analytics.left_early || analytics.leftEarly || 0}</div>
+                                </div>
+
+                                {/* Stayed Until End */}
+                                <div className="bg-[#232323] p-5 rounded-2xl border border-[#333] transition-all hover:border-green-500/30">
+                                    <div className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Stayed (20m)</div>
+                                    <div className="text-3xl font-black text-green-500 font-mono">{analytics.stayed_until_end || analytics.stayedUntilEnd || 0}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {!analytics.is_final && !analytics.isFinal ? (
+                            <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-4 rounded-xl text-xs flex items-center gap-3 animate-pulse">
+                                <div className="p-2 bg-blue-500/20 rounded-full">
+                                    <Clock className="w-4 h-4" />
+                                </div>
+                                <span className="font-medium">Tracking is active. Final metrics will be available 20 minutes after meeting start.</span>
+                            </div>
+                        ) : (
+                            <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-xs flex items-center gap-3">
+                                <div className="p-2 bg-green-500/20 rounded-full">
+                                    <Check className="w-4 h-4" />
+                                </div>
+                                <span className="font-medium">20-minute window completed. Analytics are now permanent for this meeting record.</span>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="py-12 text-center text-gray-500 flex flex-col items-center">
+                        <AlertCircle className="w-10 h-10 opacity-20 mb-3" />
+                        <p className="italic">No analytics data found for this meeting.</p>
+                    </div>
+                )}
+
+                <div className="mt-8 flex justify-end">
+                    <Button
+                        onClick={toggleAnalytics}
+                        className="bg-[#2A2A2A] hover:bg-[#333] text-white border border-[#404040] rounded-xl px-8"
+                    >
+                        Close
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 }
 
 // Helper Component for consistent button styling
