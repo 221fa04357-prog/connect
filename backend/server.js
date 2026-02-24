@@ -33,14 +33,26 @@ async function initializeDatabase() {
                 type VARCHAR(50) NOT NULL,
                 meeting_id VARCHAR(255),
                 recipient_id VARCHAR(255),
-                timestamp TIMESTAMP DEFAULT NOW()
+                timestamp TIMESTAMP DEFAULT NOW(),
+                reply_to JSONB,
+                is_pinned BOOLEAN DEFAULT FALSE,
+                reactions JSONB DEFAULT '[]'
             );
 
-            -- Add recipient_id if it doesn't exist
+            -- Ensure columns exist for older databases
              DO $$ 
             BEGIN 
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='recipient_id') THEN
                     ALTER TABLE messages ADD COLUMN recipient_id VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='reply_to') THEN
+                    ALTER TABLE messages ADD COLUMN reply_to JSONB;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='is_pinned') THEN
+                    ALTER TABLE messages ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='reactions') THEN
+                    ALTER TABLE messages ADD COLUMN reactions JSONB DEFAULT '[]';
                 END IF;
             END $$;
 
@@ -346,16 +358,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { sender_id, sender_name, content, type, meeting_id, recipientId } = data;
+        const { sender_id, sender_name, content, type, meeting_id, recipientId, reply_to } = data;
         const recipient_id = recipientId || data.recipient_id;
 
         try {
             const query = `
-        INSERT INTO messages (sender_id, sender_name, content, type, meeting_id, recipient_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO messages (sender_id, sender_name, content, type, meeting_id, recipient_id, reply_to)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;
       `;
-            const result = await db.query(query, [sender_id, sender_name, content, type, meeting_id, recipient_id]);
+            const result = await db.query(query, [sender_id, sender_name, content, type, meeting_id, recipient_id, reply_to ? JSON.stringify(reply_to) : null]);
             const savedMessage = result.rows[0];
 
             console.log(`Message saved for meeting ${meeting_id}:`, { id: savedMessage.id, sender: sender_name, type, recipient: recipient_id });
@@ -403,6 +415,62 @@ io.on('connection', (socket) => {
 
     socket.on('typing_stop', (data) => {
         socket.to(data.meeting_id).emit('user_stopped_typing', { userId: data.userId });
+    });
+
+    socket.on('pin_message', async (data) => {
+        const { meeting_id, messageId } = data;
+        try {
+            await db.query('UPDATE messages SET is_pinned = TRUE WHERE id = $1', [messageId]);
+            io.to(meeting_id).emit('message_pinned', { messageId });
+        } catch (err) {
+            console.error('Error pinning message:', err);
+        }
+    });
+
+    socket.on('unpin_message', async (data) => {
+        const { meeting_id, messageId } = data;
+        try {
+            await db.query('UPDATE messages SET is_pinned = FALSE WHERE id = $1', [messageId]);
+            io.to(meeting_id).emit('message_unpinned', { messageId });
+        } catch (err) {
+            console.error('Error unpinning message:', err);
+        }
+    });
+
+    socket.on('react_to_message', async (data) => {
+        const { meeting_id, messageId, emoji, userId } = data;
+        try {
+            const result = await db.query('SELECT reactions FROM messages WHERE id = $1', [messageId]);
+            if (result.rows.length === 0) return;
+
+            let reactions = result.rows[0].reactions;
+            if (typeof reactions === 'string') reactions = JSON.parse(reactions);
+            if (!Array.isArray(reactions)) reactions = [];
+
+            const reactionIndex = reactions.findIndex(r => r.emoji === emoji);
+            if (reactionIndex > -1) {
+                const userIndex = reactions[reactionIndex].users.indexOf(userId);
+                if (userIndex > -1) {
+                    // Remove reaction (toggle off)
+                    reactions[reactionIndex].users.splice(userIndex, 1);
+                    // Remove emoji entry if no users left
+                    if (reactions[reactionIndex].users.length === 0) {
+                        reactions.splice(reactionIndex, 1);
+                    }
+                } else {
+                    // Add reaction
+                    reactions[reactionIndex].users.push(userId);
+                }
+            } else {
+                // New emoji reaction
+                reactions.push({ emoji, users: [userId] });
+            }
+
+            await db.query('UPDATE messages SET reactions = $1 WHERE id = $2', [JSON.stringify(reactions), messageId]);
+            io.to(meeting_id).emit('message_reacted', { messageId, reactions });
+        } catch (err) {
+            console.error('Error reacting to message:', err);
+        }
     });
 
     // --- State Sync ---

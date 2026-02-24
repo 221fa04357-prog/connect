@@ -43,6 +43,12 @@ export interface ChatMessage {
   recipientName?: string; // From chat.ts
   isRead?: boolean; // From chat.ts
   reactions?: MessageReaction[]; // From index.ts
+  isPinned?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 export interface MessageReaction {

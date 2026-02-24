@@ -9,6 +9,15 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+    Command,
+    CommandInput,
+    CommandList,
+    CommandEmpty,
+    CommandGroup,
+    CommandItem,
 } from "@/components/ui";
 import {
     DropdownMenu,
@@ -20,7 +29,8 @@ import {
     Send, SmilePlus, X, Search, Mic, MicOff, Video, VideoOff,
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
-    Plus, AlertCircle, Download, Lock as LockIcon
+    Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
+    Pin, Reply
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -64,15 +74,18 @@ export function ChatPanel() {
 
     const [input, setInput] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const currentUser = useAuthStore.getState().user;
     const currentUserId = currentUser?.id || 'current-user';
 
-    /* ---------------- DERIVED COUNTS ---------------- */
+    /* ---------------- DERIVED DATA ---------------- */
 
     const publicMessages = messages.filter(m => m.type === 'public');
+    const pinnedMessages = messages.filter(m => m.isPinned);
 
     // Count ALL private messages for user for the badge
     const totalPrivateMessages = messages.filter(m =>
@@ -116,8 +129,15 @@ export function ChatPanel() {
             return;
         }
 
-        sendMessage(input, activeTab, activeTab === 'private' ? selectedRecipientId : undefined);
+        const replyData = replyingTo ? {
+            id: replyingTo.id,
+            senderName: replyingTo.senderName,
+            content: replyingTo.content
+        } : undefined;
+
+        sendMessage(input, activeTab, activeTab === 'private' ? selectedRecipientId : undefined, replyData);
         setInput('');
+        setReplyingTo(null);
         setShowEmojiPicker(false);
         sendTypingStatus(false);
     };
@@ -181,10 +201,33 @@ export function ChatPanel() {
                             value="public"
                             className="flex-1 min-h-0 mt-0 flex-col data-[state=active]:flex"
                         >
+                            {/* Pinned Messages Header */}
+                            {pinnedMessages.filter(m => m.type === 'public').length > 0 && (
+                                <div className="bg-[#232323] border-b border-[#404040] p-2 flex items-center gap-2">
+                                    <Pin className="w-3 h-3 text-blue-400 rotate-45 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[10px] text-blue-400 font-medium">Pinned Message</p>
+                                        <p className="text-xs text-gray-300 truncate">
+                                            {pinnedMessages.filter(m => m.type === 'public')[pinnedMessages.filter(m => m.type === 'public').length - 1].content}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            const lastPinned = pinnedMessages.filter(m => m.type === 'public')[pinnedMessages.filter(m => m.type === 'public').length - 1];
+                                            useChatStore.getState().unpinMessage(lastPinned.id);
+                                        }}
+                                        className="text-gray-500 hover:text-white"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            )}
+
                             <MessageList
                                 messages={publicMessages}
                                 participants={participants}
                                 messagesEndRef={messagesEndRef}
+                                onReply={(msg) => setReplyingTo(msg)}
                             />
                         </TabsContent>
 
@@ -192,30 +235,94 @@ export function ChatPanel() {
                             value="private"
                             className="flex-1 min-h-0 mt-0 flex-col data-[state=active]:flex"
                         >
+                            {/* Pinned Messages Header (Private) */}
+                            {selectedRecipientId && pinnedMessages.filter(m =>
+                                m.type === 'private' &&
+                                (m.senderId === selectedRecipientId || m.recipientId === selectedRecipientId)
+                            ).length > 0 && (
+                                    <div className="bg-[#232323] border-b border-[#404040] p-2 flex items-center gap-2">
+                                        <Pin className="w-3 h-3 text-blue-400 rotate-45 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[10px] text-blue-400 font-medium">Pinned Private Message</p>
+                                            <p className="text-xs text-gray-300 truncate">
+                                                {
+                                                    pinnedMessages.filter(m =>
+                                                        m.type === 'private' &&
+                                                        (m.senderId === selectedRecipientId || m.recipientId === selectedRecipientId)
+                                                    ).slice(-1)[0].content
+                                                }
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const lastPinned = pinnedMessages.filter(m =>
+                                                    m.type === 'private' &&
+                                                    (m.senderId === selectedRecipientId || m.recipientId === selectedRecipientId)
+                                                ).slice(-1)[0];
+                                                useChatStore.getState().unpinMessage(lastPinned.id);
+                                            }}
+                                            className="text-gray-500 hover:text-white"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+
                             {/* Recipient Selector */}
                             <div className="shrink-0 p-4 border-b border-[#333]">
-                                <Select value={selectedRecipientId || ''} onValueChange={setSelectedRecipientId}>
-                                    <SelectTrigger className="w-full bg-[#2A2A2A] border-[#444] text-white">
-                                        <SelectValue placeholder="Select Participant" />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-[#2A2A2A] border-[#444] text-white">
-                                        {potentialRecipients.length > 0 ? (
-                                            potentialRecipients.map((p) => (
-                                                <SelectItem key={p.id} value={p.id}>
-                                                    {p.name}
-                                                </SelectItem>
-                                            ))
-                                        ) : (
-                                            <div className="p-2 text-sm text-gray-400">No participants</div>
-                                        )}
-                                    </SelectContent>
-                                </Select>
+                                <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={searchOpen}
+                                            className="w-full justify-between bg-[#2A2A2A] border-[#444] text-white hover:bg-[#333] hover:text-white font-normal"
+                                        >
+                                            <span className="truncate">
+                                                {selectedRecipientId
+                                                    ? potentialRecipients.find((p) => p.id === selectedRecipientId)?.name
+                                                    : "Select Participant"}
+                                            </span>
+                                            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-[#2A2A2A] border-[#444] z-[1001]" align="start">
+                                        <Command className="bg-[#2A2A2A] text-white">
+                                            <CommandInput placeholder="Search participant..." className="h-9 text-white" />
+                                            <CommandList className="max-h-[200px] overflow-y-auto custom-scrollbar">
+                                                <CommandEmpty className="p-2 text-sm text-gray-400">No participants found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {potentialRecipients.map((p) => (
+                                                        <CommandItem
+                                                            key={p.id}
+                                                            value={p.name}
+                                                            onSelect={() => {
+                                                                setSelectedRecipientId(p.id);
+                                                                setSearchOpen(false);
+                                                            }}
+                                                            className="text-white hover:bg-[#333] cursor-pointer flex items-center px-2 py-1.5"
+                                                        >
+                                                            <Check
+                                                                className={cn(
+                                                                    "mr-2 h-4 w-4 text-blue-500",
+                                                                    selectedRecipientId === p.id ? "opacity-100" : "opacity-0"
+                                                                )}
+                                                            />
+                                                            <span className="truncate">{p.name}</span>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
 
                             <MessageList
                                 messages={privateMessages}
                                 participants={participants}
                                 messagesEndRef={messagesEndRef}
+                                onReply={(msg) => setReplyingTo(msg)}
                                 onMessageClick={(userId) => {
                                     if (userId !== currentUserId) {
                                         setSelectedRecipientId(userId);
@@ -227,6 +334,22 @@ export function ChatPanel() {
 
                     {/* INPUT BAR */}
                     <div className="shrink-0 bg-[#1C1C1C] p-4">
+                        {/* Reply Indicator */}
+                        {replyingTo && (
+                            <div className="flex items-center justify-between bg-[#232323] border-l-2 border-blue-500 p-2 mb-2 rounded-r-md">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] text-blue-400 font-medium">Replying to {replyingTo.senderName}</p>
+                                    <p className="text-xs text-gray-400 truncate">{replyingTo.content}</p>
+                                </div>
+                                <button
+                                    onClick={() => setReplyingTo(null)}
+                                    className="text-gray-500 hover:text-white p-1"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        )}
+
                         {showEmojiPicker && (
                             <div className="absolute left-8 bottom-[80px] flex gap-2">
                                 {EMOJIS.map(e => (
@@ -270,7 +393,7 @@ export function ChatPanel() {
                                 disabled={!chatAllowed || !input.trim() || (activeTab === 'private' && !selectedRecipientId)}
                                 className={cn(
                                     input.trim() && chatAllowed ? 'bg-[#0B5CFF]' : 'bg-[#2D2D2D]',
-                                    'text-white'
+                                    'text-white transition-colors duration-200'
                                 )}
                             >
                                 {!chatAllowed ? <LockIcon className="w-4 h-4" /> : <Send className="w-4 h-4" />}
@@ -288,16 +411,19 @@ function MessageList({
     participants,
     messagesEndRef,
     onMessageClick,
+    onReply,
 }: {
     messages: ChatMessage[];
     participants: { id: string; name: string }[];
     messagesEndRef: React.RefObject<HTMLDivElement>;
     onMessageClick?: (userId: string) => void;
+    onReply?: (message: ChatMessage) => void;
 }) {
-    const { typingUsers } = useChatStore();
-
+    const { typingUsers, pinMessage, unpinMessage, addReaction } = useChatStore();
     const { user } = useAuthStore();
     const currentUserId = user?.id || 'current-user';
+
+    const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
 
     return (
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 no-scrollbar">
@@ -317,14 +443,19 @@ function MessageList({
                 return (
                     <div
                         key={msg.id}
-                        className={cn('flex flex-col gap-1', isMe ? 'items-end' : 'items-start')}
-                        onClick={() => {
-                            if (msg.type === 'private' && onMessageClick) {
-                                onMessageClick(isMe ? (msg.recipientId || '') : msg.senderId);
-                            }
-                        }}
+                        className={cn('flex flex-col gap-1 relative group', isMe ? 'items-end' : 'items-start')}
+                        onMouseEnter={() => setHoveredMessageId(msg.id)}
+                        onMouseLeave={() => setHoveredMessageId(null)}
                     >
-                        <div className="text-xs text-gray-400">
+                        {/* Pinned Indicator */}
+                        {msg.isPinned && (
+                            <div className="flex items-center gap-1 text-[10px] text-blue-400 mb-1">
+                                <Pin className="w-3 h-3 rotate-45" />
+                                <span>Pinned</span>
+                            </div>
+                        )}
+
+                        <div className="text-xs text-gray-400 flex items-center gap-2">
                             {displayName} •{' '}
                             {msg.timestamp.toLocaleTimeString([], {
                                 hour: '2-digit',
@@ -333,16 +464,96 @@ function MessageList({
                             })}
                         </div>
 
-                        <div
-                            className={cn(
-                                'px-4 py-2 rounded-2xl text-sm max-w-[75%] cursor-pointer transition-colors',
-                                isMe
-                                    ? 'bg-[#0B5CFF] text-white rounded-br-none hover:bg-[#0046D5]'
-                                    : 'bg-[#2A2A2A] text-gray-200 rounded-bl-none hover:bg-[#333]'
-                            )}
-                        >
-                            {msg.content}
+                        {/* Reply Preview */}
+                        {msg.replyTo && (
+                            <div className={cn(
+                                "text-[11px] p-2 border-l-2 bg-black/20 mb-[-8px] rounded-t-lg max-w-[75%] truncate",
+                                isMe ? "border-blue-500" : "border-gray-500"
+                            )}>
+                                <span className="font-semibold block">{msg.replyTo.senderName}</span>
+                                <span className="opacity-70">{msg.replyTo.content}</span>
+                            </div>
+                        )}
+
+                        <div className="relative flex items-center group/msg">
+                            {/* Actions on hover (displayed always on mobile for accessibility, or just group-hover) */}
+                            <div className={cn(
+                                "flex items-center gap-1 bg-[#1C1C1C] border border-[#404040] rounded-full px-2 py-1 absolute top-[-20px] z-10 opacity-0 group-hover:opacity-100 transition-opacity",
+                                isMe ? "right-0" : "left-0"
+                            )}>
+                                <button
+                                    onClick={() => onReply?.(msg)}
+                                    className="p-1 hover:bg-[#333] rounded-full transition-colors text-gray-400 hover:text-white"
+                                    title="Reply"
+                                >
+                                    <Reply className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => msg.isPinned ? unpinMessage(msg.id) : pinMessage(msg.id)}
+                                    className={cn(
+                                        "p-1 hover:bg-[#333] rounded-full transition-colors",
+                                        msg.isPinned ? "text-blue-500" : "text-gray-400 hover:text-white"
+                                    )}
+                                    title={msg.isPinned ? "Unpin" : "Pin"}
+                                >
+                                    <Pin className="w-3.5 h-3.5" />
+                                </button>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <button className="p-1 hover:bg-[#333] rounded-full transition-colors text-gray-400 hover:text-white">
+                                            <SmilePlus className="w-3.5 h-3.5" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-2 bg-[#232323] border-[#404040] flex gap-2">
+                                        {EMOJIS.slice(0, 6).map(emoji => (
+                                            <button
+                                                key={emoji}
+                                                onClick={() => addReaction(msg.id, emoji)}
+                                                className="hover:scale-125 transition-transform text-lg"
+                                            >
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            <div
+                                className={cn(
+                                    'px-4 py-2 rounded-2xl text-sm max-w-full cursor-pointer transition-colors break-words',
+                                    isMe
+                                        ? 'bg-[#0B5CFF] text-white rounded-br-none hover:bg-[#0046D5]'
+                                        : 'bg-[#2A2A2A] text-gray-200 rounded-bl-none hover:bg-[#333]',
+                                    msg.replyTo && "rounded-tr-none"
+                                )}
+                                onClick={() => {
+                                    if (msg.type === 'private' && onMessageClick) {
+                                        onMessageClick(isMe ? (msg.recipientId || '') : msg.senderId);
+                                    }
+                                }}
+                            >
+                                {msg.content}
+                            </div>
                         </div>
+
+                        {/* Reactions */}
+                        {msg.reactions && msg.reactions.length > 0 && (
+                            <div className={cn("flex flex-wrap gap-1 mt-1", isMe ? "justify-end" : "justify-start")}>
+                                {msg.reactions.map(r => (
+                                    <button
+                                        key={r.emoji}
+                                        onClick={() => addReaction(msg.id, r.emoji)}
+                                        className={cn(
+                                            "flex items-center gap-1 bg-[#232323] border border-[#404040] rounded-full px-1.5 py-0.5 text-[10px] hover:bg-[#333] transition-colors",
+                                            r.users.includes(currentUserId) ? "border-blue-500 text-blue-400" : "text-gray-400"
+                                        )}
+                                    >
+                                        <span>{r.emoji}</span>
+                                        <span>{r.users.length}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 );
             })}
@@ -360,7 +571,6 @@ function MessageList({
                     </div>
                 </div>
             )}
-
             <div ref={messagesEndRef} />
         </div>
     );
