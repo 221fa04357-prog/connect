@@ -31,7 +31,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2
+    Pin, Reply, Trash2, Circle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -634,7 +634,7 @@ export function ParticipantsPanel() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const { user } = useAuthStore();
-    const { meeting, isJoinedAsHost } = useMeetingStore();
+    const { meeting, isJoinedAsHost, updateMeetingSettings } = useMeetingStore();
 
     /** Current participant from store */
     const currentUserParticipant = participants.find(p => p.id === user?.id);
@@ -821,6 +821,29 @@ export function ParticipantsPanel() {
                                             Disable All
                                         </>
                                     )}
+                                </Button>
+                            )}
+
+                            {canControl && (
+                                <Button
+                                    onClick={() => {
+                                        const newVal = !meeting?.settings?.recordingAllowedForAll;
+                                        updateMeetingSettings({ recordingAllowedForAll: newVal });
+                                        if (newVal) {
+                                            toast.success('All participants can now record.');
+                                        } else {
+                                            toast.info('Global recording permission disabled.');
+                                        }
+                                    }}
+                                    variant="outline"
+                                    className={cn(
+                                        "h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm whitespace-nowrap",
+                                        meeting?.settings?.recordingAllowedForAll ? "text-blue-400 border-blue-400/50 bg-blue-400/10" : "text-gray-400"
+                                    )}
+                                    title={meeting?.settings?.recordingAllowedForAll ? "Disable global recording" : "Allow all participants to record"}
+                                >
+                                    <Circle className={cn("w-3.5 h-3.5 mr-1", meeting?.settings?.recordingAllowedForAll ? "fill-blue-400" : "")} />
+                                    {meeting?.settings?.recordingAllowedForAll ? "Record Allowed All" : "Allow All Record"}
                                 </Button>
                             )}
                         </div>

@@ -32,9 +32,14 @@ interface MeetingState {
   whiteboardStrokes: any[];
   hasHydrated: boolean;
 
+  recordingPermissionStatus: 'idle' | 'requesting' | 'granted' | 'denied';
+  showHostMutePopup: boolean;
+
   // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
+  setRecordingPermissionStatus: (status: 'idle' | 'requesting' | 'granted' | 'denied') => void;
+  setShowHostMutePopup: (show: boolean) => void;
 
   isMiniVisible: boolean;
   meetingJoined: boolean;
@@ -149,6 +154,9 @@ export const useMeetingStore = create<MeetingState>()(
       isVideoOff: false,
       whiteboardStrokes: [],
       hasHydrated: false,
+
+      recordingPermissionStatus: 'idle',
+      showHostMutePopup: false,
 
       showMicConfirm: false,
       showVideoConfirm: false,
@@ -392,6 +400,8 @@ export const useMeetingStore = create<MeetingState>()(
           isMiniVisible: false,
           whiteboardStrokes: [],
           whiteboardInitiatorId: null,
+          recordingPermissionStatus: 'idle',
+          showHostMutePopup: false,
         });
       },
 
@@ -400,6 +410,12 @@ export const useMeetingStore = create<MeetingState>()(
 
       setRecordingStartTime: (time) =>
         set({ recordingStartTime: time }),
+
+      setRecordingPermissionStatus: (status) =>
+        set({ recordingPermissionStatus: status }),
+
+      setShowHostMutePopup: (show) =>
+        set({ showHostMutePopup: show }),
 
       setConnectionQuality: (quality) =>
         set({ connectionQuality: quality }),

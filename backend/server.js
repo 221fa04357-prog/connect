@@ -566,6 +566,12 @@ io.on('connection', (socket) => {
 
                 // Broadcast setting change to everyone in the room
                 io.to(meetingId).emit('meeting_controls_updated', newSettings);
+
+                // If recording is now allowed for all, broadcast a grant event to clear "Requesting..." states
+                if (settings.recordingAllowedForAll) {
+                    io.to(meetingId).emit('recording_granted', { all: true });
+                }
+
                 console.log(`Meeting settings updated for ${meetingId}:`, newSettings);
             }
         } catch (err) {
@@ -779,6 +785,36 @@ io.on('connection', (socket) => {
             whiteboardInitiators.delete(meeting_id);
             socket.to(meeting_id).emit('whiteboard_toggle', { isOpen: false });
         }
+    });
+
+    // --- Recording Permission ---
+    socket.on('request_recording', async (data) => {
+        const { meetingId, userId, userName } = data;
+        try {
+            const result = await db.query('SELECT settings FROM meetings WHERE id = $1', [meetingId]);
+            const settings = result.rows[0]?.settings
+                ? (typeof result.rows[0].settings === 'string' ? JSON.parse(result.rows[0].settings) : result.rows[0].settings)
+                : {};
+
+            if (settings.recordingAllowedForAll) {
+                io.to(meetingId).emit('recording_granted', { userId });
+            } else {
+                io.to(meetingId).emit('recording_requested', { userId, userName });
+            }
+        } catch (err) {
+            console.error('Error in request_recording:', err);
+            io.to(meetingId).emit('recording_requested', { userId, userName });
+        }
+    });
+
+    socket.on('grant_recording', (data) => {
+        const { meetingId, userId } = data;
+        io.to(meetingId).emit('recording_granted', { userId });
+    });
+
+    socket.on('deny_recording', (data) => {
+        const { meetingId, userId } = data;
+        io.to(meetingId).emit('recording_denied', { userId });
     });
 
     // --- Signaling for WebRTC ---
