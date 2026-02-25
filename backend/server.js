@@ -5,6 +5,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 require('dotenv').config();
 
 const app = express();
@@ -243,6 +246,7 @@ const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantDa
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
+const meetingTranscripts = new Map(); // meetingId -> Array of transcription segments
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -842,10 +846,57 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('audio_chunk', async (data) => {
+        const { meetingId, participantId, participantName, audioBlob } = data;
+        if (!meetingId || !audioBlob) return;
+
+        try {
+            // Write blob to temporary file
+            const tempDir = os.tmpdir();
+            const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
+            const filePath = path.join(tempDir, fileName);
+
+            fs.writeFileSync(filePath, Buffer.from(audioBlob));
+
+            const text = await groqService.transcribeAudio(fs.createReadStream(filePath));
+
+            // Clean up
+            fs.unlinkSync(filePath);
+
+            if (text && text.trim().length > 0) {
+                const segment = {
+                    participantId,
+                    participantName,
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
+                };
+
+                // Store in memory
+                if (!meetingTranscripts.has(meetingId)) {
+                    meetingTranscripts.set(meetingId, []);
+                }
+                meetingTranscripts.get(meetingId).push(segment);
+
+                // Broadcast to everyone in the meeting room
+                io.to(meetingId).emit('transcription_received', segment);
+            }
+        } catch (error) {
+            console.error('Transcription error:', error);
+        }
+    });
+
+    socket.on('get_transcripts', (data) => {
+        const { meetingId } = data;
+        if (meetingTranscripts.has(meetingId)) {
+            socket.emit('all_transcripts', meetingTranscripts.get(meetingId));
+        }
+    });
+
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);
         questionTracker.delete(meetingId);
+        meetingTranscripts.delete(meetingId);
         io.to(meetingId).emit('meeting_ended', { meetingId });
     });
 

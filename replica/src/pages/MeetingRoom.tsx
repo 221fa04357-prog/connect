@@ -14,6 +14,8 @@ import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useNavigate } from 'react-router-dom';
+import { TranscriptionManager } from '@/components/meeting/TranscriptionManager';
+import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay';
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -942,6 +944,10 @@ export default function MeetingRoom() {
       <ChatPanel />
       <ParticipantsPanel />
       <AICompanionPanel />
+
+      {/* Real-time Transcription System */}
+      <TranscriptionManager />
+      <TranscriptionOverlay />
     </div>
   );
 }

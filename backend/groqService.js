@@ -82,8 +82,34 @@ async function summarizeMeeting(transcript) {
     return getChatCompletion(messages);
 }
 
+/**
+ * Transcribe audio chunk using Groq Whisper
+ * @param {Buffer} audioBuffer - Binary audio data
+ * @param {string} fileName - Name of the temporary file
+ */
+async function transcribeAudio(file) {
+    if (!groq) {
+        throw new Error("GROQ_API_KEY is missing");
+    }
+
+    try {
+        const transcription = await groq.audio.transcriptions.create({
+            file: file,
+            model: "whisper-large-v3",
+            response_format: "json",
+            language: "en",
+        });
+
+        return transcription.text || "";
+    } catch (error) {
+        console.error("Groq Transcription Error:", error);
+        throw error;
+    }
+}
+
 module.exports = {
     getChatCompletion,
     summarizeMeeting,
-    generateRecapContent
+    generateRecapContent,
+    transcribeAudio
 };
