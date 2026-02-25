@@ -35,6 +35,7 @@ interface MeetingState {
   recordingPermissionStatus: 'idle' | 'requesting' | 'granted' | 'denied';
   showHostMutePopup: boolean;
   isAnalyticsOpen: boolean;
+  showCaptions: boolean;
 
   // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
@@ -82,6 +83,7 @@ interface MeetingState {
   toggleAICompanion: () => void;
   toggleReactions: () => void;
   toggleAnalytics: () => void;
+  toggleCaptions: () => void;
 
   setMicConfirm: (val: boolean) => void;
   setVideoConfirm: (show: boolean) => void;
@@ -160,6 +162,7 @@ export const useMeetingStore = create<MeetingState>()(
       recordingPermissionStatus: 'idle',
       showHostMutePopup: false,
       isAnalyticsOpen: false,
+      showCaptions: false,
 
       showMicConfirm: false,
       showVideoConfirm: false,
@@ -346,6 +349,8 @@ export const useMeetingStore = create<MeetingState>()(
         set((state) => ({ showReactions: !state.showReactions })),
       toggleAnalytics: () =>
         set((state) => ({ isAnalyticsOpen: !state.isAnalyticsOpen })),
+      toggleCaptions: () =>
+        set((state) => ({ showCaptions: !state.showCaptions })),
 
       setMicConfirm: (show) => set({ showMicConfirm: show }),
       setVideoConfirm: (show) => set({ showVideoConfirm: show }),

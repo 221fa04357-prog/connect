@@ -83,24 +83,24 @@ async function summarizeMeeting(transcript) {
 }
 
 /**
- * Transcribe audio chunk using Groq Whisper
- * @param {Buffer} audioBuffer - Binary audio data
- * @param {string} fileName - Name of the temporary file
+ * Transcribe audio using Whisper-large-v3
+ * @param {Buffer | stream.Readable} audioSource - Audio data or stream
+ * @param {string} prompt - Initial prompt for context
  */
-async function transcribeAudio(file) {
+async function transcribeAudio(audioSource, prompt = "This audio is from a video meeting discussing participants, captions, and meeting features.") {
     if (!groq) {
         throw new Error("GROQ_API_KEY is missing");
     }
 
     try {
         const transcription = await groq.audio.transcriptions.create({
-            file: file,
+            file: audioSource,
             model: "whisper-large-v3",
-            response_format: "json",
-            language: "en",
+            prompt: prompt,
+            response_format: "verbose_json",
         });
 
-        return transcription.text || "";
+        return transcription;
     } catch (error) {
         console.error("Groq Transcription Error:", error);
         throw error;
