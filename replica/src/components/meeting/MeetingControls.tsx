@@ -9,7 +9,7 @@ import {
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
     Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
-    Undo, Redo, Download, BarChart3, AlertCircle, Languages
+    Undo, Redo, Download, BarChart3, AlertCircle, Captions
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -52,7 +52,6 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useChatStore } from '@/stores/useChatStore';
-import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
@@ -1192,7 +1191,9 @@ function ControlBar() {
         showHostMutePopup,
         setShowHostMutePopup,
         isAnalyticsOpen,
-        toggleAnalytics
+        toggleAnalytics,
+        showCaptions,
+        toggleCaptions
     } = useMeetingStore();
 
     // Enumerate devices on mount for the control bar dropdowns
@@ -2127,6 +2128,13 @@ function ControlBar() {
 
                     {/* Main Controls - Center Aligned */}
                     <div className="flex items-center gap-4 md:gap-3 lg:gap-4 flex-1 justify-start md:justify-center overflow-x-auto no-scrollbar pb-1 px-2">
+                        {/* Captions Toggle */}
+                        <ControlButton
+                            icon={Captions}
+                            label="Captions"
+                            onClick={toggleCaptions}
+                            isActiveState={showCaptions}
+                        />
 
                         {/* Audio */}
                         <DropdownMenu>
@@ -2382,20 +2390,6 @@ function ControlBar() {
                             icon={isFullscreen ? Minimize2 : Maximize2}
                             label="Fullscreen"
                             onClick={toggleFullscreen}
-                        />
-
-                        {/* Captions Button */}
-                        <ControlButton
-                            icon={Languages}
-                            label="Captions"
-                            onClick={() => {
-                                const { setTranscriptionEnabled, isTranscriptionEnabled } = useTranscriptionStore.getState();
-                                setTranscriptionEnabled(!isTranscriptionEnabled);
-                                import('sonner').then(({ toast }) => {
-                                    toast.success(!isTranscriptionEnabled ? 'Captions Turned On' : 'Captions Turned Off');
-                                });
-                            }}
-                            isActiveState={useTranscriptionStore(s => s.isTranscriptionEnabled)}
                         />
 
                         {/* More */}
