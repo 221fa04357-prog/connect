@@ -8,26 +8,45 @@ export function TranscriptionManager() {
     const { localStream, isAudioMuted } = useMeetingStore();
     const { socket, meetingId } = useChatStore();
     const { user } = useAuthStore();
-    const { addTranscript, isTranscriptionEnabled } = useTranscriptionStore();
+    const { addTranscript, isTranscriptionEnabled, setCurrentCaption, clearCurrentCaption } = useTranscriptionStore();
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    // Timer ref to auto-clear the caption after 3 seconds of silence
+    const captionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Listen for transcription events from the backend
     useEffect(() => {
         if (!socket) return;
 
         const handleTranscription = (segment: any) => {
+            // 1. Add to the full history (for recap)
             addTranscript(segment);
+
+            // 2. Show only the latest line as the live floating caption
+            if (segment.text && segment.text.trim().length > 0) {
+                setCurrentCaption(segment.text.trim());
+
+                // 3. Auto-clear after 3 seconds of no new speech
+                if (captionTimerRef.current) {
+                    clearTimeout(captionTimerRef.current);
+                }
+                captionTimerRef.current = setTimeout(() => {
+                    clearCurrentCaption();
+                }, 3000);
+            }
         };
 
         socket.on('transcription_received', handleTranscription);
 
         return () => {
             socket.off('transcription_received', handleTranscription);
+            if (captionTimerRef.current) {
+                clearTimeout(captionTimerRef.current);
+            }
         };
-    }, [socket, addTranscript]);
+    }, [socket, addTranscript, setCurrentCaption, clearCurrentCaption]);
 
+    // Start/stop audio recording based on transcription state
     useEffect(() => {
         if (!isTranscriptionEnabled || !localStream || !socket || !meetingId || isAudioMuted) {
             stopRecording();
@@ -41,6 +60,16 @@ export function TranscriptionManager() {
         };
     }, [isTranscriptionEnabled, localStream, isAudioMuted, socket, meetingId]);
 
+    // Clear caption when transcription is disabled
+    useEffect(() => {
+        if (!isTranscriptionEnabled) {
+            clearCurrentCaption();
+            if (captionTimerRef.current) {
+                clearTimeout(captionTimerRef.current);
+            }
+        }
+    }, [isTranscriptionEnabled, clearCurrentCaption]);
+
     const startRecording = () => {
         if (mediaRecorderRef.current || !localStream) return;
 
@@ -51,7 +80,7 @@ export function TranscriptionManager() {
             const audioClone = audioTrack.clone();
             const audioStream = new MediaStream([audioClone]);
 
-            // Audio Level Detection
+            // Audio Level Detection — only send chunk if speech was detected
             const audioCtx = new AudioContext();
             const source = audioCtx.createMediaStreamSource(audioStream);
             const analyser = audioCtx.createAnalyser();
@@ -64,18 +93,18 @@ export function TranscriptionManager() {
                 if (!isTranscriptionEnabled) return;
                 analyser.getByteFrequencyData(dataArray);
                 const volume = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length;
-                if (volume > 15) { // Threshold for speaking
+                if (volume > 15) {
                     isSpeakingInSegment = true;
                 }
                 requestAnimationFrame(checkVolume);
             };
             checkVolume();
 
-            // Use MediaRecorder for chunks
             const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current = recorder;
 
             recorder.ondataavailable = async (event) => {
+                // Only send to backend if there was actual speech in this segment
                 if (event.data.size > 0 && socket && meetingId && isSpeakingInSegment) {
                     const reader = new FileReader();
                     reader.onloadend = () => {
@@ -91,7 +120,6 @@ export function TranscriptionManager() {
                 }
             };
 
-            // Helper to record segments
             const recordSegment = () => {
                 if (recorder.state === 'recording') {
                     recorder.stop();
@@ -100,7 +128,7 @@ export function TranscriptionManager() {
             };
 
             recorder.start();
-            const interval = setInterval(recordSegment, 3000); // 3 second segments
+            const interval = setInterval(recordSegment, 3000);
 
             return () => {
                 clearInterval(interval);
