@@ -242,6 +242,7 @@ const rooms = new Map(); // meetingId -> Map of socketId -> participantData
 const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
+const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -511,6 +512,27 @@ io.on('connection', (socket) => {
             } else {
                 // Broadcast to everyone in the meeting room (public)
                 io.to(meeting_id).emit('receive_message', savedMessage);
+            }
+
+            // --- Question Tracking Logic ---
+            if (meeting_id && sender_id && content && content.includes('?')) {
+                if (!questionTracker.has(meeting_id)) {
+                    questionTracker.set(meeting_id, {});
+                }
+                const meetingQuestions = questionTracker.get(meeting_id);
+                if (!meetingQuestions[sender_id]) {
+                    meetingQuestions[sender_id] = { count: 0, name: sender_name };
+                }
+                meetingQuestions[sender_id].count += 1;
+
+                // Threshold: 3 questions
+                const frequentUsers = Object.entries(meetingQuestions)
+                    .filter(([_, data]) => data.count >= 3)
+                    .map(([id, data]) => ({ participantId: id, name: data.name, count: data.count }));
+
+                if (frequentUsers.length > 0) {
+                    io.to(meeting_id).emit('frequent_question_users', frequentUsers);
+                }
             }
         } catch (err) {
             console.error('Error saving message payload:', { sender_id, sender_name, meeting_id });
@@ -823,6 +845,7 @@ io.on('connection', (socket) => {
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);
+        questionTracker.delete(meetingId);
         io.to(meetingId).emit('meeting_ended', { meetingId });
     });
 
@@ -946,6 +969,7 @@ io.on('connection', (socket) => {
                 // Cleanup empty rooms
                 if (participants.size === 0) {
                     rooms.delete(meetingId);
+                    questionTracker.delete(meetingId);
                 }
 
                 // --- Analytics Tracking ---

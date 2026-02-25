@@ -11,6 +11,7 @@ interface ChatState {
   meetingId: string | null;
   localUserId: string | null;
   selectedRecipientId: string | null;
+  frequentQuestionUsers: { participantId: string, name: string, count: number }[];
 
   // Recording Permission methods
   requestRecordingPermission: (meetingId: string, userId: string, userName: string) => void;
@@ -48,6 +49,8 @@ interface ChatState {
   deleteMessageForMe: (messageId: string) => void;
   deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
+  setFrequentQuestionUsers: (users: { participantId: string, name: string, count: number }[]) => void;
+  clearFrequentQuestionUsers: () => void;
   reset: () => void;
 }
 
@@ -62,6 +65,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   meetingId: null,
   localUserId: null,
   selectedRecipientId: null,
+  frequentQuestionUsers: [],
 
   initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
@@ -363,6 +367,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       get().addMessage(processedMessage, false);
     });
+
+    /* removed internal listener */
 
     socket.on('message_pinned', (data: { messageId: string }) => {
       set((state) => ({
@@ -691,6 +697,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   markAsRead: () => set({ unreadCount: 0 }),
 
+  setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
+
   reset: () => {
     const { socket } = get();
     if (socket) socket.disconnect();
@@ -702,7 +712,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       socket: null,
       meetingId: null,
       localUserId: null,
-      selectedRecipientId: null
+      selectedRecipientId: null,
+      frequentQuestionUsers: []
     });
   },
 }));
