@@ -223,12 +223,7 @@ export const useMeetingStore = create<MeetingState>()(
             const nextMuted = state.isAudioMuted;
 
             const newStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                deviceId: id !== 'default' ? { exact: id } : undefined,
-                noiseSuppression: true,
-                echoCancellation: true,
-                autoGainControl: true
-              }
+              audio: { deviceId: id !== 'default' ? { exact: id } : undefined }
             });
 
             const newAudioTrack = newStream.getAudioTracks()[0];

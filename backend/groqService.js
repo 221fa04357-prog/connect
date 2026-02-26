@@ -96,21 +96,11 @@ async function transcribeAudio(file) {
         const transcription = await groq.audio.transcriptions.create({
             file: file,
             model: "whisper-large-v3",
-            response_format: "verbose_json",
+            response_format: "json",
             language: "en",
         });
 
-        // Strict validation: Check for segments and text content
-        if (!transcription.segments || transcription.segments.length === 0) {
-            return "";
-        }
-
-        // Check if average confidence is too low (using compression_ratio or avg_logprob if available)
-        // Groq sometimes limits these fields, so we'll prioritize segment existence and text length.
-        const text = transcription.text || "";
-        if (text.trim().length < 2) return "";
-
-        return text;
+        return transcription.text || "";
     } catch (error) {
         console.error("Groq Transcription Error:", error);
         throw error;

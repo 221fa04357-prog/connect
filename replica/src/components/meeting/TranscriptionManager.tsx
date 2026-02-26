@@ -36,182 +36,26 @@ export function TranscriptionManager() {
             }
         };
 
-        const handleAllTranscripts = (segments: any[]) => {
-            if (Array.isArray(segments)) {
-                useTranscriptionStore.getState().setTranscripts(segments.slice(-50));
-            }
-        };
-
         socket.on('transcription_received', handleTranscription);
-        socket.on('all_transcripts', handleAllTranscripts);
-
-        // Fetch existing history if we are joining late
-        if (meetingId) {
-            socket.emit('get_transcripts', { meetingId });
-        }
 
         return () => {
             socket.off('transcription_received', handleTranscription);
-            socket.off('all_transcripts', handleAllTranscripts);
             if (captionTimerRef.current) {
                 clearTimeout(captionTimerRef.current);
             }
         };
-    }, [socket, meetingId, addTranscript, setCurrentCaption, clearCurrentCaption]);
+    }, [socket, addTranscript, setCurrentCaption, clearCurrentCaption]);
 
-    // Start/stop VAD logic is now handled in the startVAD useEffect below
-
-
-    // Clear caption when transcription is disabled
-    useEffect(() => {
-        if (!isTranscriptionEnabled) {
-            clearCurrentCaption();
-            if (captionTimerRef.current) {
-                clearTimeout(captionTimerRef.current);
-            }
-        }
-    }, [isTranscriptionEnabled, clearCurrentCaption]);
-
-    const vadRef = useRef<{
-        audioCtx: AudioContext;
-        analyser: AnalyserNode;
-        source: MediaStreamAudioSourceNode;
-        dataArray: Float32Array;
-        isSpeaking: boolean;
-        checkInterval: number;
-    } | null>(null);
-
-    const recordingStoppedManuallyRef = useRef<boolean>(false);
-
-    const startVAD = (stream: MediaStream) => {
-        if (vadRef.current) return;
-
-        try {
-            const audioCtx = new AudioContext();
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 512;
-            source.connect(analyser);
-
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Float32Array(bufferLength);
-
-            let silenceStart: number | null = null;
-            const SPEECH_THRESHOLD = 0.02; // RMS threshold
-            const SILENCE_DURATION = 1000; // Stop after 1s of silence
-
-            const checkVAD = () => {
-                if (!isTranscriptionEnabled || isAudioMuted) {
-                    stopRecording();
-                    return;
-                }
-
-                analyser.getFloatTimeDomainData(dataArray);
-
-                // Calculate RMS (Root Mean Square)
-                let sumSquares = 0;
-                for (let i = 0; i < bufferLength; i++) {
-                    sumSquares += dataArray[i] * dataArray[i];
-                }
-                const rms = Math.sqrt(sumSquares / bufferLength);
-
-                const isCurrentlySpeaking = rms > SPEECH_THRESHOLD;
-
-                if (isCurrentlySpeaking) {
-                    silenceStart = null;
-                    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
-                        console.log('VAD: Speech detected. Starting recording.');
-                        startRecordingBurst(stream);
-                    }
-                } else {
-                    if (silenceStart === null) {
-                        silenceStart = Date.now();
-                    } else if (Date.now() - silenceStart > SILENCE_DURATION) {
-                        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                            console.log('VAD: 1s of silence. Stopping burst.');
-                            mediaRecorderRef.current.stop();
-                        }
-                    }
-                }
-
-                vadRef.current!.checkInterval = requestAnimationFrame(checkVAD);
-            };
-
-            vadRef.current = {
-                audioCtx,
-                analyser,
-                source,
-                dataArray,
-                isSpeaking: false,
-                checkInterval: requestAnimationFrame(checkVAD)
-            };
-        } catch (err) {
-            console.error('VAD setup failed:', err);
-        }
-    };
-
-    const stopVAD = () => {
-        if (vadRef.current) {
-            cancelAnimationFrame(vadRef.current.checkInterval);
-            vadRef.current.audioCtx.close();
-            vadRef.current = null;
-        }
-    };
-
-    const startRecordingBurst = (stream: MediaStream) => {
-        if (mediaRecorderRef.current?.state === 'recording') return;
-
-        // Ensure track is active and constraints applied
-        const audioTrack = stream.getAudioTracks()[0];
-        if (!audioTrack) return;
-
-        // Apply strict constraints if possible (though they should already be on localStream)
-        audioTrack.applyConstraints({
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-        }).catch(() => { });
-
-        const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (event) => {
-            if (event.data.size > 0 && socket && meetingId) {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    // Send to backend via WebSocket — ONLY IF SPEECH WAS DETECTED (Already filtered by VAD logic above)
-                    socket.emit('audio_chunk', {
-                        meetingId,
-                        participantId: user?.id || 'guest',
-                        participantName: user?.name || 'Guest',
-                        audioBlob: reader.result,
-                        timestamp: new Date().toISOString()
-                    });
-                };
-                reader.readAsArrayBuffer(event.data);
-            }
-        };
-
-        recorder.onstop = () => {
-            // If the user hasn't stopped transcription entirely, restart if VAD still detects speech
-            // This is handled by the checkVAD interval.
-        };
-
-        // Standard segmenting while speech is active (to keep response time low)
-        recorder.start(2000);
-    };
-
+    // Start/stop audio recording based on transcription state
     useEffect(() => {
         if (!isTranscriptionEnabled || !localStream || !socket || !meetingId || isAudioMuted) {
             stopRecording();
-            stopVAD();
             return;
         }
 
-        startVAD(localStream);
+        startRecording();
 
         return () => {
-            stopVAD();
             stopRecording();
         };
     }, [isTranscriptionEnabled, localStream, isAudioMuted, socket, meetingId]);
@@ -226,11 +70,83 @@ export function TranscriptionManager() {
         }
     }, [isTranscriptionEnabled, clearCurrentCaption]);
 
+    const startRecording = () => {
+        if (mediaRecorderRef.current || !localStream) return;
+
+        try {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (!audioTrack) return;
+
+            const audioClone = audioTrack.clone();
+            const audioStream = new MediaStream([audioClone]);
+
+            // Audio Level Detection — only send chunk if speech was detected
+            const audioCtx = new AudioContext();
+            const source = audioCtx.createMediaStreamSource(audioStream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            let isSpeakingInSegment = false;
+            const checkVolume = () => {
+                if (!isTranscriptionEnabled) return;
+                analyser.getByteFrequencyData(dataArray);
+                const volume = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length;
+                if (volume > 15) {
+                    isSpeakingInSegment = true;
+                }
+                requestAnimationFrame(checkVolume);
+            };
+            checkVolume();
+
+            const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = recorder;
+
+            recorder.ondataavailable = async (event) => {
+                // Only send to backend if there was actual speech in this segment
+                if (event.data.size > 0 && socket && meetingId && isSpeakingInSegment) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        socket.emit('audio_chunk', {
+                            meetingId,
+                            participantId: user?.id || 'guest',
+                            participantName: user?.name || 'Guest',
+                            audioBlob: reader.result
+                        });
+                        isSpeakingInSegment = false; // Reset for next segment
+                    };
+                    reader.readAsArrayBuffer(event.data);
+                }
+            };
+
+            const recordSegment = () => {
+                if (recorder.state === 'recording') {
+                    recorder.stop();
+                    recorder.start();
+                }
+            };
+
+            recorder.start();
+            const interval = setInterval(recordSegment, 3000);
+
+            return () => {
+                clearInterval(interval);
+                audioCtx.close();
+                if (recorder.state !== 'inactive') recorder.stop();
+                audioStream.getTracks().forEach(t => t.stop());
+            };
+        } catch (err) {
+            console.error('Failed to start transcription recorder:', err);
+        }
+    };
+
     const stopRecording = () => {
         if (mediaRecorderRef.current) {
             if (mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
             }
+            mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
             mediaRecorderRef.current = null;
         }
     };
