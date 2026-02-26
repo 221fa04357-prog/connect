@@ -5,7 +5,45 @@ const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
+const { spawn } = require("child_process");
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 require('dotenv').config();
+
+// ================= WHISPER FUNCTION =================
+
+function transcribeWithWhisper(audioPath) {
+
+    return new Promise((resolve, reject) => {
+
+        const pythonProcess = spawn("python", [
+            path.join(__dirname, "transcribe.py"),
+            audioPath
+        ]);
+
+        let result = "";
+
+        pythonProcess.stdout.on("data", (data) => {
+            result += data.toString();
+        });
+
+        pythonProcess.stderr.on("data", (data) => {
+            console.error("Whisper error:", data.toString());
+        });
+
+        pythonProcess.on("close", (code) => {
+
+            if (code !== 0)
+                reject("Whisper failed");
+            else
+                resolve(result.trim());
+
+        });
+
+    });
+
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -242,6 +280,8 @@ const rooms = new Map(); // meetingId -> Map of socketId -> participantData
 const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
+const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
+const meetingTranscripts = new Map(); // meetingId -> Array of transcription segments
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -511,6 +551,27 @@ io.on('connection', (socket) => {
             } else {
                 // Broadcast to everyone in the meeting room (public)
                 io.to(meeting_id).emit('receive_message', savedMessage);
+            }
+
+            // --- Question Tracking Logic ---
+            if (meeting_id && sender_id && content && content.includes('?')) {
+                if (!questionTracker.has(meeting_id)) {
+                    questionTracker.set(meeting_id, {});
+                }
+                const meetingQuestions = questionTracker.get(meeting_id);
+                if (!meetingQuestions[sender_id]) {
+                    meetingQuestions[sender_id] = { count: 0, name: sender_name };
+                }
+                meetingQuestions[sender_id].count += 1;
+
+                // Threshold: 3 questions
+                const frequentUsers = Object.entries(meetingQuestions)
+                    .filter(([_, data]) => data.count >= 3)
+                    .map(([id, data]) => ({ participantId: id, name: data.name, count: data.count }));
+
+                if (frequentUsers.length > 0) {
+                    io.to(meeting_id).emit('frequent_question_users', frequentUsers);
+                }
             }
         } catch (err) {
             console.error('Error saving message payload:', { sender_id, sender_name, meeting_id });
@@ -820,9 +881,57 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('audio_chunk', async (data) => {
+        const { meetingId, participantId, participantName, audioBlob } = data;
+        if (!meetingId || !audioBlob) return;
+
+        try {
+            // Write blob to temporary file
+            const tempDir = os.tmpdir();
+            const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
+            const filePath = path.join(tempDir, fileName);
+
+            fs.writeFileSync(filePath, Buffer.from(audioBlob));
+
+            const text = await transcribeWithWhisper(filePath);
+
+            // Clean up
+            fs.unlinkSync(filePath);
+
+            if (text && text.trim().length > 0) {
+                const segment = {
+                    participantId,
+                    participantName,
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
+                };
+
+                // Store in memory
+                if (!meetingTranscripts.has(meetingId)) {
+                    meetingTranscripts.set(meetingId, []);
+                }
+                meetingTranscripts.get(meetingId).push(segment);
+
+                // Broadcast to everyone in the meeting room
+                io.to(meetingId).emit('transcription_received', segment);
+            }
+        } catch (error) {
+            console.error('Transcription error:', error);
+        }
+    });
+
+    socket.on('get_transcripts', (data) => {
+        const { meetingId } = data;
+        if (meetingTranscripts.has(meetingId)) {
+            socket.emit('all_transcripts', meetingTranscripts.get(meetingId));
+        }
+    });
+
     socket.on('end_meeting', (data) => {
         const { meetingId } = data;
         console.log(`Meeting ${meetingId} ended by host`);
+        questionTracker.delete(meetingId);
+        meetingTranscripts.delete(meetingId);
         io.to(meetingId).emit('meeting_ended', { meetingId });
     });
 
@@ -946,6 +1055,7 @@ io.on('connection', (socket) => {
                 // Cleanup empty rooms
                 if (participants.size === 0) {
                     rooms.delete(meetingId);
+                    questionTracker.delete(meetingId);
                 }
 
                 // --- Analytics Tracking ---
