@@ -5,11 +5,48 @@ const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
+
+const { spawn } = require("child_process"); 
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 require('dotenv').config();
 
+
+// ================= WHISPER FUNCTION =================
+
+function transcribeWithWhisper(audioPath) {
+
+    return new Promise((resolve, reject) => {
+
+        const pythonProcess = spawn("python", [
+            path.join(__dirname, "transcribe.py"),
+            audioPath
+        ]);
+
+        let result = "";
+
+        pythonProcess.stdout.on("data", (data) => {
+            result += data.toString();
+        });
+
+        pythonProcess.stderr.on("data", (data) => {
+            console.error("Whisper error:", data.toString());
+        });
+
+        pythonProcess.on("close", (code) => {
+
+            if (code !== 0)
+                reject("Whisper failed");
+            else
+                resolve(result.trim());
+
+        });
+
+    });
+
+}
 const app = express();
 const server = http.createServer(app);
 
@@ -850,41 +887,46 @@ io.on('connection', (socket) => {
         const { meetingId, participantId, participantName, audioBlob } = data;
         if (!meetingId || !audioBlob) return;
 
-        try {
-            // Write blob to temporary file
-            const tempDir = os.tmpdir();
-            const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
-            const filePath = path.join(tempDir, fileName);
+     try {
+    // Write blob to temporary file
+    const tempDir = os.tmpdir();
+    const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
+    const filePath = path.join(tempDir, fileName);
 
-            fs.writeFileSync(filePath, Buffer.from(audioBlob));
+    fs.writeFileSync(filePath, Buffer.from(audioBlob));
 
-            const text = await groqService.transcribeAudio(fs.createReadStream(filePath));
+    // ✅ USE WHISPER (KEEP THIS)
+    const text = await transcribeWithWhisper(filePath);
 
-            // Clean up
-            fs.unlinkSync(filePath);
+    // Clean up
+    fs.unlinkSync(filePath);
 
-            if (text && text.trim().length > 0) {
-                const segment = {
-                    participantId,
-                    participantName,
-                    text: text.trim(),
-                    timestamp: new Date().toISOString()
-                };
+    if (text && text.trim().length > 0) {
 
-                // Store in memory
-                if (!meetingTranscripts.has(meetingId)) {
-                    meetingTranscripts.set(meetingId, []);
-                }
-                meetingTranscripts.get(meetingId).push(segment);
+        const segment = {
+            participantId,
+            participantName,
+            text: text.trim(),
+            timestamp: new Date().toISOString()
+        };
 
-                // Broadcast to everyone in the meeting room
-                io.to(meetingId).emit('transcription_received', segment);
-            }
-        } catch (error) {
-            console.error('Transcription error:', error);
+        // Store in memory
+        if (!meetingTranscripts.has(meetingId)) {
+            meetingTranscripts.set(meetingId, []);
         }
-    });
 
+        meetingTranscripts.get(meetingId).push(segment);
+
+        // Broadcast transcript
+        io.to(meetingId).emit('transcription_received', segment);
+
+    }
+
+} catch (error) {
+
+    console.error('Transcription error:', error);
+
+}
     socket.on('get_transcripts', (data) => {
         const { meetingId } = data;
         if (meetingTranscripts.has(meetingId)) {
