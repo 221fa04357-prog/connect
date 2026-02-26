@@ -195,7 +195,11 @@ export function JoinMeeting() {
             try {
                 const isVideoOff = useMeetingStore.getState().isVideoOff;
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    },
                     video: !isVideoOff
                 });
                 setLocalStream(stream);
@@ -216,7 +220,11 @@ export function JoinMeeting() {
                 const isAudioMuted = useMeetingStore.getState().isAudioMuted;
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
-                    audio: !isAudioMuted
+                    audio: !isAudioMuted ? {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    } : false
                 });
                 setLocalStream(stream);
             } catch (err) {

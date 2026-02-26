@@ -1961,13 +1961,27 @@ function ControlBar() {
 
             try {
                 const { summaryPoints, actionItems } = useAIStore.getState();
-                const { messages: transcript } = useChatStore.getState();
+                const { messages: chatTranscript } = useChatStore.getState();
+                const { transcripts: whisperTranscript } = useTranscriptionStore.getState();
 
                 const formatTime = (date: Date) => {
                     const h = String(date.getHours()).padStart(2, '0');
                     const m = String(date.getMinutes()).padStart(2, '0');
                     return `${h}:${m}`;
                 };
+
+                // Combine transcripts: Prioritize Whisper transcript if available, fallback to chat
+                const combinedTranscript = whisperTranscript.length > 0
+                    ? whisperTranscript.map(t => ({
+                        speaker: t.participantName,
+                        text: t.text,
+                        time: formatTime(new Date(t.timestamp))
+                    }))
+                    : chatTranscript.map(m => ({
+                        speaker: m.senderName,
+                        text: m.content,
+                        time: formatTime(new Date(m.timestamp))
+                    }));
 
                 const recapData = {
                     id: meeting.id,
@@ -1990,13 +2004,11 @@ function ControlBar() {
                     host: participants.find(p => p.id === meeting.hostId)?.name || user?.name || 'Host',
                     duration: meeting.startTime ? Math.floor((Date.now() - new Date(meeting.startTime).getTime()) / 60000) + ' min' : '---',
                     participants: participants.map(p => p.name),
-                    summary: summaryPoints,
-                    actionItems: actionItems,
-                    transcript: transcript.map(m => ({
-                        speaker: m.senderName,
-                        text: m.content,
-                        time: formatTime(new Date(m.timestamp))
-                    }))
+                    // If we have a whisper transcript, we let the backend generate summary and action items
+                    // unless they were manually edited or filled in the AI Companion.
+                    summary: summaryPoints.length > 0 ? summaryPoints : [],
+                    actionItems: actionItems.length > 0 ? actionItems : [],
+                    transcript: combinedTranscript
                 };
 
                 console.log('Saving meeting recap...', recapData);
