@@ -847,7 +847,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('audio_chunk', async (data) => {
-        const { meetingId, participantId, participantName, audioBlob, timestamp } = data;
+        const { meetingId, participantId, participantName, audioBlob } = data;
         if (!meetingId || !audioBlob) return;
 
         try {
@@ -859,31 +859,17 @@ io.on('connection', (socket) => {
             fs.writeFileSync(filePath, Buffer.from(audioBlob));
 
             const text = await groqService.transcribeAudio(fs.createReadStream(filePath));
-            fs.unlinkSync(filePath); // Clean up immediately
 
-            if (text && text.trim().length >= 3) {
-                const cleanText = text.trim();
-                const lowerText = cleanText.toLowerCase().replace(/[.,!?]/g, '');
+            // Clean up
+            fs.unlinkSync(filePath);
 
-                // Block common Whisper hallucinations during silence/noise
-                const hallucinations = ['thank you', 'thanks', 'bye', 'you', 'subtitles by', 'amara.org'];
-                if (hallucinations.includes(lowerText)) {
-                    console.log('Transcription: Filtered hallucination:', cleanText);
-                    return;
-                }
-
+            if (text && text.trim().length > 0) {
                 const segment = {
                     participantId,
                     participantName,
-                    text: cleanText,
-                    timestamp: timestamp || new Date().toISOString()
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
                 };
-
-                // Store in DB
-                db.query(
-                    'INSERT INTO transcriptions (meeting_id, participant_id, participant_name, text, timestamp) VALUES ($1, $2, $3, $4, $5)',
-                    [meetingId, participantId, participantName, cleanText, segment.timestamp]
-                ).catch(err => console.error('Error saving transcription to DB:', err));
 
                 // Store in memory
                 if (!meetingTranscripts.has(meetingId)) {

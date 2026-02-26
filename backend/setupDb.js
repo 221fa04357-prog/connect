@@ -74,14 +74,6 @@ async function setup() {
         updated_at TIMESTAMP DEFAULT NOW(),
         PRIMARY KEY (meeting_id, user_id)
       );
-      CREATE TABLE IF NOT EXISTS transcriptions (
-        id SERIAL PRIMARY KEY,
-        meeting_id VARCHAR(255) NOT NULL,
-        participant_id VARCHAR(255) NOT NULL,
-        participant_name VARCHAR(255),
-        text TEXT NOT NULL,
-        timestamp TIMESTAMP DEFAULT NOW()
-      );
     `);
 
     // Seed initial data if table is empty (disabled mock seeds for real data flow)
