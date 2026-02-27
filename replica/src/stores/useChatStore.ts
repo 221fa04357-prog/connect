@@ -17,6 +17,10 @@ interface ChatState {
   grantRecordingPermission: (meetingId: string, userId: string) => void;
   denyRecordingPermission: (meetingId: string, userId: string) => void;
 
+  // Video Permission methods
+  requestVideoStart: (meetingId: string, targetUserId: string, requesterName: string) => void;
+  respondToVideoRequest: (meetingId: string, hostId: string, participantId: string, accepted: boolean) => void;
+
   // Actions
   initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
   setMessages: (messages: ChatMessage[]) => void;
@@ -170,6 +174,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               });
             }
           }
+        });
+      }
+
+      // If any participant turns off their video, host should lose permission control
+      if (data.updates.isVideoOff === true) {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setVideoPermission(data.userId, false);
         });
       }
     });
@@ -460,6 +471,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     });
 
+    socket.on('video_start_requested', (data: { requesterName: string, requesterId: string }) => {
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setVideoRequestState({ status: 'pending', requesterName: data.requesterName, requesterId: data.requesterId });
+      });
+    });
+
+    socket.on('video_start_response_received', (data: { participantId: string, accepted: boolean }) => {
+      import('./useMeetingStore').then((store) => {
+        const ms = store.useMeetingStore.getState();
+        ms.setVideoPermission(data.participantId, data.accepted);
+        if (!data.accepted) {
+          import('sonner').then(({ toast }) => {
+            const pStore = import('./useParticipantsStore');
+            pStore.then(ps => {
+              const p = ps.useParticipantsStore.getState().participants.find(part => part.id === data.participantId);
+              toast.error(`${p?.name || 'Participant'} declined the video request.`);
+            });
+          });
+        }
+      });
+    });
+
     socket.on('waiting_room_update', (waitingParticipants: any[]) => {
       import('./useParticipantsStore').then((store) => {
         store.useParticipantsStore.getState().syncWaitingRoom(waitingParticipants);
@@ -687,6 +720,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   denyRecordingPermission: (meetingId, userId) => {
     get().socket?.emit('deny_recording', { meeting_id: meetingId, userId });
+  },
+
+  requestVideoStart: (meetingId, targetUserId, requesterName) => {
+    get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });
+  },
+
+  respondToVideoRequest: (meetingId, hostId, participantId, accepted) => {
+    get().socket?.emit('video_start_response', { meetingId, hostId, participantId, accepted });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { VideoStartRequestPopup } from './VideoStartRequestPopup';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useChatStore } from '@/stores/useChatStore';
@@ -628,6 +629,7 @@ export function ParticipantsPanel() {
         stopVideoAll,
         allowVideoAll,
         setVideoAllowed,
+        forceSetParticipantVideo,
     } = useParticipantsStore();
     const { localUserId } = useChatStore();
 
@@ -898,6 +900,7 @@ export function ParticipantsPanel() {
                                     onRevokeHost={() => revokeHost(participant.id)}
                                     onRevokeCoHost={() => revokeCoHost(participant.id)}
                                     onToggleVideoAllowed={() => setVideoAllowed(participant.id, participant.isVideoOff)}
+                                    onForceToggleVideo={(isOff) => forceSetParticipantVideo(participant.id, isOff)}
                                     onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
@@ -926,6 +929,7 @@ interface ParticipantItemProps {
     onRevokeHost: () => void;
     onRevokeCoHost: () => void;
     onToggleVideoAllowed: () => void;
+    onForceToggleVideo: (isOff: boolean) => void;
     onToggleVideo?: () => void;
     displayedRole?: Participant['role'];
     coHostCount: number;
@@ -945,6 +949,7 @@ function ParticipantItem({
     onRevokeHost,
     onRevokeCoHost,
     onToggleVideoAllowed,
+    onForceToggleVideo,
     onToggleVideo,
     isOriginalHost = false,
     displayedRole = participant.role,
@@ -1049,11 +1054,31 @@ function ParticipantItem({
                             )}
 
                             {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && (
-                                <DropdownMenuItem onClick={onToggleVideoAllowed}>
+                                <DropdownMenuItem onClick={() => {
+                                    if (participant.isVideoAllowed === false) {
+                                        onToggleVideoAllowed();
+                                    } else if (participant.isVideoOff) {
+                                        if (useMeetingStore.getState().videoPermissions[participant.id]) {
+                                            onForceToggleVideo(false);
+                                        } else {
+                                            // Request permission first
+                                            const myName = useParticipantsStore.getState().participants.find(p => p.id === useChatStore.getState().localUserId)?.name || 'Host';
+                                            useChatStore.getState().requestVideoStart(useMeetingStore.getState().meeting?.id || '', participant.id, myName);
+                                            import('sonner').then(({ toast }) => toast.info(`Requested ${participant.name} to start video.`));
+                                        }
+                                    } else {
+                                        onToggleVideoAllowed(); // Stop video
+                                    }
+                                }}>
                                     {participant.isVideoAllowed === false ? (
                                         <>
                                             <Video className="w-4 h-4 mr-2 text-green-500" />
                                             Allow Video
+                                        </>
+                                    ) : participant.isVideoOff ? (
+                                        <>
+                                            <Video className="w-4 h-4 mr-2 text-green-500" />
+                                            {useMeetingStore.getState().videoPermissions[participant.id] ? 'Turn On Video' : 'Ask to Start Video'}
                                         </>
                                     ) : (
                                         <>

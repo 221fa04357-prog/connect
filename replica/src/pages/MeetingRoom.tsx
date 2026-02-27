@@ -14,6 +14,7 @@ import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useNavigate } from 'react-router-dom';
+import { VideoStartRequestPopup } from '@/components/meeting/VideoStartRequestPopup';
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -942,6 +943,7 @@ export default function MeetingRoom() {
       <ChatPanel />
       <ParticipantsPanel />
       <AICompanionPanel />
+      <VideoStartRequestPopup />
     </div>
   );
 }
