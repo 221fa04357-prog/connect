@@ -883,6 +883,36 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('request_video_start', (data) => {
+        const { meetingId, targetUserId, requesterName } = data;
+        // Broadcast to the specific user in the meeting
+        const room = rooms.get(meetingId);
+        if (room) {
+            // Find requester's userId
+            const requesterEntry = room.get(socket.id);
+            const requesterId = requesterEntry?.id || 'host';
+
+            for (const [sId, p] of room.entries()) {
+                if (p.id === targetUserId) {
+                    io.to(sId).emit('video_start_requested', { requesterName, requesterId });
+                    console.log(`Host ${requesterName} (${requesterId}) requested video start for user ${targetUserId}`);
+                    break;
+                }
+            }
+        }
+    });
+
+    socket.on('video_start_response', (data) => {
+        const { meetingId, hostId, participantId, accepted } = data;
+        const room = rooms.get(meetingId);
+        if (room) {
+            for (const [sId, p] of room.entries()) {
+                if (p.id === hostId) {
+                    io.to(sId).emit('video_start_response_received', { participantId, accepted });
+                    console.log(`User ${participantId} responded to video request: ${accepted ? 'Accepted' : 'Denied'}`);
+                    break;
+                }
+            }
     socket.on('audio_chunk', async (data) => {
         const { meetingId, participantId, participantName, audioBlob } = data;
         if (!meetingId || !audioBlob) return;
