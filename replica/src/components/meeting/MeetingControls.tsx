@@ -1192,7 +1192,9 @@ function ControlBar() {
         showHostMutePopup,
         setShowHostMutePopup,
         isAnalyticsOpen,
-        toggleAnalytics
+        toggleAnalytics,
+        pendingMediaRequest,
+        setPendingMediaRequest
     } = useMeetingStore();
 
     // Enumerate devices on mount for the control bar dropdowns
@@ -1440,8 +1442,10 @@ function ControlBar() {
         if (!canEditWhiteboard) return;
         setWhiteboardDrawing(true);
         const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        // Use normalized coordinates (0 to 1) for cross-device consistency
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
         if (whiteboardTool === 'pen') {
             const strokeId = `${user?.id || 'guest'}-${Date.now()}`;
             setCurrentStrokeId(strokeId);
@@ -1457,8 +1461,9 @@ function ControlBar() {
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!whiteboardDrawing || !canEditWhiteboard) return;
         const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
         if (whiteboardTool === 'pen' && currentStrokeId) {
             const stroke = whiteboardStrokes.find(s => s.id === currentStrokeId);
             if (stroke) {
@@ -1490,12 +1495,19 @@ function ControlBar() {
         } else if (whiteboardTool === 'eraser') {
             setEraserPath((prev) => [...prev, [x, y]]);
             // Erase strokes that intersect with eraser path
-            const eraserRadius = whiteboardSize * 2;
+            const eraserRadius = whiteboardSize * 4; // Larger effective eraser area
             const updatedStrokes = whiteboardStrokes.filter(stroke => {
-                return !stroke.points.some(([sx, sy]) => {
-                    return [...eraserPath, [x, y]].some(([ex, ey]) => (
-                        Math.sqrt((sx - ex) ** 2 + (sy - ey) ** 2) < eraserRadius
-                    ));
+                return !stroke.points.some(([snx, sny]) => {
+                    // Convert normalized stroke point back to current logical pixels for distance check
+                    const sx = snx * rect.width;
+                    const sy = sny * rect.height;
+
+                    return [...eraserPath, [x, y]].some(([enx, eny]) => {
+                        // Convert normalized eraser point back to current logical pixels
+                        const ex = enx * rect.width;
+                        const ey = eny * rect.height;
+                        return Math.sqrt((sx - ex) ** 2 + (sy - ey) ** 2) < eraserRadius;
+                    });
                 });
             });
 
@@ -1525,21 +1537,29 @@ function ControlBar() {
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-        // Set actual size in memory (scaled to extra pixels)
-        canvas.width = canvasDims.w * dpr;
-        canvas.height = canvasDims.h * dpr;
+        // Ensure logical size matches display size for correct normalized-to-pixel mapping
+        const rect = canvas.getBoundingClientRect();
+        const logicalWidth = rect.width || canvasDims.w || window.innerWidth;
+        const logicalHeight = rect.height || canvasDims.h || window.innerHeight;
+
+        // Set actual size in memory (scaled to extra pixels for HiDPI)
+        canvas.width = logicalWidth * dpr;
+        canvas.height = logicalHeight * dpr;
 
         // Normalize coordinate system to logical pixels
         ctx.scale(dpr, dpr);
 
-        ctx.clearRect(0, 0, canvasDims.w, canvasDims.h);
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
         whiteboardStrokes.forEach(stroke => {
             ctx.strokeStyle = stroke.tool === 'pen' ? stroke.color : '#fff';
             ctx.lineWidth = stroke.size;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.beginPath();
-            stroke.points.forEach(([x, y], i) => {
+            stroke.points.forEach(([nx, ny], i) => {
+                // Convert normalized values (0-1) back to current local pixels
+                const x = nx * logicalWidth;
+                const y = ny * logicalHeight;
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             });
@@ -1551,8 +1571,8 @@ function ControlBar() {
     useEffect(() => {
         if (!isWhiteboardOpen) return;
         const updateDims = () => {
-            const w = window.innerWidth;
-            const h = window.innerHeight;
+            const w = document.documentElement.clientWidth;
+            const h = document.documentElement.clientHeight;
             setCanvasDims({ w, h });
         };
         updateDims();
@@ -1942,6 +1962,11 @@ function ControlBar() {
                 mediaRecorder.start();
                 toggleRecording();
                 setRecordingStartTime(Date.now());
+
+                // Notify others if Host
+                if (isJoinedAsHost && meeting?.id) {
+                    useChatStore.getState().socket?.emit('start_recording', { meetingId: meeting.id });
+                }
 
             } catch (err) {
                 console.error("Error starting recording:", err);
@@ -2876,6 +2901,54 @@ function ControlBar() {
                                     className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
                                 >
                                     Yes
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            {/* Media Request Modal */}
+            <AnimatePresence>
+                {pendingMediaRequest && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+                        >
+                            <h3 className="text-lg font-bold text-white mb-2">Media Request</h3>
+                            <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
+                                {pendingMediaRequest.type === 'audio' ? <Mic className="w-6 h-6 text-blue-500" /> : <Video className="w-6 h-6 text-blue-500" />}
+                            </div>
+                            <p className="text-gray-400 text-sm mb-6">
+                                Host has requested you to {pendingMediaRequest.type === 'audio' ? 'unmute your microphone' : 'start your video'}.
+                            </p>
+                            <div className="flex gap-3 justify-end">
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setPendingMediaRequest(null)}
+                                    className="text-gray-300 hover:text-white hover:bg-[#333]"
+                                >
+                                    Reject
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        if (pendingMediaRequest.type === 'audio') {
+                                            if (isAudioMuted) confirmAudioToggle();
+                                        } else {
+                                            if (isVideoOff) confirmVideoToggle();
+                                        }
+                                        setPendingMediaRequest(null);
+                                    }}
+                                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                                >
+                                    Accept
                                 </Button>
                             </div>
                         </motion.div>

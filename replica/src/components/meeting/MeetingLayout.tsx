@@ -779,62 +779,31 @@ export function ParticipantsPanel() {
                             {canControl && (
                                 <Button
                                     onClick={() => {
-                                        if (allMuted) {
-                                            if (confirm('Unmute all participants?')) {
-                                                useChatStore.getState().unmuteAll(useMeetingStore.getState().meeting?.id || '');
-                                            }
-                                        } else {
-                                            if (confirm('Mute all participants?')) {
-                                                useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
-                                            }
+                                        if (confirm('Mute all participants?')) {
+                                            useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
                                         }
                                     }}
                                     variant="ghost"
                                     className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-9 px-2 md:px-3 text-xs sm:text-sm"
                                 >
-                                    {allMuted ? (
-                                        <>
-                                            <Mic className="w-3.5 h-3.5 mr-1.5 text-green-500" />
-                                            Unmute All
-                                        </>
-                                    ) : (
-                                        <>
-                                            <MicOff className="w-3.5 h-3.5 mr-1.5 text-red-500" />
-                                            Mute All
-                                        </>
-                                    )}
+                                    <MicOff className="w-3.5 h-3.5 mr-1.5 text-red-500" />
+                                    Mute All
                                 </Button>
                             )}
 
                             {canControl && (
                                 <Button
                                     onClick={() => {
-                                        if (videoRestricted) {
-                                            if (confirm('Allow participants to start video?')) {
-                                                useChatStore.getState().allowVideoAll(useMeetingStore.getState().meeting?.id || '');
-                                                setVideoRestriction(false);
-                                            }
-                                        } else {
-                                            if (confirm('Stop all participant videos and restrict them?')) {
-                                                useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
-                                                setVideoRestriction(true);
-                                            }
+                                        if (confirm('Stop all participant videos and restrict them?')) {
+                                            useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
+                                            setVideoRestriction(true);
                                         }
                                     }}
                                     variant="outline"
                                     className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
                                 >
-                                    {videoRestricted ? (
-                                        <>
-                                            <Video className="w-3.5 h-3.5 mr-1 text-green-500" />
-                                            Enable All
-                                        </>
-                                    ) : (
-                                        <>
-                                            <VideoOff className="w-3.5 h-3.5 mr-1 text-red-500" />
-                                            Disable All
-                                        </>
-                                    )}
+                                    <VideoOff className="w-3.5 h-3.5 mr-1 text-red-500" />
+                                    Disable All
                                 </Button>
                             )}
 
@@ -900,9 +869,7 @@ export function ParticipantsPanel() {
                                     isOriginalHost={isOriginalHost}
                                     onToggleHand={() => toggleHandRaise(participant.id)}
                                     onToggleMute={isCurrentUser ? handleAudioToggle : () => {
-                                        if (participant.isAudioMuted) {
-                                            unmuteParticipant(participant.id);
-                                        } else {
+                                        if (!participant.isAudioMuted) {
                                             muteParticipant(participant.id);
                                         }
                                     }}
@@ -911,8 +878,16 @@ export function ParticipantsPanel() {
                                     onRemove={() => removeParticipant(participant.id)}
                                     onRevokeHost={() => revokeHost(participant.id)}
                                     onRevokeCoHost={() => revokeCoHost(participant.id)}
-                                    onToggleVideoAllowed={() => setVideoAllowed(participant.id, participant.isVideoOff)}
-                                    onForceToggleVideo={(isOff) => forceSetParticipantVideo(participant.id, isOff)}
+                                    onToggleVideoAllowed={() => {
+                                        if (!participant.isVideoOff) {
+                                            setVideoAllowed(participant.id, false);
+                                        }
+                                    }}
+                                    onRequestMedia={(userId, type) => {
+                                        if (meeting?.id) {
+                                            useChatStore.getState().requestMedia(meeting.id, userId, type);
+                                        }
+                                    }}
                                     onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
@@ -959,7 +934,7 @@ interface ParticipantItemProps {
     onRevokeHost: () => void;
     onRevokeCoHost: () => void;
     onToggleVideoAllowed: () => void;
-    onForceToggleVideo: (isOff: boolean) => void;
+    onRequestMedia: (userId: string, type: 'audio' | 'video') => void;
     onToggleVideo?: () => void;
     displayedRole?: Participant['role'];
     coHostCount: number;
@@ -979,7 +954,7 @@ function ParticipantItem({
     onRevokeHost,
     onRevokeCoHost,
     onToggleVideoAllowed,
-    onForceToggleVideo,
+    onRequestMedia,
     onToggleVideo,
     isOriginalHost = false,
     displayedRole = participant.role,
@@ -1018,7 +993,13 @@ function ParticipantItem({
 
                     <div className="flex items-center gap-2 mt-1">
                         <button
-                            onClick={(isCurrentUser || canControl) ? onToggleMute : undefined}
+                            onClick={isCurrentUser ? onToggleMute : (canControl) => {
+                                if (!participant.isAudioMuted) {
+                                    onToggleMute();
+                                } else if (canControl) {
+                                    onRequestMedia(participant.id, 'audio');
+                                }
+                            }}
                             className={cn(
                                 "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
                                 (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
@@ -1031,7 +1012,13 @@ function ParticipantItem({
                             )}
                         </button>
                         <button
-                            onClick={isCurrentUser ? onToggleVideo : (canControl ? onToggleVideoAllowed : undefined)}
+                            onClick={isCurrentUser ? onToggleVideo : (canControl) => {
+                                if (!participant.isVideoOff) {
+                                    onToggleVideoAllowed();
+                                } else if (canControl) {
+                                    onRequestMedia(participant.id, 'video');
+                                }
+                            }}
                             className={cn(
                                 "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
                                 (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
@@ -1076,46 +1063,31 @@ function ParticipantItem({
                             align="end"
                             className="bg-[#232323] border-[#404040]"
                         >
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && (
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isAudioMuted && (
                                 <DropdownMenuItem onClick={onToggleMute}>
                                     <MicOff className="w-4 h-4 mr-2" />
-                                    {participant.isAudioMuted ? 'Unmute' : 'Mute'}
+                                    Mute
                                 </DropdownMenuItem>
                             )}
 
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && (
-                                <DropdownMenuItem onClick={() => {
-                                    if (participant.isVideoAllowed === false) {
-                                        onToggleVideoAllowed();
-                                    } else if (participant.isVideoOff) {
-                                        if (useMeetingStore.getState().videoPermissions[participant.id]) {
-                                            onForceToggleVideo(false);
-                                        } else {
-                                            // Request permission first
-                                            const myName = useParticipantsStore.getState().participants.find(p => p.id === useChatStore.getState().localUserId)?.name || 'Host';
-                                            useChatStore.getState().requestVideoStart(useMeetingStore.getState().meeting?.id || '', participant.id, myName);
-                                            import('sonner').then(({ toast }) => toast.info(`Requested ${participant.name} to start video.`));
-                                        }
-                                    } else {
-                                        onToggleVideoAllowed(); // Stop video
-                                    }
-                                }}>
-                                    {participant.isVideoAllowed === false ? (
-                                        <>
-                                            <Video className="w-4 h-4 mr-2 text-green-500" />
-                                            Allow Video
-                                        </>
-                                    ) : participant.isVideoOff ? (
-                                        <>
-                                            <Video className="w-4 h-4 mr-2 text-green-500" />
-                                            {useMeetingStore.getState().videoPermissions[participant.id] ? 'Turn On Video' : 'Ask to Start Video'}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <VideoOff className="w-4 h-4 mr-2 text-red-500" />
-                                            Stop Video
-                                        </>
-                                    )}
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isAudioMuted && (
+                                <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'audio')}>
+                                    <Mic className="w-4 h-4 mr-2" />
+                                    Ask to Unmute
+                                </DropdownMenuItem>
+                            )}
+
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isVideoOff && (
+                                <DropdownMenuItem onClick={onToggleVideoAllowed}>
+                                    <VideoOff className="w-4 h-4 mr-2 text-red-500" />
+                                    Turn Off Camera
+                                </DropdownMenuItem>
+                            )}
+
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isVideoOff && (
+                                <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'video')}>
+                                    <Video className="w-4 h-4 mr-2" />
+                                    Ask to Start Video
                                 </DropdownMenuItem>
                             )}
 
