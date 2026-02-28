@@ -826,6 +826,35 @@ io.on('connection', (socket) => {
         io.to(meetingId).emit('meeting_ended', { meetingId });
     });
 
+    socket.on('request_media', (data) => {
+        const { meetingId, userId, type } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        // Find the socket ID for the target user ID
+        let targetSocketId = null;
+        for (const [sId, p] of room.entries()) {
+            if (p.id === userId) {
+                targetSocketId = sId;
+                break;
+            }
+        }
+
+        if (targetSocketId) {
+            // Find the sender's name
+            const sender = room.get(socket.id);
+            const fromName = 'Host';
+
+            console.log(`Forwarding ${type} request from ${fromName} to participant ${userId} (Socket: ${targetSocketId})`);
+            io.to(targetSocketId).emit('media_request', { type, fromName });
+        }
+    });
+
+    socket.on('start_recording', (data) => {
+        const { meetingId } = data;
+        socket.to(meetingId).emit('recording_started');
+    });
+
     // --- Whiteboard Sync ---
     socket.on('whiteboard_draw', (data) => {
         const { meeting_id, stroke } = data;

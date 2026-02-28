@@ -48,6 +48,7 @@ interface ChatState {
   deleteMessageForMe: (messageId: string) => void;
   deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
+  requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
   reset: () => void;
 }
 
@@ -157,7 +158,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (ms.isAudioMuted !== data.updates.isAudioMuted) {
               ms.setAudioMuted(data.updates.isAudioMuted);
               import('sonner').then(({ toast }) => {
-                toast.info(data.updates.isAudioMuted ? 'Your microphone has been muted.' : 'Your microphone has been unmuted.');
+                toast.info(data.updates.isAudioMuted ? 'Your microphone has been muted by Host.' : 'Your microphone has been unmuted.');
               });
             }
           }
@@ -166,7 +167,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (ms.isVideoOff !== data.updates.isVideoOff) {
               ms.setVideoOff(data.updates.isVideoOff);
               import('sonner').then(({ toast }) => {
-                toast.info(data.updates.isVideoOff ? 'Your video has been stopped.' : 'Your video has been started.');
+                toast.info(data.updates.isVideoOff ? 'Your video has been stopped by Host.' : 'Your video has been started.');
               });
             }
           }
@@ -195,7 +196,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // I am a participant, so I must mute
             if (!ms.isAudioMuted) {
               ms.setAudioMuted(true);
-              import('sonner').then(({ toast }) => toast.info('The host has muted everyone.'));
+              import('sonner').then(({ toast }) => toast.info('Host has muted everyone.'));
             }
           }
         });
@@ -216,7 +217,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (participant && participant.role !== 'host') {
             if (ms.isAudioMuted) {
               ms.setAudioMuted(false);
-              import('sonner').then(({ toast }) => toast.info('The host has unmuted everyone.'));
+              import('sonner').then(({ toast }) => toast.info('Host has unmuted everyone.'));
             }
           }
         });
@@ -237,7 +238,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // Host disabled video for everyone
             if (!ms.isVideoOff) {
               ms.setVideoOff(true);
-              import('sonner').then(({ toast }) => toast.warning('The host has stopped your video.'));
+              import('sonner').then(({ toast }) => toast.warning('Host has stopped your video.'));
             }
           }
         });
@@ -258,9 +259,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // Restore video state automatically as requested by the user
             if (ms.isVideoOff) {
               ms.setVideoOff(false);
-              import('sonner').then(({ toast }) => toast.info('The host has enabled video. Your camera is now ON.'));
+              import('sonner').then(({ toast }) => toast.info('Host has enabled video. Your camera is now ON.'));
             } else {
-              import('sonner').then(({ toast }) => toast.info('The host has allowed video.'));
+              import('sonner').then(({ toast }) => toast.info('Host has allowed video.'));
             }
           }
         });
@@ -455,9 +456,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (data.userId === ms) {
         import('./useMeetingStore').then((store) => {
           store.useMeetingStore.getState().setRecordingPermissionStatus('denied');
-          import('sonner').then(({ toast }) => toast.error('Recording permission denied by the host.'));
+          import('sonner').then(({ toast }) => toast.error('Recording permission denied by Host.'));
         });
       }
+    });
+
+    socket.on('recording_started', () => {
+      import('sonner').then(({ toast }) => toast.info('Host has started recording.'));
     });
 
     socket.on('waiting_room_update', (waitingParticipants: any[]) => {
@@ -471,7 +476,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         store.useParticipantsStore.getState().setWaitingRoomEnabled(data.enabled);
       });
       import('sonner').then(({ toast }) => {
-        toast.info(`Waiting room has been ${data.enabled ? 'enabled' : 'disabled'} by the host.`);
+        toast.info(`Waiting room has been ${data.enabled ? 'enabled' : 'disabled'} by Host.`);
+      });
+    });
+
+    socket.on('media_request', (data: { type: 'audio' | 'video', fromName: string }) => {
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setPendingMediaRequest(data);
       });
     });
 
@@ -687,6 +698,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   denyRecordingPermission: (meetingId, userId) => {
     get().socket?.emit('deny_recording', { meeting_id: meetingId, userId });
+  },
+
+  requestMedia: (meetingId, userId, type) => {
+    get().socket?.emit('request_media', { meetingId, userId, type });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),

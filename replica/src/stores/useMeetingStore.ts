@@ -122,6 +122,9 @@ interface MeetingState {
   ) => void;
   checkParticipantStatus: (meetingId: string, userId: string) => Promise<'admitted' | 'waiting' | 'rejected' | 'not_found' | 'error'>;
   updateMeetingSettings: (settings: Partial<any>) => void;
+
+  pendingMediaRequest: { type: 'audio' | 'video', fromName: string } | null;
+  setPendingMediaRequest: (request: { type: 'audio' | 'video', fromName: string } | null) => void;
 }
 
 
@@ -179,6 +182,9 @@ export const useMeetingStore = create<MeetingState>()(
       whiteboardRedoStack: [],
 
       connectionQuality: 'excellent',
+
+      pendingMediaRequest: null,
+      setPendingMediaRequest: (request) => set({ pendingMediaRequest: request }),
 
       audioDevices: [],
       videoDevices: [],
