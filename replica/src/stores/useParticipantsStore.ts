@@ -57,6 +57,7 @@ interface ParticipantsState {
   // Unified Toggle Actions
   toggleParticipantAudio: (id: string) => void;
   toggleParticipantVideo: (id: string) => void;
+  forceSetParticipantVideo: (id: string, isOff: boolean) => void;
   syncParticipants: (participants: Participant[]) => void;
   reset: () => void;
 }
@@ -428,6 +429,22 @@ export const useParticipantsStore = create<ParticipantsState>()(
 
         const participants = state.participants.map(p =>
           p.id === id ? { ...p, isVideoOff: nextVideoOff } : p
+        );
+        setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+        return { participants };
+      }),
+
+      forceSetParticipantVideo: (id, isOff) => set((state) => {
+        // Broadcast update
+        import('./useChatStore').then((chatStore) => {
+          const cs = chatStore.useChatStore.getState();
+          if (cs.meetingId) {
+            cs.emitParticipantUpdate(cs.meetingId, id, { isVideoOff: isOff });
+          }
+        });
+
+        const participants = state.participants.map(p =>
+          p.id === id ? { ...p, isVideoOff: isOff } : p
         );
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };

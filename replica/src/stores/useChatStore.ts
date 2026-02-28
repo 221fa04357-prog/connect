@@ -11,11 +11,16 @@ interface ChatState {
   meetingId: string | null;
   localUserId: string | null;
   selectedRecipientId: string | null;
+  frequentQuestionUsers: { participantId: string, name: string, count: number }[];
 
   // Recording Permission methods
   requestRecordingPermission: (meetingId: string, userId: string, userName: string) => void;
   grantRecordingPermission: (meetingId: string, userId: string) => void;
   denyRecordingPermission: (meetingId: string, userId: string) => void;
+
+  // Video Permission methods
+  requestVideoStart: (meetingId: string, targetUserId: string, requesterName: string) => void;
+  respondToVideoRequest: (meetingId: string, hostId: string, participantId: string, accepted: boolean) => void;
 
   // Actions
   initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
@@ -63,6 +68,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   meetingId: null,
   localUserId: null,
   selectedRecipientId: null,
+  frequentQuestionUsers: [],
 
   initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
@@ -171,6 +177,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               });
             }
           }
+        });
+      }
+
+      // If any participant turns off their video, host should lose permission control
+      if (data.updates.isVideoOff === true) {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setVideoPermission(data.userId, false);
         });
       }
     });
@@ -364,6 +377,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       get().addMessage(processedMessage, false);
     });
+
+    /* removed internal listener */
 
     socket.on('message_pinned', (data: { messageId: string }) => {
       set((state) => ({
@@ -706,6 +721,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   markAsRead: () => set({ unreadCount: 0 }),
 
+  setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
+
   reset: () => {
     const { socket } = get();
     if (socket) socket.disconnect();
@@ -717,7 +736,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       socket: null,
       meetingId: null,
       localUserId: null,
-      selectedRecipientId: null
+      selectedRecipientId: null,
+      frequentQuestionUsers: []
     });
   },
 }));

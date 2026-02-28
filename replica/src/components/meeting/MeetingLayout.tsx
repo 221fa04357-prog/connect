@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { VideoStartRequestPopup } from './VideoStartRequestPopup';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useChatStore } from '@/stores/useChatStore';
@@ -628,8 +629,9 @@ export function ParticipantsPanel() {
         stopVideoAll,
         allowVideoAll,
         setVideoAllowed,
+        forceSetParticipantVideo,
     } = useParticipantsStore();
-    const { localUserId } = useChatStore();
+    const { localUserId, frequentQuestionUsers, setFrequentQuestionUsers, socket } = useChatStore();
 
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -648,6 +650,18 @@ export function ParticipantsPanel() {
     const canChangeRoles = isHost;
     const isOriginalHost = meeting?.originalHostId === user?.id;
     const { setLocalStream, toggleAudio, toggleVideo } = useMeetingStore();
+
+    useEffect(() => {
+        if (!socket) return;
+
+        socket.on("frequent_question_users", (users: { participantId: string, name: string, count: number }[]) => {
+            setFrequentQuestionUsers(users);
+        });
+
+        return () => {
+            socket.off("frequent_question_users");
+        };
+    }, [socket, setFrequentQuestionUsers]);
 
     const handleAudioToggle = async () => {
         const currentIsMuted = useMeetingStore.getState().isAudioMuted;
@@ -881,6 +895,24 @@ export function ParticipantsPanel() {
                                 />
                             );
                         })}
+
+                        {/* FREQUENT QUESTION ASKERS SECTION */}
+                        {isHost && frequentQuestionUsers.length > 0 && (
+                            <div className="mt-3 border-t border-gray-700 pt-2 px-4 pb-4">
+                                <div className="text-sm font-semibold text-yellow-400">
+                                    Frequent Question Askers 🔥
+                                </div>
+
+                                {frequentQuestionUsers.map((fqUser) => (
+                                    <div key={fqUser.participantId} className="flex justify-between text-sm mt-1">
+                                        <span className="text-gray-200">{fqUser.name}</span>
+                                        <span className="bg-yellow-500 text-black px-2 rounded text-xs">
+                                            {fqUser.count}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </motion.div>
             )}
