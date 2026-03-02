@@ -105,8 +105,15 @@ export function VideoTile({
         if (isLocal) {
             setMicConfirm(true);
         } else if (isHostOrCoHost) {
-            // Host/Co-host toggling a participant
-            toggleParticipantAudio(participant.id);
+            if (!participant.isAudioMuted) {
+                // Host/Co-host can only MUTE directly
+                toggleParticipantAudio(participant.id);
+            } else {
+                // If already muted, request to unmute
+                if (meeting?.id) {
+                    useChatStore.getState().requestMedia(meeting.id, participant.id, 'audio');
+                }
+            }
         }
     };
 
@@ -117,8 +124,15 @@ export function VideoTile({
         if (isLocal) {
             setVideoConfirm(true);
         } else if (isHostOrCoHost) {
-            // Host/Co-host toggling a participant
-            toggleParticipantVideo(participant.id);
+            if (!participant.isVideoOff) {
+                // Host/Co-host can only TURN OFF directly
+                toggleParticipantVideo(participant.id);
+            } else {
+                // If already off, request to start video
+                if (meeting?.id) {
+                    useChatStore.getState().requestMedia(meeting.id, participant.id, 'video');
+                }
+            }
         }
     };
 
