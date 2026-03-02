@@ -9,7 +9,7 @@ import {
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
     Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
-    Undo, Redo, Download, BarChart3, AlertCircle
+    Undo, Redo, Download, BarChart3, AlertCircle, Languages
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -52,6 +52,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useChatStore } from '@/stores/useChatStore';
+import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
@@ -2406,6 +2407,20 @@ function ControlBar() {
                             icon={isFullscreen ? Minimize2 : Maximize2}
                             label="Fullscreen"
                             onClick={toggleFullscreen}
+                        />
+
+                        {/* Captions Button */}
+                        <ControlButton
+                            icon={Languages}
+                            label="Captions"
+                            onClick={() => {
+                                const { setTranscriptionEnabled, isTranscriptionEnabled } = useTranscriptionStore.getState();
+                                setTranscriptionEnabled(!isTranscriptionEnabled);
+                                import('sonner').then(({ toast }) => {
+                                    toast.success(!isTranscriptionEnabled ? 'Captions Turned On' : 'Captions Turned Off');
+                                });
+                            }}
+                            isActiveState={useTranscriptionStore(s => s.isTranscriptionEnabled)}
                         />
 
                         {/* More */}

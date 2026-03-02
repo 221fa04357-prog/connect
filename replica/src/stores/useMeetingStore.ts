@@ -39,6 +39,10 @@ interface MeetingState {
   // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
+
+  videoRequestState: { status: 'idle' | 'pending'; requesterName: string; requesterId: string; };
+  videoPermissions: Record<string, boolean>;
+
   setRecordingPermissionStatus: (status: 'idle' | 'requesting' | 'granted' | 'denied') => void;
   setShowHostMutePopup: (show: boolean) => void;
 
@@ -155,12 +159,12 @@ export const useMeetingStore = create<MeetingState>()(
       recordingStartTime: null,
       showSelfView: true,
       localStream: null,
-      isAudioMuted: false,
+      isAudioMuted: true,
 
       showUpgradeModal: false,
       setShowUpgradeModal: (show) => set({ showUpgradeModal: show }),
 
-      isVideoOff: false,
+      isVideoOff: true,
       whiteboardStrokes: [],
       hasHydrated: false,
 
@@ -170,6 +174,9 @@ export const useMeetingStore = create<MeetingState>()(
 
       showMicConfirm: false,
       showVideoConfirm: false,
+
+      videoRequestState: { status: 'idle', requesterName: '', requesterId: '' },
+      videoPermissions: {},
 
       isMiniVisible: false,
       meetingJoined: false,
@@ -589,6 +596,12 @@ export const useMeetingStore = create<MeetingState>()(
         // Emit to socket
         useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
       },
+
+      setVideoRequestState: (state) => set({ videoRequestState: state }),
+      setVideoPermission: (userId, granted) => set((state) => {
+        const next = { ...state.videoPermissions, [userId]: granted };
+        return { videoPermissions: next };
+      }),
     }),
     {
       name: 'meeting-store',

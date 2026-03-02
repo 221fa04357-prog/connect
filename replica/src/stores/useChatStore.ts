@@ -18,6 +18,10 @@ interface ChatState {
   grantRecordingPermission: (meetingId: string, userId: string) => void;
   denyRecordingPermission: (meetingId: string, userId: string) => void;
 
+  // Video Permission methods
+  requestVideoStart: (meetingId: string, targetUserId: string, requesterName: string) => void;
+  respondToVideoRequest: (meetingId: string, hostId: string, participantId: string, accepted: boolean) => void;
+
   // Actions
   initSocket: (meetingId: string, user?: { id: string, name: string, role: string }, initialState?: { isAudioMuted: boolean, isVideoOff: boolean, isHandRaised: boolean }) => void;
   setMessages: (messages: ChatMessage[]) => void;
@@ -176,6 +180,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               });
             }
           }
+        });
+      }
+
+      // If any participant turns off their video, host should lose permission control
+      if (data.updates.isVideoOff === true) {
+        import('./useMeetingStore').then((store) => {
+          store.useMeetingStore.getState().setVideoPermission(data.userId, false);
         });
       }
     });
@@ -369,6 +380,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       get().addMessage(processedMessage, false);
     });
+
+    /* removed internal listener */
 
     socket.on('message_pinned', (data: { messageId: string }) => {
       set((state) => ({
@@ -720,6 +733,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   markAsRead: () => set({ unreadCount: 0 }),
+
+  setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
 
   reset: () => {
     const { socket } = get();
