@@ -251,3 +251,36 @@ body {
   will-change: opacity;
   /* No background or box added — icon only */
 }
+
+/* ─── Zoom-style Live Captions Overlay ──────────────────────────────────────
+   Floats at the bottom-center of the meeting screen.
+   - Appears only when the user is speaking (driven by TranscriptionManager)
+   - Auto-disappears after 3 s of silence (setTimeout in TranscriptionManager)
+   - Never blocks clicks / UI behind it (pointer-events: none)
+   - Not embedded in the video element — rendered as a sibling fixed overlay
+   ─────────────────────────────────────────────────────────────────────────── */
+.captions-overlay {
+  position: fixed;
+  bottom: 96px;             /* Sits above the control bar (~80 px) */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;            /* Above video, below modals / toasts */
+  max-width: min(680px, 90vw);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+  letter-spacing: 0.01em;
+  pointer-events: none;     /* Never intercept mouse/touch events */
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Framer Motion handles enter/exit animations; no CSS transition needed */
+}
