@@ -39,6 +39,10 @@ interface MeetingState {
   // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
+
+  videoRequestState: { status: 'idle' | 'pending'; requesterName: string; requesterId: string; };
+  videoPermissions: Record<string, boolean>;
+
   setRecordingPermissionStatus: (status: 'idle' | 'requesting' | 'granted' | 'denied') => void;
   setShowHostMutePopup: (show: boolean) => void;
 
@@ -155,12 +159,12 @@ export const useMeetingStore = create<MeetingState>()(
       recordingStartTime: null,
       showSelfView: true,
       localStream: null,
-      isAudioMuted: false,
+      isAudioMuted: true,
 
       showUpgradeModal: false,
       setShowUpgradeModal: (show) => set({ showUpgradeModal: show }),
 
-      isVideoOff: false,
+      isVideoOff: true,
       whiteboardStrokes: [],
       hasHydrated: false,
 
@@ -170,6 +174,9 @@ export const useMeetingStore = create<MeetingState>()(
 
       showMicConfirm: false,
       showVideoConfirm: false,
+
+      videoRequestState: { status: 'idle', requesterName: '', requesterId: '' },
+      videoPermissions: {},
 
       isMiniVisible: false,
       meetingJoined: false,
@@ -600,6 +607,163 @@ export const useMeetingStore = create<MeetingState>()(
                 state.meeting.startTime = new Date(typeof st === 'string' && !st.endsWith('Z') && !st.includes('+') ? (st.includes(' ') ? st.replace(' ', 'T') + 'Z' : st + 'Z') : st);
               }
             }
+          showHostMutePopup: false,
+          videoRequestState: { status: 'idle', requesterName: '', requesterId: '' },
+          videoPermissions: {},
+        });
+      },
+
+      setScreenShareStream: (stream) =>
+        set({ screenShareStream: stream }),
+
+      setRecordingStartTime: (time) =>
+        set({ recordingStartTime: time }),
+
+      setRecordingPermissionStatus: (status) =>
+        set({ recordingPermissionStatus: status }),
+
+      setShowHostMutePopup: (show) =>
+        set({ showHostMutePopup: show }),
+
+      setConnectionQuality: (quality) =>
+        set({ connectionQuality: quality }),
+
+      extendMeetingTime: async (minutes: number) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
+
+        const m = state.meeting;
+        const newDuration = (m.duration || 0) + minutes;
+
+        try {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ duration: newDuration }),
+          });
+
+          if (!response.ok) throw new Error('Failed to update meeting duration');
+
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            duration: updatedMeetingData.duration,
+          };
+
+          set({ meeting: nextMeeting });
+
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
+          );
+        } catch (err) {
+          console.error('Error extending meeting time:', err);
+        }
+      },
+
+      setWhiteboardEditAccess: async (access) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
+
+        const m = state.meeting;
+        const nextSettings = {
+          ...m.settings,
+          whiteboardEditAccess: access,
+        };
+
+        // Optimistic update
+        set({ meeting: { ...m, settings: nextSettings } });
+
+        try {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: nextSettings }),
+          });
+
+          if (!response.ok) throw new Error('Failed to update whiteboard access');
+
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            settings: updatedMeetingData.settings,
+          };
+
+          set({ meeting: nextMeeting });
+
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
+          );
+
+          // Emit to other clients
+          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
+        } catch (err) {
+          console.error('Error setting whiteboard access:', err);
+        }
+      },
+      addWhiteboardStroke: (stroke) => set((state) => ({
+        whiteboardStrokes: [...state.whiteboardStrokes, stroke],
+        whiteboardRedoStack: [] // Clear redo history when drawing something new
+      })),
+      updateWhiteboardStroke: (id, points) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
+      })),
+      appendWhiteboardPoints: (id, newPoints) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points: [...(s.points || []), ...newPoints] } : s)
+      })),
+      removeWhiteboardStroke: (id) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.filter(s => s.id !== id)
+      })),
+      clearWhiteboardStrokes: () => set({ whiteboardStrokes: [], whiteboardRedoStack: [] }),
+      setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
+      undoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardStrokes.length === 0) return state;
+        const lastStroke = state.whiteboardStrokes[state.whiteboardStrokes.length - 1];
+        return {
+          whiteboardStrokes: state.whiteboardStrokes.slice(0, -1),
+          whiteboardRedoStack: [...state.whiteboardRedoStack, lastStroke]
+        };
+      }),
+      redoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardRedoStack.length === 0) return state;
+        const lastUndoneStroke = state.whiteboardRedoStack[state.whiteboardRedoStack.length - 1];
+        return {
+          whiteboardRedoStack: state.whiteboardRedoStack.slice(0, -1),
+          whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
+        };
+      }),
+      checkParticipantStatus: async (meetingId, userId) => {
+        try {
+          const response = await fetch(`${API}/api/meetings/${meetingId}/participant-status`, {
+            headers: { 'x-user-id': userId }
+          });
+          if (!response.ok) throw new Error('Failed to fetch status');
+          const data = await response.json();
+          const status = data.status;
+
+          if (status === 'admitted') {
+            set({
+              isWaiting: false,
+              isAudioMuted: data.micOn !== undefined ? !data.micOn : get().isAudioMuted,
+              isVideoOff: data.cameraOn !== undefined ? !data.cameraOn : get().isVideoOff
+            });
+          } else if (status === 'waiting') {
+            set({ isWaiting: true });
+          } else if (status === 'rejected') {
+            // Handled by component if needed
+          }
+          return status;
+        } catch (err) {
+          console.error('Error checking participant status:', err);
+          return 'error';
+        }
+      },
+      updateMeetingSettings: (settings) => {
+        const state = get();
+        if (!state.meeting) return;
 
             if (error) {
               console.error('An error happened during hydration', error);
@@ -612,6 +776,30 @@ export const useMeetingStore = create<MeetingState>()(
             setTimeout(() => {
               useMeetingStore.setState({ hasHydrated: true });
             }, 0);
+        // Emit to socket
+        useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
+      },
+
+      setVideoRequestState: (state) => set({ videoRequestState: state }),
+      setVideoPermission: (userId, granted) => set((state) => {
+        const next = { ...state.videoPermissions, [userId]: granted };
+        return { videoPermissions: next };
+      }),
+    }),
+    {
+      name: 'meeting-store',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => {
+        const { localStream, screenShareStream, ...rest } = state;
+        return rest;
+      },
+      onRehydrateStorage: () => (state, error) => {
+        if (state && state.meeting) {
+          if (state.meeting.start_timestamp) {
+            state.meeting.startTime = new Date(Number(state.meeting.start_timestamp));
+          } else if (state.meeting.startTime) {
+            const st = state.meeting.startTime as any;
+            state.meeting.startTime = new Date(typeof st === 'string' && !st.endsWith('Z') && !st.includes('+') ? (st.includes(' ') ? st.replace(' ', 'T') + 'Z' : st + 'Z') : st);
           }
         }
   )
