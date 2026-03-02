@@ -57,9 +57,6 @@ interface MeetingState {
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
 
-  videoRequestState: { status: 'idle' | 'pending'; requesterName: string; requesterId: string; };
-  videoPermissions: Record<string, boolean>;
-
   setRecordingPermissionStatus: (status: 'idle' | 'requesting' | 'granted' | 'denied') => void;
   setShowHostMutePopup: (show: boolean) => void;
 
@@ -216,10 +213,6 @@ export const useMeetingStore = create<MeetingState>()(
 
       pendingMediaRequest: null,
       setPendingMediaRequest: (request) => set({ pendingMediaRequest: request }),
-
-      // ─── Single canonical initialisation ───
-      videoRequestState: { ...DEFAULT_VIDEO_REQUEST_STATE },
-      videoPermissions: {},
 
       audioDevices: [],
       videoDevices: [],
@@ -608,11 +601,6 @@ export const useMeetingStore = create<MeetingState>()(
         useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
       },
 
-      setVideoRequestState: (state) => set({ videoRequestState: state }),
-      setVideoPermission: (userId, granted) => set((state) => {
-        const next = { ...state.videoPermissions, [userId]: granted };
-        return { videoPermissions: next };
-      }),
     }),
     {
       name: 'meeting-store',

@@ -6,7 +6,7 @@ const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
 
-const { spawn } = require("child_process"); 
+const { spawn } = require("child_process");
 
 const fs = require('fs');
 const path = require('path');
@@ -913,50 +913,55 @@ io.on('connection', (socket) => {
                     break;
                 }
             }
+        }
+    });
+
     socket.on('audio_chunk', async (data) => {
         const { meetingId, participantId, participantName, audioBlob } = data;
         if (!meetingId || !audioBlob) return;
 
-     try {
-    // Write blob to temporary file
-    const tempDir = os.tmpdir();
-    const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
-    const filePath = path.join(tempDir, fileName);
+        try {
+            // Write blob to temporary file
+            const tempDir = os.tmpdir();
+            const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
+            const filePath = path.join(tempDir, fileName);
 
-    fs.writeFileSync(filePath, Buffer.from(audioBlob));
+            fs.writeFileSync(filePath, Buffer.from(audioBlob));
 
-    // ✅ USE WHISPER (KEEP THIS)
-    const text = await transcribeWithWhisper(filePath);
+            // ✅ USE WHISPER (KEEP THIS)
+            const text = await transcribeWithWhisper(filePath);
 
-    // Clean up
-    fs.unlinkSync(filePath);
+            // Clean up
+            fs.unlinkSync(filePath);
 
-    if (text && text.trim().length > 0) {
+            if (text && text.trim().length > 0) {
 
-        const segment = {
-            participantId,
-            participantName,
-            text: text.trim(),
-            timestamp: new Date().toISOString()
-        };
+                const segment = {
+                    participantId,
+                    participantName,
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
+                };
 
-        // Store in memory
-        if (!meetingTranscripts.has(meetingId)) {
-            meetingTranscripts.set(meetingId, []);
+                // Store in memory
+                if (!meetingTranscripts.has(meetingId)) {
+                    meetingTranscripts.set(meetingId, []);
+                }
+
+                meetingTranscripts.get(meetingId).push(segment);
+
+                // Broadcast transcript
+                io.to(meetingId).emit('transcription_received', segment);
+
+            }
+
+        } catch (error) {
+
+            console.error('Transcription error:', error);
+
         }
+    });
 
-        meetingTranscripts.get(meetingId).push(segment);
-
-        // Broadcast transcript
-        io.to(meetingId).emit('transcription_received', segment);
-
-    }
-
-} catch (error) {
-
-    console.error('Transcription error:', error);
-
-}
     socket.on('get_transcripts', (data) => {
         const { meetingId } = data;
         if (meetingTranscripts.has(meetingId)) {
@@ -1058,8 +1063,6 @@ io.on('connection', (socket) => {
         } else {
             // Frontend already enforces who can close (RBAC)
             console.log(`Global whiteboard close triggered by authorized user ${userId} for meeting ${meeting_id}`);
-            // Wait: let's not delete initiator on close, because opening again might need it
-            // Or maybe delete it to reset session. Let's delete it.
             whiteboardInitiators.delete(meeting_id);
             socket.to(meeting_id).emit('whiteboard_toggle', { isOpen: false });
         }
