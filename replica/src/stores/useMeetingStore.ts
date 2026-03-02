@@ -10,6 +10,24 @@ import { useAIStore } from './useAIStore';
 const INSTANCE_ID = eventBus.instanceId;
 const API = import.meta.env.VITE_API_URL || '';
 
+// ─── Strict Video Request Types ───────────────────────────────────────────────
+export interface VideoRequestState {
+  status: 'idle' | 'pending';
+  requesterName: string;
+  requesterId: string;
+}
+
+export type VideoPermissions = {
+  [userId: string]: 'accepted' | 'rejected' | 'pending';
+};
+
+const DEFAULT_VIDEO_REQUEST_STATE: VideoRequestState = {
+  status: 'idle',
+  requesterName: '',
+  requesterId: '',
+};
+// ──────────────────────────────────────────────────────────────────────────────
+
 interface MeetingState {
   meeting: Meeting | null;
   viewMode: ViewMode;
@@ -36,7 +54,6 @@ interface MeetingState {
   showHostMutePopup: boolean;
   isAnalyticsOpen: boolean;
 
-  // ✅ Confirmation Modals (from main branch)
   showMicConfirm: boolean;
   showVideoConfirm: boolean;
   setRecordingPermissionStatus: (status: 'idle' | 'requesting' | 'granted' | 'denied') => void;
@@ -125,10 +142,13 @@ interface MeetingState {
 
   pendingMediaRequest: { type: 'audio' | 'video', fromName: string } | null;
   setPendingMediaRequest: (request: { type: 'audio' | 'video', fromName: string } | null) => void;
-  videoRequestState: { [userId: string]: 'pending' | 'accepted' | 'rejected' };
-  setVideoRequestState: (userId: string, state: 'pending' | 'accepted' | 'rejected') => void;
-  videoPermissions: { [userId: string]: boolean };
-  setVideoPermission: (userId: string, allowed: boolean) => void;
+
+  // ─── Single canonical definition ───
+  videoRequestState: VideoRequestState;
+  setVideoRequestState: (state: VideoRequestState) => void;
+
+  videoPermissions: VideoPermissions;
+  setVideoPermission: (userId: string, status: 'accepted' | 'rejected' | 'pending') => void;
 }
 
 
@@ -190,7 +210,8 @@ export const useMeetingStore = create<MeetingState>()(
       pendingMediaRequest: null,
       setPendingMediaRequest: (request) => set({ pendingMediaRequest: request }),
 
-      videoRequestState: {},
+      // ─── Single canonical initialisation ───
+      videoRequestState: { ...DEFAULT_VIDEO_REQUEST_STATE },
       videoPermissions: {},
 
       audioDevices: [],
@@ -204,7 +225,6 @@ export const useMeetingStore = create<MeetingState>()(
 
       setMeeting: (meeting) => set({ meeting }),
       setLocalStream: (stream) => set((state) => {
-        // Automatically stop old tracks when a new stream is set
         if (state.localStream && state.localStream !== stream) {
           state.localStream.getTracks().forEach(track => {
             track.stop();
@@ -247,7 +267,6 @@ export const useMeetingStore = create<MeetingState>()(
               combinedStream.addTrack(videoTrack);
             }
 
-            // setLocalStream handles stopping old tracks
             get().setLocalStream(combinedStream);
           } catch (err) {
             console.error('Error switching audio device:', err);
@@ -289,8 +308,6 @@ export const useMeetingStore = create<MeetingState>()(
 
       setSpeakerDevice: (id) => {
         set({ selectedSpeakerId: id });
-        // Setting audio output device (speaker) requires sinkId on HTMLMediaElement
-        // This is typically handled in the components rendering video/audio elements.
       },
 
       setViewMode: (mode) => set({ viewMode: mode }),
@@ -357,6 +374,7 @@ export const useMeetingStore = create<MeetingState>()(
 
       toggleReactions: () =>
         set((state) => ({ showReactions: !state.showReactions })),
+
       toggleAnalytics: () =>
         set((state) => ({ isAnalyticsOpen: !state.isAnalyticsOpen })),
 
@@ -383,7 +401,6 @@ export const useMeetingStore = create<MeetingState>()(
       leaveMeeting: () => {
         const state = useMeetingStore.getState();
 
-        // Stop all local media tracks FIRST
         if (state.localStream) {
           state.localStream.getTracks().forEach((track) => {
             track.stop();
@@ -391,7 +408,6 @@ export const useMeetingStore = create<MeetingState>()(
           });
         }
 
-        // Stop screen share if active
         if (state.screenShareStream) {
           state.screenShareStream.getTracks().forEach((track) => {
             track.stop();
@@ -399,13 +415,9 @@ export const useMeetingStore = create<MeetingState>()(
           });
         }
 
-        // Reset Chat Store (disconnects socket)
         useChatStore.getState().reset();
-
-        // Reset AI Store (clear summaries, etc.)
         useAIStore.getState().reset();
 
-        // Reset all meeting state
         set({
           meeting: null,
           localStream: null,
@@ -419,19 +431,22 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardStrokes: [],
           whiteboardInitiatorId: null,
           recordingPermissionStatus: 'idle',
-          videoRequestState: {},
+          videoRequestState: { status: 'idle', requesterName: '', requesterId: '' },
           videoPermissions: {},
         });
       },
 
       setScreenShareStream: (stream) => set({ screenShareStream: stream }),
       setRecordingStartTime: (time) => set({ recordingStartTime: time }),
-      setVideoRequestState: (userId, state) => set((s) => ({
-        videoRequestState: { ...s.videoRequestState, [userId]: state }
-      })),
-      setVideoPermission: (userId, allowed) => set((s) => ({
-        videoPermissions: { ...s.videoPermissions, [userId]: allowed }
-      })),
+
+      // ─── Strictly typed setters ───
+      setVideoRequestState: (state: VideoRequestState) =>
+        set({ videoRequestState: state }),
+
+      setVideoPermission: (userId, status) =>
+        set((s) => ({
+          videoPermissions: { ...s.videoPermissions, [userId]: status }
+        })),
 
       setRecordingPermissionStatus: (status) =>
         set({ recordingPermissionStatus: status }),
@@ -486,7 +501,6 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardEditAccess: access,
         };
 
-        // Optimistic update
         set({ meeting: { ...m, settings: nextSettings } });
 
         try {
@@ -512,15 +526,15 @@ export const useMeetingStore = create<MeetingState>()(
             { source: INSTANCE_ID }
           );
 
-          // Emit to other clients
           useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
         } catch (err) {
           console.error('Error setting whiteboard access:', err);
         }
       },
+
       addWhiteboardStroke: (stroke) => set((state) => ({
         whiteboardStrokes: [...state.whiteboardStrokes, stroke],
-        whiteboardRedoStack: [] // Clear redo history when drawing something new
+        whiteboardRedoStack: []
       })),
       updateWhiteboardStroke: (id, points) => set((state) => ({
         whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
@@ -566,8 +580,6 @@ export const useMeetingStore = create<MeetingState>()(
             });
           } else if (status === 'waiting') {
             set({ isWaiting: true });
-          } else if (status === 'rejected') {
-            // Handled by component if needed
           }
           return status;
         } catch (err) {
@@ -579,14 +591,12 @@ export const useMeetingStore = create<MeetingState>()(
         const state = get();
         if (!state.meeting) return;
 
-        // Optimistically update local state
         const updatedMeeting = {
           ...state.meeting,
           settings: { ...state.meeting.settings, ...settings }
         };
         set({ meeting: updatedMeeting });
 
-        // Emit to socket
         useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
       },
     }),
@@ -613,8 +623,6 @@ export const useMeetingStore = create<MeetingState>()(
           console.log('MeetingStore hydration finished');
         }
 
-        // Fix: Wrap in setTimeout to avoid "Cannot access 'useMeetingStore' before initialization"
-        // if hydration happens synchronously (e.g. sessionStorage)
         setTimeout(() => {
           useMeetingStore.setState({ hasHydrated: true });
         }, 0);
