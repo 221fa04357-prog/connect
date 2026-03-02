@@ -190,6 +190,9 @@ export const useMeetingStore = create<MeetingState>()(
       pendingMediaRequest: null,
       setPendingMediaRequest: (request) => set({ pendingMediaRequest: request }),
 
+      videoRequestState: {},
+      videoPermissions: {},
+
       audioDevices: [],
       videoDevices: [],
       speakerDevices: [],
@@ -416,206 +419,209 @@ export const useMeetingStore = create<MeetingState>()(
           whiteboardStrokes: [],
           whiteboardInitiatorId: null,
           recordingPermissionStatus: 'idle',
-          setScreenShareStream: (stream) => set({ screenShareStream: stream }),
-          setRecordingStartTime: (time) => set({ recordingStartTime: time }),
           videoRequestState: {},
           videoPermissions: {},
-          setVideoRequestState: (userId, state) => set((s) => ({
-            videoRequestState: { ...s.videoRequestState, [userId]: state }
-          })),
-          setVideoPermission: (userId, allowed) => set((s) => ({
-            videoPermissions: { ...s.videoPermissions, [userId]: allowed }
-          })),
+        });
+      },
 
-          setRecordingPermissionStatus: (status) =>
-            set({ recordingPermissionStatus: status }),
+      setScreenShareStream: (stream) => set({ screenShareStream: stream }),
+      setRecordingStartTime: (time) => set({ recordingStartTime: time }),
+      setVideoRequestState: (userId, state) => set((s) => ({
+        videoRequestState: { ...s.videoRequestState, [userId]: state }
+      })),
+      setVideoPermission: (userId, allowed) => set((s) => ({
+        videoPermissions: { ...s.videoPermissions, [userId]: allowed }
+      })),
 
-          setShowHostMutePopup: (show) =>
-            set({ showHostMutePopup: show }),
+      setRecordingPermissionStatus: (status) =>
+        set({ recordingPermissionStatus: status }),
 
-          setConnectionQuality: (quality) =>
-            set({ connectionQuality: quality }),
+      setShowHostMutePopup: (show) =>
+        set({ showHostMutePopup: show }),
 
-          extendMeetingTime: async (minutes: number) => {
-            const state = useMeetingStore.getState();
-            if (!state.meeting) return;
+      setConnectionQuality: (quality) =>
+        set({ connectionQuality: quality }),
 
-            const m = state.meeting;
-            const newDuration = (m.duration || 0) + minutes;
+      extendMeetingTime: async (minutes: number) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
 
-            try {
-              const response = await fetch(`${API}/api/meetings/${m.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ duration: newDuration }),
-              });
+        const m = state.meeting;
+        const newDuration = (m.duration || 0) + minutes;
 
-              if (!response.ok) throw new Error('Failed to update meeting duration');
+        try {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ duration: newDuration }),
+          });
 
-              const updatedMeetingData = await response.json();
-              const nextMeeting = {
-                ...m,
-                duration: updatedMeetingData.duration,
-              };
+          if (!response.ok) throw new Error('Failed to update meeting duration');
 
-              set({ meeting: nextMeeting });
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            duration: updatedMeetingData.duration,
+          };
 
-              eventBus.publish(
-                'meeting:update',
-                { meeting: nextMeeting },
-                { source: INSTANCE_ID }
-              );
-            } catch (err) {
-              console.error('Error extending meeting time:', err);
-            }
-          },
+          set({ meeting: nextMeeting });
 
-          setWhiteboardEditAccess: async (access) => {
-            const state = useMeetingStore.getState();
-            if (!state.meeting) return;
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
+          );
+        } catch (err) {
+          console.error('Error extending meeting time:', err);
+        }
+      },
 
-            const m = state.meeting;
-            const nextSettings = {
-              ...m.settings,
-              whiteboardEditAccess: access,
-            };
+      setWhiteboardEditAccess: async (access) => {
+        const state = useMeetingStore.getState();
+        if (!state.meeting) return;
 
-            // Optimistic update
-            set({ meeting: { ...m, settings: nextSettings } });
+        const m = state.meeting;
+        const nextSettings = {
+          ...m.settings,
+          whiteboardEditAccess: access,
+        };
 
-            try {
-              const response = await fetch(`${API}/api/meetings/${m.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ settings: nextSettings }),
-              });
+        // Optimistic update
+        set({ meeting: { ...m, settings: nextSettings } });
 
-              if (!response.ok) throw new Error('Failed to update whiteboard access');
+        try {
+          const response = await fetch(`${API}/api/meetings/${m.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: nextSettings }),
+          });
 
-              const updatedMeetingData = await response.json();
-              const nextMeeting = {
-                ...m,
-                settings: updatedMeetingData.settings,
-              };
+          if (!response.ok) throw new Error('Failed to update whiteboard access');
 
-              set({ meeting: nextMeeting });
+          const updatedMeetingData = await response.json();
+          const nextMeeting = {
+            ...m,
+            settings: updatedMeetingData.settings,
+          };
 
-              eventBus.publish(
-                'meeting:update',
-                { meeting: nextMeeting },
-                { source: INSTANCE_ID }
-              );
+          set({ meeting: nextMeeting });
 
-              // Emit to other clients
-              useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
-            } catch (err) {
-              console.error('Error setting whiteboard access:', err);
-            }
-          },
-          addWhiteboardStroke: (stroke) => set((state) => ({
-            whiteboardStrokes: [...state.whiteboardStrokes, stroke],
-            whiteboardRedoStack: [] // Clear redo history when drawing something new
-          })),
-          updateWhiteboardStroke: (id, points) => set((state) => ({
-            whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
-          })),
-          appendWhiteboardPoints: (id, newPoints) => set((state) => ({
-            whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points: [...(s.points || []), ...newPoints] } : s)
-          })),
-          removeWhiteboardStroke: (id) => set((state) => ({
-            whiteboardStrokes: state.whiteboardStrokes.filter(s => s.id !== id)
-          })),
-          clearWhiteboardStrokes: () => set({ whiteboardStrokes: [], whiteboardRedoStack: [] }),
-          setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
-          undoWhiteboardStroke: () => set((state) => {
-            if (state.whiteboardStrokes.length === 0) return state;
-            const lastStroke = state.whiteboardStrokes[state.whiteboardStrokes.length - 1];
-            return {
-              whiteboardStrokes: state.whiteboardStrokes.slice(0, -1),
-              whiteboardRedoStack: [...state.whiteboardRedoStack, lastStroke]
-            };
-          }),
-          redoWhiteboardStroke: () => set((state) => {
-            if (state.whiteboardRedoStack.length === 0) return state;
-            const lastUndoneStroke = state.whiteboardRedoStack[state.whiteboardRedoStack.length - 1];
-            return {
-              whiteboardRedoStack: state.whiteboardRedoStack.slice(0, -1),
-              whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
-            };
-          }),
-          checkParticipantStatus: async (meetingId, userId) => {
-            try {
-              const response = await fetch(`${API}/api/meetings/${meetingId}/participant-status`, {
-                headers: { 'x-user-id': userId }
-              });
-              if (!response.ok) throw new Error('Failed to fetch status');
-              const data = await response.json();
-              const status = data.status;
+          eventBus.publish(
+            'meeting:update',
+            { meeting: nextMeeting },
+            { source: INSTANCE_ID }
+          );
 
-              if (status === 'admitted') {
-                set({
-                  isWaiting: false,
-                  isAudioMuted: data.micOn !== undefined ? !data.micOn : get().isAudioMuted,
-                  isVideoOff: data.cameraOn !== undefined ? !data.cameraOn : get().isVideoOff
-                });
-              } else if (status === 'waiting') {
-                set({ isWaiting: true });
-              } else if (status === 'rejected') {
-                // Handled by component if needed
-              }
-              return status;
-            } catch (err) {
-              console.error('Error checking participant status:', err);
-              return 'error';
-            }
-          },
-          updateMeetingSettings: (settings) => {
-            const state = get();
-            if (!state.meeting) return;
+          // Emit to other clients
+          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
+        } catch (err) {
+          console.error('Error setting whiteboard access:', err);
+        }
+      },
+      addWhiteboardStroke: (stroke) => set((state) => ({
+        whiteboardStrokes: [...state.whiteboardStrokes, stroke],
+        whiteboardRedoStack: [] // Clear redo history when drawing something new
+      })),
+      updateWhiteboardStroke: (id, points) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points } : s)
+      })),
+      appendWhiteboardPoints: (id, newPoints) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.map(s => s.id === id ? { ...s, points: [...(s.points || []), ...newPoints] } : s)
+      })),
+      removeWhiteboardStroke: (id) => set((state) => ({
+        whiteboardStrokes: state.whiteboardStrokes.filter(s => s.id !== id)
+      })),
+      clearWhiteboardStrokes: () => set({ whiteboardStrokes: [], whiteboardRedoStack: [] }),
+      setWhiteboardStrokes: (strokes) => set({ whiteboardStrokes: strokes }),
+      undoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardStrokes.length === 0) return state;
+        const lastStroke = state.whiteboardStrokes[state.whiteboardStrokes.length - 1];
+        return {
+          whiteboardStrokes: state.whiteboardStrokes.slice(0, -1),
+          whiteboardRedoStack: [...state.whiteboardRedoStack, lastStroke]
+        };
+      }),
+      redoWhiteboardStroke: () => set((state) => {
+        if (state.whiteboardRedoStack.length === 0) return state;
+        const lastUndoneStroke = state.whiteboardRedoStack[state.whiteboardRedoStack.length - 1];
+        return {
+          whiteboardRedoStack: state.whiteboardRedoStack.slice(0, -1),
+          whiteboardStrokes: [...state.whiteboardStrokes, lastUndoneStroke]
+        };
+      }),
+      checkParticipantStatus: async (meetingId, userId) => {
+        try {
+          const response = await fetch(`${API}/api/meetings/${meetingId}/participant-status`, {
+            headers: { 'x-user-id': userId }
+          });
+          if (!response.ok) throw new Error('Failed to fetch status');
+          const data = await response.json();
+          const status = data.status;
 
-            // Optimistically update local state
-            const updatedMeeting = {
-              ...state.meeting,
-              settings: { ...state.meeting.settings, ...settings }
-            };
-            set({ meeting: updatedMeeting });
+          if (status === 'admitted') {
+            set({
+              isWaiting: false,
+              isAudioMuted: data.micOn !== undefined ? !data.micOn : get().isAudioMuted,
+              isVideoOff: data.cameraOn !== undefined ? !data.cameraOn : get().isVideoOff
+            });
+          } else if (status === 'waiting') {
+            set({ isWaiting: true });
+          } else if (status === 'rejected') {
+            // Handled by component if needed
+          }
+          return status;
+        } catch (err) {
+          console.error('Error checking participant status:', err);
+          return 'error';
+        }
+      },
+      updateMeetingSettings: (settings) => {
+        const state = get();
+        if (!state.meeting) return;
 
-            // Emit to socket
-            useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
-          },
-        }),
-        {
-          name: 'meeting-store',
-          storage: createJSONStorage(() => sessionStorage),
-          partialize: (state) => {
-            const { localStream, screenShareStream, ...rest } = state;
-            return rest;
-          },
-          onRehydrateStorage: () => (state, error) => {
-            if (state && state.meeting) {
-              if (state.meeting.start_timestamp) {
-                state.meeting.startTime = new Date(Number(state.meeting.start_timestamp));
-              } else if (state.meeting.startTime) {
-                const st = state.meeting.startTime as any;
-                state.meeting.startTime = new Date(typeof st === 'string' && !st.endsWith('Z') && !st.includes('+') ? (st.includes(' ') ? st.replace(' ', 'T') + 'Z' : st + 'Z') : st);
-              }
-            }
+        // Optimistically update local state
+        const updatedMeeting = {
+          ...state.meeting,
+          settings: { ...state.meeting.settings, ...settings }
+        };
+        set({ meeting: updatedMeeting });
 
-            if (error) {
-              console.error('An error happened during hydration', error);
-            } else {
-              console.log('MeetingStore hydration finished');
-            }
-
-            // Fix: Wrap in setTimeout to avoid "Cannot access 'useMeetingStore' before initialization"
-            // if hydration happens synchronously (e.g. sessionStorage)
-            setTimeout(() => {
-              useMeetingStore.setState({ hasHydrated: true });
-            }, 0);
+        // Emit to socket
+        useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
+      },
+    }),
+    {
+      name: 'meeting-store',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => {
+        const { localStream, screenShareStream, ...rest } = state;
+        return rest;
+      },
+      onRehydrateStorage: () => (state, error) => {
+        if (state && state.meeting) {
+          if (state.meeting.start_timestamp) {
+            state.meeting.startTime = new Date(Number(state.meeting.start_timestamp));
+          } else if (state.meeting.startTime) {
+            const st = state.meeting.startTime as any;
+            state.meeting.startTime = new Date(typeof st === 'string' && !st.endsWith('Z') && !st.includes('+') ? (st.includes(' ') ? st.replace(' ', 'T') + 'Z' : st + 'Z') : st);
           }
         }
+
+        if (error) {
+          console.error('An error happened during hydration', error);
+        } else {
+          console.log('MeetingStore hydration finished');
+        }
+
+        // Fix: Wrap in setTimeout to avoid "Cannot access 'useMeetingStore' before initialization"
+        // if hydration happens synchronously (e.g. sessionStorage)
+        setTimeout(() => {
+          useMeetingStore.setState({ hasHydrated: true });
+        }, 0);
+      }
+    }
   )
-  );
+);
 
 
 // Subscribe to remote meeting updates

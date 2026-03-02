@@ -11,6 +11,7 @@ interface ChatState {
   meetingId: string | null;
   localUserId: string | null;
   selectedRecipientId: string | null;
+  frequentQuestionUsers: any[];
 
   // Recording Permission methods
   requestRecordingPermission: (meetingId: string, userId: string, userName: string) => void;
@@ -49,6 +50,9 @@ interface ChatState {
   deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
   requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
+  setFrequentQuestionUsers: (users: any[]) => void;
+  requestVideoStart: (meetingId: string, userId: string) => void;
+  respondToVideoRequest: (meetingId: string, acceptorId: string, requesterId: string, accepted: boolean) => void;
   reset: () => void;
 }
 
@@ -63,6 +67,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   meetingId: null,
   localUserId: null,
   selectedRecipientId: null,
+  frequentQuestionUsers: [],
 
   initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
@@ -704,6 +709,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('request_media', { meetingId, userId, type });
   },
 
+  setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  requestVideoStart: (meetingId, userId) => {
+    get().socket?.emit('request_video_start', { meetingId, userId });
+  },
+
+  respondToVideoRequest: (meetingId, acceptorId, requesterId, accepted) => {
+    get().socket?.emit('respond_to_video_request', { meetingId, acceptorId, requesterId, accepted });
+  },
+
   markAsRead: () => set({ unreadCount: 0 }),
 
   reset: () => {
@@ -717,7 +732,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       socket: null,
       meetingId: null,
       localUserId: null,
-      selectedRecipientId: null
+      selectedRecipientId: null,
+      frequentQuestionUsers: []
     });
   },
 }));
