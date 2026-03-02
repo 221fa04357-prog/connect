@@ -55,8 +55,8 @@ interface ChatState {
   markAsRead: () => void;
   requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
   setFrequentQuestionUsers: (users: any[]) => void;
-  requestVideoStart: (meetingId: string, userId: string) => void;
-  respondToVideoRequest: (meetingId: string, acceptorId: string, requesterId: string, accepted: boolean) => void;
+  requestVideoStart: (meetingId: string, targetUserId: string, requesterName: string) => void;
+  respondToVideoRequest: (meetingId: string, requesterId: string, response: 'accepted' | 'rejected') => void;
   reset: () => void;
 }
 
@@ -724,12 +724,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
 
-  requestVideoStart: (meetingId, userId) => {
-    get().socket?.emit('request_video_start', { meetingId, userId });
+  requestVideoStart: (meetingId, targetUserId, requesterName) => {
+    get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });
   },
 
-  respondToVideoRequest: (meetingId, acceptorId, requesterId, accepted) => {
-    get().socket?.emit('respond_to_video_request', { meetingId, acceptorId, requesterId, accepted });
+  respondToVideoRequest: (meetingId, requesterId, response) => {
+    get().socket?.emit('respond_to_video_request', { meetingId, requesterId, response });
   },
 
   markAsRead: () => set({ unreadCount: 0 }),
