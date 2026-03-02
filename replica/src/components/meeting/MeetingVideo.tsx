@@ -52,7 +52,8 @@ export function VideoTile({
         showVideoConfirm,
         isAudioMuted: msAudioMuted,
         isVideoOff: msVideoOff,
-        isJoinedAsHost
+        isJoinedAsHost,
+        meeting
     } = useMeetingStore();
     const { remoteStreams } = useMediaStore();
 
