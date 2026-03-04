@@ -17,6 +17,8 @@ import { useNavigate } from 'react-router-dom';
 import { VideoStartRequestPopup } from '@/components/meeting/VideoStartRequestPopup';
 import { TranscriptionManager } from '@/components/meeting/TranscriptionManager';
 import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay';
+import { CaptionSettings } from '@/components/meeting/CaptionSettings';
+import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -946,6 +948,11 @@ export default function MeetingRoom() {
       <ParticipantsPanel />
       <AICompanionPanel />
       <VideoStartRequestPopup />
+
+      {/* Real-time Transcription System */}
+      <TranscriptionManager />
+      <TranscriptionOverlay />
+      <CaptionSettings />
     </div>
   );
 }

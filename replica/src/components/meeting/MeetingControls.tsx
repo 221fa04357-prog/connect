@@ -56,6 +56,7 @@ import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
+import SummaryModal from './SummaryModal';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -2410,18 +2411,39 @@ function ControlBar() {
                         />
 
                         {/* Captions Button */}
-                        <ControlButton
-                            icon={Languages}
-                            label="Captions"
-                            onClick={() => {
-                                const { setTranscriptionEnabled, isTranscriptionEnabled } = useTranscriptionStore.getState();
-                                setTranscriptionEnabled(!isTranscriptionEnabled);
-                                import('sonner').then(({ toast }) => {
-                                    toast.success(!isTranscriptionEnabled ? 'Captions Turned On' : 'Captions Turned Off');
-                                });
-                            }}
-                            isActiveState={useTranscriptionStore(s => s.isTranscriptionEnabled)}
-                        />
+                        <DropdownMenu>
+                            <div className="flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
+                                <button
+                                    onClick={() => {
+                                        const { setTranscriptionEnabled, isTranscriptionEnabled } = useTranscriptionStore.getState();
+                                        setTranscriptionEnabled(!isTranscriptionEnabled);
+                                        import('sonner').then(({ toast }) => {
+                                            toast.success(!isTranscriptionEnabled ? 'Captions Turned On' : 'Captions Turned Off');
+                                        });
+                                    }}
+                                    className={cn(
+                                        "flex flex-col items-center justify-center w-14 h-14 px-1 py-1 gap-1 outline-none",
+                                        useTranscriptionStore.getState().isTranscriptionEnabled && "text-blue-400"
+                                    )}
+                                >
+                                    <Languages className="w-5 h-5" />
+                                    <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
+                                        Captions
+                                    </span>
+                                </button>
+                                <DropdownMenuTrigger asChild>
+                                    <button className="h-14 px-1 hover:bg-[#3A3A3A] transition-colors flex items-start pt-2">
+                                        <ChevronUp className="w-3 h-3 text-gray-400" />
+                                    </button>
+                                </DropdownMenuTrigger>
+                            </div>
+                            <DropdownMenuContent className="bg-[#1A1A1A] border-[#333] text-gray-200">
+                                <DropdownMenuItem onClick={() => useTranscriptionStore.getState().setSettingsOpen(true)} className="cursor-pointer">
+                                    <Settings className="w-4 h-4 mr-2" />
+                                    Caption Settings
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
 
                         {/* More */}
                         <DropdownMenu>
@@ -2440,8 +2462,12 @@ function ControlBar() {
                                     <Grid3x3 className="w-4 h-4 mr-2" />
                                     Whiteboard
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                <DropdownMenuItem onClick={() => useTranscriptionStore.getState().setSummaryOpen(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <Sparkles className="w-4 h-4 mr-2" />
+                                    Meeting Summary
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                    <MessageSquare className="w-4 h-4 mr-2" />
                                     AI Companion
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={handleToggleHand} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
@@ -3137,6 +3163,10 @@ export default function MeetingControls() {
         <>
             <TopBar />
             <SettingsModal />
+            <SummaryModal
+                isOpen={useTranscriptionStore(s => s.isSummaryOpen)}
+                onClose={() => useTranscriptionStore.getState().setSummaryOpen(false)}
+            />
             <ControlBar />
         </>
     );
