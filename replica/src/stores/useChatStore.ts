@@ -54,6 +54,8 @@ interface ChatState {
   deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
   requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
+  setFrequentQuestionUsers: (users: any[]) => void;
+  clearFrequentQuestionUsers: () => void;
   reset: () => void;
 }
 
@@ -183,7 +185,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // If any participant turns off their video, host should lose permission control
       if (data.updates.isVideoOff === true) {
         import('./useMeetingStore').then((store) => {
-          store.useMeetingStore.getState().setVideoPermission(data.userId, false);
+          store.useMeetingStore.getState().setVideoPermission(data.userId, 'rejected');
         });
       }
     });
@@ -719,9 +721,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('request_media', { meetingId, userId, type });
   },
 
-  markAsRead: () => set({ unreadCount: 0 }),
-
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  requestVideoStart: (meetingId, targetUserId, requesterName) => {
+    get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });
+  },
+
+  respondToVideoRequest: (meetingId, hostId, participantId, accepted) => {
+    get().socket?.emit('video_start_response', { meetingId, hostId, participantId, accepted });
+  },
+
+  markAsRead: () => set({ unreadCount: 0 }),
 
   clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
 

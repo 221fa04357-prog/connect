@@ -10,6 +10,7 @@ import Help from './pages/Help';
 import NotFound from './pages/NotFound';
 import MeetingRecap from './pages/MeetingRecap';
 import RecapsList from './pages/RecapsList';
+import Upgrade from './pages/Upgrade';
 import { useAuthStore } from './stores/useAuthStore';
 import { useGuestSessionStore } from './stores/useGuestSessionStore';
 import { useEffect, useRef } from 'react';
@@ -348,6 +349,8 @@ const AppContent = () => {
         <Route path="/help" element={<Help />} />
         <Route path="/recap/:meetingId" element={<MeetingRecap />} />
         <Route path="/recaps" element={<RecapsList />} />
+        <Route path="/upgrade" element={<Upgrade />} />
+        <Route path="/subscription/upgrade" element={<Upgrade />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </HashRouter>

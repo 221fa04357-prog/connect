@@ -6,6 +6,7 @@ import { Check, Zap, Shield, Clock, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buttonVariants, Button } from "./buttons";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useNavigate } from "react-router-dom";
 
 // --- Dialog ---
 const Dialog = DialogPrimitive.Root;
@@ -162,9 +163,10 @@ interface SubscriptionModalProps {
 
 function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps) {
     const { user } = useAuthStore();
+    const navigate = useNavigate();
     const handleUpgrade = () => {
-        window.open("https://example.com/pricing", "_blank");
         onOpenChange(false);
+        navigate('/upgrade');
     };
 
     return (
