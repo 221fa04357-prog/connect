@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://127.0.0.1:5005',
         ws: true,
       },
+      '/transcribe': {
+        target: 'ws://127.0.0.1:8765',
+        ws: true,
+      },
     },
   },
   resolve: {
