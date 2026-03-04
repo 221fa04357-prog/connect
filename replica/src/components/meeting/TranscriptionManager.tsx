@@ -1,74 +1,132 @@
 import { useEffect, useRef } from 'react';
 import { useMeetingStore } from '@/stores/useMeetingStore';
-import { useChatStore } from '@/stores/useChatStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 
 export function TranscriptionManager() {
     const { localStream, isAudioMuted } = useMeetingStore();
-    const { socket, meetingId } = useChatStore();
     const { user } = useAuthStore();
-    const { addTranscript, isTranscriptionEnabled, setCurrentCaption, clearCurrentCaption } = useTranscriptionStore();
+    const {
+        addTranscript,
+        isTranscriptionEnabled,
+        setCurrentCaption,
+        clearCurrentCaption,
+        speakingLanguage
+    } = useTranscriptionStore();
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    // Timer ref to auto-clear the caption after 3 seconds of silence
+    const socketRef = useRef<WebSocket | null>(null);
     const captionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Listen for transcription events from the backend
+    // Initialize WebSocket for real-time transcription
     useEffect(() => {
-        if (!socket) return;
+        let isActive = true;
 
-        const handleTranscription = (segment: any) => {
-            // 1. Add to the full history (for recap)
-            addTranscript(segment);
+        const connectWS = () => {
+            if (!isTranscriptionEnabled || !isActive) return;
 
-            // 2. Show only the latest line as the live floating caption
-            if (segment.text && segment.text.trim().length > 0) {
-                setCurrentCaption(segment.text.trim());
-
-                // 3. Auto-clear after 3 seconds of no new speech
-                if (captionTimerRef.current) {
-                    clearTimeout(captionTimerRef.current);
-                }
-                captionTimerRef.current = setTimeout(() => {
-                    clearCurrentCaption();
-                }, 3000);
+            if (socketRef.current) {
+                socketRef.current.onclose = null; // Prevent recursion
+                socketRef.current.close();
+                socketRef.current = null;
             }
+
+            const hostname = window.location.hostname || 'localhost';
+            const langParam = speakingLanguage ? `?lang=${encodeURIComponent(speakingLanguage.toLowerCase())}` : '';
+            const ws = new WebSocket(`ws://${hostname}:8765/transcribe-ws${langParam}`);
+            socketRef.current = ws;
+
+            ws.onopen = () => {
+                console.log(`[Transcription] WebSocket Connected (${speakingLanguage}) ✓`);
+                // Clear and start heartbeat to keep connection alive during silence
+                if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+                heartbeatTimerRef.current = setInterval(() => {
+                    if (socketRef.current?.readyState === WebSocket.OPEN) {
+                        try {
+                            // Send a small dummy byte to keep the connection alive
+                            socketRef.current.send(new Uint8Array([0x00]));
+                        } catch (e) {
+                            console.warn('[Transcription] Heartbeat failed');
+                        }
+                    }
+                }, 15000); // 15s heartbeat
+            };
+
+            ws.onmessage = (event) => {
+                if (!isActive) return;
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.text) {
+                        console.log('%c[Transcription] Received Text: ' + data.text, 'color: #0B5CFF; font-weight: bold;');
+                        handleNewTranscription(data.text);
+                    }
+                } catch (e) {
+                    // Ignore ping reflections or malformed JSON
+                }
+            };
+
+            ws.onclose = (e) => {
+                if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+                if (isActive && isTranscriptionEnabled) {
+                    console.log(`[Transcription] WS Closed (Code: ${e.code}). Reconnecting in 2s...`);
+                    setTimeout(() => {
+                        if (isActive && isTranscriptionEnabled) connectWS();
+                    }, 2000);
+                }
+            };
+
+            ws.onerror = (err) => console.error('[Transcription] WS Connection Error:', err);
         };
 
-        socket.on('transcription_received', handleTranscription);
+        if (isTranscriptionEnabled) connectWS();
 
         return () => {
-            socket.off('transcription_received', handleTranscription);
-            if (captionTimerRef.current) {
-                clearTimeout(captionTimerRef.current);
+            isActive = false;
+            if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+            if (socketRef.current) {
+                socketRef.current.onclose = null;
+                socketRef.current.close();
+                socketRef.current = null;
             }
         };
-    }, [socket, addTranscript, setCurrentCaption, clearCurrentCaption]);
+    }, [isTranscriptionEnabled, speakingLanguage]);
 
-    // Start/stop audio recording based on transcription state
+    const handleNewTranscription = (text: string) => {
+        if (!text || text.trim().length === 0) return;
+
+        addTranscript({
+            participantId: user?.id || 'guest',
+            participantName: user?.name || 'Guest',
+            text: text.trim(),
+            timestamp: new Date().toISOString()
+        });
+
+        const speakerName = user?.name || 'Guest';
+        const isHost = useMeetingStore.getState().isJoinedAsHost;
+        const speakerRole = isHost ? 'host' : 'participant';
+
+        setCurrentCaption(text.trim(), speakerName, speakerRole);
+
+
+        if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
+        captionTimerRef.current = setTimeout(() => {
+            clearCurrentCaption();
+        }, 7000);
+    };
+
     useEffect(() => {
-        if (!isTranscriptionEnabled || !localStream || !socket || !meetingId || isAudioMuted) {
+        if (!isTranscriptionEnabled || !localStream || isAudioMuted) {
             stopRecording();
             return;
         }
-
-        startRecording();
-
+        const cleanup = startRecording();
         return () => {
             stopRecording();
+            if (typeof cleanup === 'function') cleanup();
         };
-    }, [isTranscriptionEnabled, localStream, isAudioMuted, socket, meetingId]);
-
-    // Clear caption when transcription is disabled
-    useEffect(() => {
-        if (!isTranscriptionEnabled) {
-            clearCurrentCaption();
-            if (captionTimerRef.current) {
-                clearTimeout(captionTimerRef.current);
-            }
-        }
-    }, [isTranscriptionEnabled, clearCurrentCaption]);
+    }, [isTranscriptionEnabled, localStream, isAudioMuted]);
 
     const startRecording = () => {
         if (mediaRecorderRef.current || !localStream) return;
@@ -77,63 +135,67 @@ export function TranscriptionManager() {
             const audioTrack = localStream.getAudioTracks()[0];
             if (!audioTrack) return;
 
-            const audioClone = audioTrack.clone();
-            const audioStream = new MediaStream([audioClone]);
+            // Apply noise suppression at the hardware level
+            audioTrack.applyConstraints({
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }).catch(e => console.warn('[Transcription] Constraints fail:', e));
 
-            // Audio Level Detection — only send chunk if speech was detected
+            const audioStream = new MediaStream([audioTrack.clone()]);
             const audioCtx = new AudioContext();
-            const source = audioCtx.createMediaStreamSource(audioStream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
             let isSpeakingInSegment = false;
+            let currentPeak = 0;
+
+            const startChunk = () => {
+                if (!isTranscriptionEnabled || !localStream || isAudioMuted) return;
+
+                // Ensure AudioContext is active
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm;codecs=opus' });
+                mediaRecorderRef.current = recorder;
+
+                recorder.ondataavailable = (event) => {
+                    if (isSpeakingInSegment && event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+                        socketRef.current?.send(event.data);
+                    } else if (event.data.size > 0) {
+                        // Silent chunk gated
+                    }
+                    isSpeakingInSegment = false;
+                };
+
+                recorder.start();
+
+                chunkTimerRef.current = setTimeout(() => {
+                    if (recorder.state === 'recording') {
+                        recorder.stop();
+                        startChunk();
+                    }
+                }, 1500); // 1.5s is more stable for WebM headers
+            };
+
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            audioCtx.createMediaStreamSource(audioStream).connect(analyser);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
             const checkVolume = () => {
                 if (!isTranscriptionEnabled) return;
                 analyser.getByteFrequencyData(dataArray);
-                const volume = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length;
-                if (volume > 15) {
-                    isSpeakingInSegment = true;
-                }
+                currentPeak = Math.max(...Array.from(dataArray));
+                if (currentPeak > 35) isSpeakingInSegment = true;
                 requestAnimationFrame(checkVolume);
             };
             checkVolume();
 
-            const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current = recorder;
-
-            recorder.ondataavailable = async (event) => {
-                // Only send to backend if there was actual speech in this segment
-                if (event.data.size > 0 && socket && meetingId && isSpeakingInSegment) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        socket.emit('audio_chunk', {
-                            meetingId,
-                            participantId: user?.id || 'guest',
-                            participantName: user?.name || 'Guest',
-                            audioBlob: reader.result
-                        });
-                        isSpeakingInSegment = false; // Reset for next segment
-                    };
-                    reader.readAsArrayBuffer(event.data);
-                }
-            };
-
-            const recordSegment = () => {
-                if (recorder.state === 'recording') {
-                    recorder.stop();
-                    recorder.start();
-                }
-            };
-
-            recorder.start();
-            const interval = setInterval(recordSegment, 3000);
+            startChunk();
 
             return () => {
-                clearInterval(interval);
+                if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
+                mediaRecorderRef.current = null;
                 audioCtx.close();
-                if (recorder.state !== 'inactive') recorder.stop();
                 audioStream.getTracks().forEach(t => t.stop());
             };
         } catch (err) {
@@ -142,14 +204,13 @@ export function TranscriptionManager() {
     };
 
     const stopRecording = () => {
+        if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
         if (mediaRecorderRef.current) {
-            if (mediaRecorderRef.current.state !== 'inactive') {
-                mediaRecorderRef.current.stop();
-            }
+            if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
             mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
             mediaRecorderRef.current = null;
         }
     };
 
-    return null; // This is a manager component, no UI
+    return null;
 }

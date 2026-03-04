@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ConnectPro – Real-time live caption demo powered by faster-whisper" />
+  <title>ConnectPro – Live Caption Demo</title>
+
+  <!-- Caption overlay styles -->
+  <link rel="stylesheet" href="caption.css" />
+
+  <style>
+    /* ── Page chrome ────────────────────────────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0b0d14;
+      --surface:     #13161f;
+      --surface2:    #1c2030;
+      --border:      rgba(255,255,255,.08);
+      --accent:      #3b82f6;
+      --accent-glow: rgba(59,130,246,.35);
+      --success:     #22c55e;
+      --warning:     #f59e0b;
+      --error:       #ef4444;
+      --text:        #f1f5f9;
+      --muted:       #64748b;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    .page {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11,13,20,.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -.3px;
+    }
+
+    .logo-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: rgba(59,130,246,.18);
+      color: #93c5fd;
+      border: 1px solid rgba(96,165,250,.3);
+      letter-spacing: .4px;
+    }
+
+    /* ── Mock webinar area ───────────────────────────────────────────────── */
+    .meeting-area {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse 80% 60% at 60% 30%, rgba(59,130,246,.07) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 20% 70%, rgba(99,102,241,.06) 0%, transparent 65%),
+        var(--bg);
+    }
+
+    /* Fake video tiles */
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      width: min(960px, 94vw);
+      padding: 36px 0 120px; /* bottom padding so captions don't cover tiles */
+    }
+
+    .tile {
+      aspect-ratio: 16/9;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+
+    .tile.active-speaker {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .tile-avatar {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .tile-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .tile-role {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+    }
+
+    /* Muted badge on a tile */
+    .tile-muted-badge {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(0,0,0,.65);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ── Control bar ─────────────────────────────────────────────────────── */
+    .controlbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background: rgba(13,15,22,.95);
+      border-top: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      z-index: 8999; /* below caption-overlay (z: 9000) */
+    }
+
+    .ctrl-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .2px;
+      transition: background .15s, transform .1s;
+    }
+
+    .ctrl-btn:hover    { background: #252a3a; }
+    .ctrl-btn:active   { transform: scale(.96); }
+    .ctrl-btn.red      { background: rgba(239,68,68,.18); color: #f87171; }
+    .ctrl-btn.red:hover { background: rgba(239,68,68,.28); }
+
+    .ctrl-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* CC button active state */
+    .ctrl-btn.cc-active {
+      background: rgba(59,130,246,.2);
+      color: #60a5fa;
+    }
+
+    /* ── Sidebar panel (caption log) ─────────────────────────────────────── */
+    .sidebar {
+      position: fixed;
+      right: 0;
+      top: 65px;
+      bottom: 80px;
+      width: 280px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .3s ease;
+      z-index: 500;
+    }
+
+    .sidebar.open    { transform: translateX(0); }
+
+    .sidebar-header {
+      padding: 14px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .sidebar-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .transcript-line {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border-left: 3px solid var(--accent);
+      animation: fadein .3s ease;
+    }
+
+    .transcript-line .ts {
+      font-size: 10px;
+      color: #334155;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    @keyframes fadein { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform:none; } }
+
+    /* ── Toast ───────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+      z-index: 10000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s, transform .25s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Server status dot ───────────────────────────────────────────────── */
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .3s;
+    }
+
+    .status-dot.online  { background: var(--success); }
+    .status-dot.offline { background: var(--error); }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-dot">▶</div>
+      ConnectPro
+      <span class="badge">LIVE</span>
+    </div>
+
+    <div class="server-status">
+      <div class="status-dot" id="serverDot"></div>
+      <span id="serverLabel">Checking caption server…</span>
+    </div>
+  </header>
+
+  <!-- ── Mock webinar tiles ─────────────────────────────────────────────── -->
+  <main class="meeting-area">
+    <div class="tiles">
+      <!-- Host tile -->
+      <div class="tile active-speaker" id="hostTile">
+        <div class="tile-avatar">A</div>
+        <div>
+          <div class="tile-name">Alex (Host)</div>
+          <div class="tile-role">Presenter</div>
+        </div>
+      </div>
+      <!-- Participant tiles -->
+      <div class="tile">
+        <div class="tile-avatar" style="background:linear-gradient(135deg,#ec4899,#8b5cf6)">J</div>
+        <div>
+          <div class="tile-name">Jordan</div>
+          <div class="tile-role">Participant</div>
+        </div>
+        <div class="tile-muted-badge">🔇 Muted</div>
+      </div>
+      <div class="tile">
+        <div class="tile-avatar" style="background:linear-gradient(135deg,#14b8a6,#3b82f6)">S</div>
+        <div>
+          <div class="tile-name">Sam</div>
+          <div class="tile-role">Participant</div>
+        </div>
+        <div class="tile-muted-badge">🔇 Muted</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Control bar ────────────────────────────────────────────────────── -->
+  <div class="controlbar">
+    <!-- Mic -->
+    <button class="ctrl-btn" id="micBtn" title="Toggle microphone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8"  y1="23" x2="16" y2="23"/>
+      </svg>
+      Mic
+    </button>
+
+    <!-- Camera -->
+    <button class="ctrl-btn" id="camBtn" title="Toggle camera">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 7 16 12 23 17V7z"/>
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+      </svg>
+      Camera
+    </button>
+
+    <!-- Live Captions (CC) -->
+    <button class="ctrl-btn" id="ccBtn" title="Toggle live captions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="7" width="20" height="14" rx="2"/>
+        <path d="M8 13h3m2 0h3M8 17h1m2 0h5"/>
+      </svg>
+      Captions
+    </button>
+
+    <!-- Transcript log -->
+    <button class="ctrl-btn" id="logBtn" title="Show transcript log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <polyline points="10 9 9 9 8 9"/>
+      </svg>
+      Transcript
+    </button>
+
+    <!-- Leave -->
+    <button class="ctrl-btn red" id="leaveBtn" title="Leave meeting">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      Leave
+    </button>
+  </div>
+
+</div><!-- /.page -->
+
+<!-- ── Sidebar (transcript log) ────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar" aria-label="Live transcript">
+  <div class="sidebar-header">
+    📄 Transcript
+    <button class="sidebar-close" id="sidebarClose" aria-label="Close transcript">✕</button>
+  </div>
+  <div class="sidebar-body" id="transcriptLog">
+    <p style="font-size:12px;color:#334155;text-align:center;padding-top:24px">
+      Transcript will appear here when captions are active.
+    </p>
+  </div>
+</aside>
+
+<!-- ── Toast notification ───────────────────────────────────────────────── -->
+<div class="toast" id="toast" role="alert"></div>
+
+<!-- ── Caption system ───────────────────────────────────────────────────── -->
+<script type="module">
+  import CaptionSystem from './caption.js';
+
+  // ─── Instantiate caption system (hide built-in toggle — we use our own) ──
+  const captions = new CaptionSystem({
+    serverUrl:      'http://localhost:8765/transcribe',
+    chunkIntervalMs: 2000,
+    hideDelayMs:    3000,
+    showToggleBtn:  false,   // we have a custom CC button in the control bar
+    showStatusBar:  false,   // no separate status bar needed
+  });
+  captions.init();
+
+
+  // ─── Helper: show toast ──────────────────────────────────────────────────
+  function showToast(msg, duration = 2500) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), duration);
+  }
+
+
+  // ─── CC button ────────────────────────────────────────────────────────────
+  const ccBtn = document.getElementById('ccBtn');
+
+  ccBtn.addEventListener('click', async () => {
+    if (captions.isRunning) {
+      captions.stop();
+      ccBtn.classList.remove('cc-active');
+      showToast('Live captions off');
+    } else {
+      try {
+        await captions.start();
+        ccBtn.classList.add('cc-active');
+        showToast('🎙 Live captions on — start speaking');
+      } catch {
+        showToast('⚠ Microphone access denied');
+      }
+    }
+  });
+
+  // ─── Intercept caption text and log it to the sidebar ───────────────────
+  // We monkey-patch _showCaption so every displayed caption is also logged.
+  const _origShow = captions._showCaption.bind(captions);
+  captions._showCaption = function(text) {
+    _origShow(text);
+    addToTranscriptLog(text);
+  };
+
+  function addToTranscriptLog(text) {
+    const log = document.getElementById('transcriptLog');
+
+    // Remove placeholder
+    const placeholder = log.querySelector('p');
+    if (placeholder) placeholder.remove();
+
+    const now = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.className = 'transcript-line';
+    line.innerHTML = `<span class="ts">${now}</span>${text}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+
+  // ─── Transcript sidebar ──────────────────────────────────────────────────
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('logBtn').addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+  });
+  document.getElementById('sidebarClose').addEventListener('click', () => {
+    sidebar.classList.remove('open');
+  });
+
+
+  // ─── Mic / camera button (cosmetic toggle) ───────────────────────────────
+  document.getElementById('micBtn').addEventListener('click', function() {
+    this.classList.toggle('red');
+  });
+  document.getElementById('camBtn').addEventListener('click', function() {
+    this.classList.toggle('red');
+  });
+
+
+  // ─── Leave button ────────────────────────────────────────────────────────
+  document.getElementById('leaveBtn').addEventListener('click', () => {
+    captions.destroy();
+    showToast('You left the meeting');
+    setTimeout(() => { window.location.reload(); }, 1500);
+  });
+
+
+  // ─── Server health check ─────────────────────────────────────────────────
+  async function checkServer() {
+    const dot   = document.getElementById('serverDot');
+    const label = document.getElementById('serverLabel');
+    try {
+      const resp = await fetch('http://localhost:8765/health', { signal: AbortSignal.timeout(3000) });
+      if (resp.ok) {
+        dot.className   = 'status-dot online';
+        label.textContent = 'Caption server online';
+        return;
+      }
+    } catch { /* fall through */ }
+    dot.className   = 'status-dot offline';
+    label.textContent = 'Caption server offline';
+  }
+
+  checkServer();
+  setInterval(checkServer, 10_000); // re-check every 10 s
+</script>
+
+</body>
+</html>

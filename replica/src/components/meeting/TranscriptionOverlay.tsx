@@ -1,37 +1,39 @@
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldCheck, User } from 'lucide-react';
 
 /**
  * Zoom-style live captions overlay.
- *
- * Behavior:
- * - Renders ONLY when `isTranscriptionEnabled` AND there is an active `currentCaption`
- * - Shows a single floating pill at the bottom-center of the meeting screen
- * - Caption automatically disappears after 3 s of silence (handled in TranscriptionManager)
- * - Does NOT embed into the video element; uses fixed/absolute positioning as an overlay
- * - Pointer events disabled so it never blocks UI interactions
  */
 export function TranscriptionOverlay() {
-    const { isTranscriptionEnabled, currentCaption } = useTranscriptionStore();
+    const { isTranscriptionEnabled, currentCaption, currentSpeakerRole } = useTranscriptionStore();
 
     // Nothing to show if captions are off OR no active speech
     const shouldShow = isTranscriptionEnabled && currentCaption.length > 0;
 
     return (
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
             {shouldShow && (
-                <motion.div
-                    key="caption-overlay"
-                    initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    className="captions-overlay"
-                    aria-live="polite"
-                    aria-label="Live captions"
-                >
-                    {currentCaption}
-                </motion.div>
+                <div className="fixed inset-x-0 bottom-[120px] z-[9999] pointer-events-none flex justify-center items-center px-4">
+                    <motion.div
+                        key={currentCaption}
+                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                        className="caption-overlay flex items-center gap-3"
+                    >
+                        <div className="flex-shrink-0">
+                            {currentSpeakerRole === 'host' ? (
+                                <ShieldCheck className="w-6 h-6 text-blue-400" />
+                            ) : (
+                                <User className="w-6 h-6 text-gray-400" />
+                            )}
+                        </div>
+                        <span className="text-white leading-tight font-medium text-lg">
+                            {currentCaption}
+                        </span>
+                    </motion.div>
+                </div>
             )}
         </AnimatePresence>
     );
