@@ -33,9 +33,9 @@ export function TranscriptionManager() {
                 socketRef.current = null;
             }
 
-            const hostname = window.location.hostname || 'localhost';
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
             const langParam = speakingLanguage ? `?lang=${encodeURIComponent(speakingLanguage.toLowerCase())}` : '';
-            const ws = new WebSocket(`ws://${hostname}:8765/transcribe-ws${langParam}`);
+            const ws = new WebSocket(`${protocol}://${window.location.host}/transcribe${langParam}`);
             socketRef.current = ws;
 
             ws.onopen = () => {

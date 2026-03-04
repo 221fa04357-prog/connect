@@ -128,7 +128,7 @@ async def health():
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response, WebSocket, WebSocketDisconnect
 import io
 
-@app.websocket("/transcribe-ws")
+@app.websocket("/transcribe")
 async def transcribe_ws(websocket: WebSocket, lang: str = None):
     """
     WebSocket endpoint for high-speed streaming captions.
