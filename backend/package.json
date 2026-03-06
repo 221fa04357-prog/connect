@@ -9,13 +9,17 @@
         "setup-db": "node setupDb.js"
     },
     "dependencies": {
+        "axios": "^1.13.6",
         "bcryptjs": "^3.0.3",
         "cors": "^2.8.6",
         "dotenv": "^16.6.1",
         "express": "^4.22.1",
+        "form-data": "^4.0.5",
         "groq-sdk": "^0.37.0",
+        "multer": "^1.4.5-lts.1",
         "pg": "^8.18.0",
-        "socket.io": "^4.8.3"
+        "socket.io": "^4.8.3",
+        "ws": "^8.19.0"
     },
     "devDependencies": {
         "nodemon": "^3.1.0"

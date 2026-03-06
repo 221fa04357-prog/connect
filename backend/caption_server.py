@@ -46,7 +46,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # Fixed: Cannot use "*" with credentials=True
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -85,6 +85,8 @@ WORD_CORRECTION_MAP = {
     "stavje": "Sravya",
     "sravy": "Sravya",
     "stavia": "Sravya",
+    "thank you thanks": "thank you",
+    "hi hi": "hi",
 }
 
 def apply_word_corrections(text: str) -> str:
@@ -101,6 +103,18 @@ def apply_word_corrections(text: str) -> str:
     
     return processed.strip()
 
+def collapse_duplicate_words(text: str) -> str:
+    """Remove immediate duplicate words (e.g., "hello hello" → "hello")."""
+    if not text:
+        return ""
+    words = text.split()
+    result = []
+    prev = None
+    for w in words:
+        if w.lower() != (prev.lower() if prev else None):
+            result.append(w)
+        prev = w
+    return " ".join(result)
 
 # ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
@@ -164,6 +178,9 @@ async def transcribe_ws(websocket: WebSocket, lang: str = None):
 
     try:
         while True:
+            # Receive audio chunk as binary
+            audio_data = await websocket.receive_bytes()
+
             # HANDLE HEARTBEAT: Ignore packets < 1000 bytes (too small to be audio)
             if not audio_data or len(audio_data) < 1000:
                 continue
@@ -177,35 +194,36 @@ async def transcribe_ws(websocket: WebSocket, lang: str = None):
                 # Zoom-style: Higher threshold to prevent "and/the" hallucinations during silence
                 segments_iter, info = whisper_model.transcribe(
                     tmp_path,
-                    beam_size=2,        
+                    beam_size=5,
+                    temperature=0.0,
                     language=whisper_lang,
+                    task='translate',  # always output English
                     initial_prompt="Pooji, Sravya, ConnectPro, deployment.",
-                    vad_filter=False,  
+                    vad_filter=True,
                     condition_on_previous_text=False,
-                    no_speech_threshold=0.45, 
-                    log_prob_threshold=None,  
-                    hallucination_silence_threshold=None,
+                    no_speech_threshold=0.5,
+                    log_prob_threshold=None,
+                    hallucination_silence_threshold=0.1,
                 )
                 
                 try:
                     segments = list(segments_iter)
                     raw_text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
-                    
-                    # Extra filter: if it's just a single short common word, discard it if it was low-confidence
-                    # (Whisper creates list(segments_iter), we can check probability if needed, 
-                    # but threshold 0.45 usually handles it)
+                
                 except Exception as iter_err:
                     log.warning("Audio decoding failed for chunk: %s", iter_err)
                     raw_text = ""
                 
-                # Apply word corrections (e.g., Pusy -> Pooji)
-                final_text = apply_word_corrections(raw_text)
+                # Apply word corrections and collapse duplicates
+                corrected = apply_word_corrections(raw_text)
+                final_text = collapse_duplicate_words(corrected)
                 
                 if final_text and len(final_text) > 1:
                     log.info("<<< Transcribed: '%s'", final_text)
                     await websocket.send_json({
                         "text": final_text,
-                        "language": info.language
+                        "language": info.language,
+                        "participantName": "Participant"
                     })
             except Exception as e:
                 # Log warning but DO NOT crash the whole socket
@@ -249,10 +267,14 @@ async def transcribe(audio: UploadFile = File(...)):
         # Transcribe with low-latency settings
         segments_iter, info = whisper_model.transcribe(
             tmp_path,
-            beam_size=1,            
+            beam_size=5,
+            temperature=0.0,
+            language=None,  # auto-detect
+            task="translate",
             initial_prompt="deployment, ConnectPro, webinar, meeting",
-            vad_filter=False,
+            vad_filter=True,
             condition_on_previous_text=False,
+            no_speech_threshold=0.5,
             hallucination_silence_threshold=0.1,
         )
         
@@ -260,13 +282,14 @@ async def transcribe(audio: UploadFile = File(...)):
         raw_text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
         
         # Apply corrections
-        final_text = apply_word_corrections(raw_text)
+        corrected = apply_word_corrections(raw_text)
+        final_text = collapse_duplicate_words(corrected)
 
         if not final_text:
             return Response(status_code=204)
 
         log.info("Transcribed: %r", final_text[:120])
-        return JSONResponse(content={"text": final_text, "language": info.language})
+        return JSONResponse(content={"text": final_text, "language": info.language, "participantName": "Participant"})
 
     except Exception as exc:
         log.exception("Error during transcription: %s", exc)

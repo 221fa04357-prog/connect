@@ -6,10 +6,10 @@ import { ShieldCheck, User } from 'lucide-react';
  * Zoom-style live captions overlay.
  */
 export function TranscriptionOverlay() {
-    const { isTranscriptionEnabled, currentCaption, currentSpeakerRole } = useTranscriptionStore();
+    const { currentCaption, currentSpeakerRole } = useTranscriptionStore();
 
-    // Nothing to show if captions are off OR no active speech
-    const shouldShow = isTranscriptionEnabled && currentCaption.length > 0;
+    // Show captions to ALL participants if there is active speech
+    const shouldShow = currentCaption.length > 0;
 
     return (
         <AnimatePresence mode="wait">

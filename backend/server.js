@@ -14,41 +14,59 @@ const os = require('os');
 require('dotenv').config();
 
 
-// ================= WHISPER FUNCTION =================
+const axios = require('axios');
+const FormData = require('form-data');
 
-function transcribeWithWhisper(audioPath) {
+async function transcribeWithWhisper(audioPath) {
+    try {
+        const fs = require('fs');
+        const fileStream = fs.createReadStream(audioPath);
+        const form = new FormData();
+        form.append('audio', fileStream, path.basename(audioPath));
 
-    return new Promise((resolve, reject) => {
-
-        const pythonProcess = spawn("python", [
-            path.join(__dirname, "transcribe.py"),
-            audioPath
-        ]);
-
-        let result = "";
-
-        pythonProcess.stdout.on("data", (data) => {
-            result += data.toString();
+        const response = await axios.post('http://127.0.0.1:8765/transcribe', form, {
+            headers: {
+                ...form.getHeaders()
+            }
         });
 
-        pythonProcess.stderr.on("data", (data) => {
-            console.error("Whisper error:", data.toString());
-        });
-
-        pythonProcess.on("close", (code) => {
-
-            if (code !== 0)
-                reject("Whisper failed");
-            else
-                resolve(result.trim());
-
-        });
-
-    });
-
+        if (response.data && response.data.text) {
+            return response.data.text;
+        }
+        return "";
+    } catch (error) {
+        console.error("Python Caption Server Error:", error.message);
+        return "";
+    }
 }
+
+
 const app = express();
 const server = http.createServer(app);
+
+// ================= TRANSCRIPTION CONFIG =================
+const multer = require('multer');
+const upload = multer({ dest: os.tmpdir() });
+
+// Add a POST endpoint for transcription (better for Vercel than WebSockets)
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+
+    try {
+        const text = await transcribeWithWhisper(req.file.path);
+        // Clean up temp file
+        try { fs.unlinkSync(req.file.path); } catch (e) { }
+
+        if (text) {
+            return res.json({ text: text.trim(), language: 'en' });
+        }
+        return res.status(204).send();
+    } catch (err) {
+        console.error('API Transcribe error:', err);
+        return res.status(500).json({ error: 'Transcription failed' });
+    }
+});
+
 
 // Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
 const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
@@ -958,8 +976,28 @@ io.on('connection', (socket) => {
         } catch (error) {
 
             console.error('Transcription error:', error);
-
         }
+    });
+
+    socket.on('broadcast_transcription', (data) => {
+        const { meetingId, participantId, participantName, text } = data;
+        if (!meetingId || !text) return;
+
+        const segment = {
+            participantId,
+            participantName,
+            text,
+            timestamp: new Date().toISOString()
+        };
+
+        // Store in memory
+        if (!meetingTranscripts.has(meetingId)) {
+            meetingTranscripts.set(meetingId, []);
+        }
+        meetingTranscripts.get(meetingId).push(segment);
+
+        // Broadcast transcript to EVERYONE in the room
+        io.to(meetingId).emit('transcription_received', segment);
     });
 
     socket.on('get_transcripts', (data) => {
