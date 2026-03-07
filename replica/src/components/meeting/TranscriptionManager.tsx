@@ -13,15 +13,18 @@ export function TranscriptionManager() {
         isTranscriptionEnabled,
         setCurrentCaption,
         clearCurrentCaption,
+        speakingLanguage
     } = useTranscriptionStore();
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const captionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Listen for transcription results from the shared socket
+    // Listen for transcription results from the central Node.js server (Socket.io)
+    // Removed `isTranscriptionEnabled` from the dependency and condition so ALL participants can see captions!
+    // As long as ONE person has transcription enabled and speaks, the server broadcasts it.
     useEffect(() => {
-        if (!socket) return; // FIX: allow all participants to see captions by removing isTranscriptionEnabled check here!
+        if (!socket) return;
 
         const handleTranscription = (data: any) => {
             if (data.text) {
@@ -67,10 +70,35 @@ export function TranscriptionManager() {
             stopRecording();
             if (typeof cleanup === 'function') cleanup();
         };
-    }, [isTranscriptionEnabled, localStream, isAudioMuted]);
+    }, [isTranscriptionEnabled, localStream, isAudioMuted, speakingLanguage]);
 
     const startRecording = () => {
         if (mediaRecorderRef.current || !localStream || !socket) return;
+
+        // Vercel / Production environment variable check
+        let wsUrl = import.meta.env.VITE_TRANSCRIBE_WS_URL || 'ws://127.0.0.1:8765/transcribe';
+
+        // Append language preference if user selected one
+        if (speakingLanguage) {
+            const separator = wsUrl.includes('?') ? '&' : '?';
+            wsUrl += `${separator}lang=${encodeURIComponent(speakingLanguage.toLowerCase())}`;
+        }
+
+        let captionWs: WebSocket | null = new WebSocket(wsUrl);
+        captionWs.onopen = () => console.log('[Transcription] Connected to raw Whisper WS: ' + wsUrl);
+
+        captionWs.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.text) {
+                // Whisper translated the audio. NOW broadcast it to everyone in the room via Socket.io!
+                socket.emit('broadcast_transcription', {
+                    meetingId: meeting?.id,
+                    participantId: user?.id || 'guest',
+                    participantName: user?.name || 'Guest',
+                    text: data.text
+                });
+            }
+        };
 
         try {
             const audioTrack = localStream.getAudioTracks()[0];
@@ -97,15 +125,13 @@ export function TranscriptionManager() {
                 mediaRecorderRef.current = recorder;
 
                 recorder.ondataavailable = async (event) => {
-                    if (isSpeakingInSegment && event.data.size > 0 && socket.connected) {
-                        // Send as arrayBuffer for cleaner transmission through Socket.io
-                        const buffer = await event.data.arrayBuffer();
-                        socket.emit('audio_chunk', {
-                            meetingId: meeting?.id,
-                            participantId: user?.id || 'guest',
-                            participantName: user?.name || 'Guest',
-                            audioBlob: buffer
-                        });
+                    if (isSpeakingInSegment && event.data.size > 0 && captionWs?.readyState === WebSocket.OPEN) {
+                        try {
+                            const buffer = await event.data.arrayBuffer();
+                            captionWs.send(buffer);
+                        } catch (err) {
+                            console.warn("Failed to send WS audio chunk", err);
+                        }
                     }
                     isSpeakingInSegment = false;
                 };
@@ -117,7 +143,7 @@ export function TranscriptionManager() {
                         recorder.stop();
                         startChunk();
                     }
-                }, 2000); // FIX: 2.0s chunks for smoother real-time feel to combine fragments!
+                }, 2000); // 2.0s chunks to allow full sentence fragments
             };
 
             const analyser = audioCtx.createAnalyser();
@@ -134,13 +160,26 @@ export function TranscriptionManager() {
             };
             checkVolume();
 
+            // Start repeating chunks
             startChunk();
 
+            // Heartbeat loop for the caption websocket
+            const heartbeat = setInterval(() => {
+                if (captionWs && captionWs.readyState === WebSocket.OPEN) {
+                    try { captionWs.send(new Uint8Array([0x00])); } catch (e) { }
+                }
+            }, 15000);
+
             return () => {
+                clearInterval(heartbeat);
                 if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
                 mediaRecorderRef.current = null;
                 audioCtx.close();
                 audioStream.getTracks().forEach(t => t.stop());
+                if (captionWs) {
+                    captionWs.close();
+                    captionWs = null;
+                }
             };
         } catch (err) {
             console.error('Failed to start transcription recorder:', err);
