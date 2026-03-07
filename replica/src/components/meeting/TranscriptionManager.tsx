@@ -75,30 +75,55 @@ export function TranscriptionManager() {
     const startRecording = () => {
         if (mediaRecorderRef.current || !localStream || !socket) return;
 
-        // Vercel / Production environment variable check
-        let wsUrl = import.meta.env.VITE_TRANSCRIBE_WS_URL || 'ws://127.0.0.1:8765/transcribe';
+        let captionWs: WebSocket | null = null;
+        let connectTimeout: ReturnType<typeof setTimeout> | null = null;
 
-        // Append language preference if user selected one
-        if (speakingLanguage) {
-            const separator = wsUrl.includes('?') ? '&' : '?';
-            wsUrl += `${separator}lang=${encodeURIComponent(speakingLanguage.toLowerCase())}`;
-        }
+        const connectWS = () => {
+            if (!isTranscriptionEnabled || !socket) return;
 
-        let captionWs: WebSocket | null = new WebSocket(wsUrl);
-        captionWs.onopen = () => console.log('[Transcription] Connected to raw Whisper WS: ' + wsUrl);
+            // Vercel / Production environment variable check
+            let wsUrl = import.meta.env.VITE_TRANSCRIBE_WS_URL || 'ws://127.0.0.1:8765/transcribe';
 
-        captionWs.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.text) {
-                // Whisper translated the audio. NOW broadcast it to everyone in the room via Socket.io!
-                socket.emit('broadcast_transcription', {
-                    meetingId: meeting?.id,
-                    participantId: user?.id || 'guest',
-                    participantName: user?.name || 'Guest',
-                    text: data.text
-                });
+            // Append language preference if user selected one
+            if (speakingLanguage) {
+                const separator = wsUrl.includes('?') ? '&' : '?';
+                wsUrl += `${separator}lang=${encodeURIComponent(speakingLanguage.toLowerCase())}`;
             }
+
+            captionWs = new WebSocket(wsUrl);
+            captionWs.onopen = () => console.log('[Transcription] Connected to raw Whisper WS: ' + wsUrl);
+
+            captionWs.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.text) {
+                    // Whisper translated the audio. NOW broadcast it to everyone in the room via Socket.io!
+                    socket.emit('broadcast_transcription', {
+                        meetingId: meeting?.id,
+                        participantId: user?.id || 'guest',
+                        participantName: user?.name || 'Guest',
+                        text: data.text
+                    });
+                }
+            };
+
+            captionWs.onclose = () => {
+                console.warn('[Transcription] Whisper WS Closed. Scheduling reconnect...');
+                if (captionWs) {
+                    captionWs.close();
+                    captionWs = null;
+                }
+                if (isTranscriptionEnabled) {
+                    connectTimeout = setTimeout(connectWS, 4000);
+                }
+            };
+
+            captionWs.onerror = (e) => {
+                console.warn('[Transcription] Whisper WS Error:', e);
+            };
         };
+
+        // Initially connect
+        connectWS();
 
         try {
             const audioTrack = localStream.getAudioTracks()[0];
@@ -168,15 +193,19 @@ export function TranscriptionManager() {
                 if (captionWs && captionWs.readyState === WebSocket.OPEN) {
                     try { captionWs.send(new Uint8Array([0x00])); } catch (e) { }
                 }
-            }, 15000);
+            }, 20000); // 20s keep-alive
 
             return () => {
                 clearInterval(heartbeat);
+                if (connectTimeout) clearTimeout(connectTimeout);
                 if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
                 mediaRecorderRef.current = null;
-                audioCtx.close();
+                if (audioCtx.state !== 'closed') {
+                    audioCtx.close().catch(e => console.warn(e));
+                }
                 audioStream.getTracks().forEach(t => t.stop());
                 if (captionWs) {
+                    captionWs.onclose = null; // Prevent reconnect loop on intentional cleanup
                     captionWs.close();
                     captionWs = null;
                 }

@@ -24,7 +24,8 @@ async function transcribeWithWhisper(audioPath) {
         const form = new FormData();
         form.append('audio', fileStream, path.basename(audioPath));
 
-        const response = await axios.post('http://127.0.0.1:8765/transcribe', form, {
+        const captionUrl = process.env.CAPTION_SERVER_URL || 'http://127.0.0.1:8765/transcribe';
+        const response = await axios.post(captionUrl, form, {
             headers: {
                 ...form.getHeaders()
             }
@@ -68,8 +69,8 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 });
 
 
-// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
-const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
+// Keep permissive CORS for Vercel dynamic deploy URLs
+const frontendOrigin = '*';
 
 // Database Initialization Logic
 async function initializeDatabase() {
