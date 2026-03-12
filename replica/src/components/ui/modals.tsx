@@ -210,9 +210,10 @@ function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps) {
                     {/* Right Side - Plans */}
                     <div className="p-6 sm:p-8 bg-[#1C1C1C] flex flex-col justify-between">
                         <DialogHeader className="mb-4 sm:mb-6 text-left">
-                            <DialogTitle className="text-lg sm:text-xl">Choose your plan</DialogTitle>
-                            <DialogDescription className="text-gray-400">
-                                Current Plan: <span className="text-white font-medium capitalize">{user?.subscriptionPlan || "Free"}</span>
+                            <DialogTitle className="text-xl sm:text-2xl font-bold">Ready to upgrade?</DialogTitle>
+                            <DialogDescription className="text-gray-400 mt-2">
+                                Current Plan: <span className="text-white font-medium capitalize">{user?.subscription_plan || user?.subscriptionPlan || "Free"}</span>
+                                <p className="mt-2 text-xs">Join thousands of teams already using Connect Pro.</p>
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
@@ -238,9 +239,14 @@ function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps) {
                                         </li>
                                     ))}
                                 </ul>
-                                <Button onClick={handleUpgrade} className="w-full mt-3 sm:mt-4 bg-[#0B5CFF] hover:bg-[#0948c7] text-white h-8 sm:h-9 text-xs sm:text-sm">
-                                    Upgrade to Pro
-                                </Button>
+                                <div className="flex flex-col gap-2 mt-4">
+                                    <Button onClick={handleUpgrade} className="w-full bg-[#0B5CFF] hover:bg-[#0948c7] text-white h-10 sm:h-11 text-xs sm:text-sm font-bold">
+                                        Start Free Trial
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => onOpenChange(false)} className="w-full text-gray-400 hover:text-white h-10 sm:h-11 text-xs sm:text-sm">
+                                        Maybe Later
+                                    </Button>
+                                </div>
                             </div>
                             <div className="text-center pt-1 sm:pt-2">
                                 <p className="text-[10px] sm:text-xs text-gray-500 mb-1 sm:mb-2">Need more customization?</p>

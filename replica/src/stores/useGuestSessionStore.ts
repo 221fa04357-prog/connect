@@ -9,7 +9,7 @@ interface GuestSessionState {
   checkGuestSession: () => void;
 }
 
-const GUEST_SESSION_KEY = 'connectpro_guest_session';
+const GUEST_SESSION_KEY = 'neuralchat_guest_session';
 const GUEST_SESSION_DURATION = 3 * 60 * 1000; // 3 minutes in ms
 
 function saveGuestSession(expiresAt: number | null, guestId: string | null) {

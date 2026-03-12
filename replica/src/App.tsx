@@ -11,6 +11,9 @@ import NotFound from './pages/NotFound';
 import MeetingRecap from './pages/MeetingRecap';
 import RecapsList from './pages/RecapsList';
 import Upgrade from './pages/Upgrade';
+import Updates from './pages/Updates';
+import WhatsNew from './pages/WhatsNew';
+import AddAccount from './pages/AddAccount';
 import { useAuthStore } from './stores/useAuthStore';
 import { useGuestSessionStore } from './stores/useGuestSessionStore';
 import { useEffect, useRef } from 'react';
@@ -299,9 +302,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
           // Save the current meeting ID so Login can redirect back after auth
           const meetingId = useMeetingStore.getState().meeting?.id;
           if (meetingId) {
-            localStorage.setItem('connectpro_post_login_redirect', `/join/${meetingId}`);
+            localStorage.setItem('neuralchat_post_login_redirect', `/join/${meetingId}`);
           } else {
-            localStorage.setItem('connectpro_post_login_redirect', '/join-meeting');
+            localStorage.setItem('neuralchat_post_login_redirect', '/join-meeting');
           }
           // Force reload/redirect to ensure clean state
           window.location.href = '/#/login';
@@ -351,6 +354,9 @@ const AppContent = () => {
         <Route path="/recaps" element={<RecapsList />} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/subscription/upgrade" element={<Upgrade />} />
+        <Route path="/updates" element={<Updates />} />
+        <Route path="/whats-new" element={<WhatsNew />} />
+        <Route path="/add-account" element={<AddAccount />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </HashRouter>

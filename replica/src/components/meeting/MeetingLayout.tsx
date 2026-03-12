@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
@@ -31,7 +30,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -41,6 +40,7 @@ import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { ChatMessage, Participant } from '@/types';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
@@ -73,6 +73,7 @@ export function ChatPanel() {
 
     const isHostOrCoHost = isJoinedAsHost; // Simplified for this component context
     const chatAllowed = isHostOrCoHost || meeting?.settings?.chatAllowed !== false;
+    const documentShareAllowed = isHostOrCoHost || meeting?.settings?.allowDocumentShare !== false;
 
     const [input, setInput] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -370,6 +371,21 @@ export function ChatPanel() {
                         )}
 
                         <div className="flex items-center gap-2 bg-[#232323] border border-[#404040] rounded-xl px-3 py-2">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={!chatAllowed || !documentShareAllowed}
+                                onClick={() => {
+                                    if (!documentShareAllowed) {
+                                        toast.error("Host disabled document sharing");
+                                        return;
+                                    }
+                                    toast.info("Document sharing coming soon in next update.");
+                                }}
+                            >
+                                <Paperclip className="w-5 h-5 text-gray-400 hover:text-white transition-colors" />
+                            </Button>
+
                             <Input
                                 value={input}
                                 onChange={handleInputChange}
@@ -775,7 +791,7 @@ export function ParticipantsPanel() {
                             />
                         </div>
 
-                        <div className="flex items-center gap-2 flex-none">
+                        <div className="flex items-center gap-2 flex-none flex-wrap">
                             {canControl && (
                                 <Button
                                     onClick={() => {
@@ -792,21 +808,109 @@ export function ParticipantsPanel() {
                             )}
 
                             {canControl && (
-                                <Button
-                                    onClick={() => {
-                                        if (confirm('Stop all participant videos and restrict them?')) {
-                                            useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
-                                            setVideoRestriction(true);
-                                        }
-                                    }}
-                                    variant="outline"
-                                    className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
-                                >
-                                    <VideoOff className="w-3.5 h-3.5 mr-1 text-red-500" />
-                                    Disable All
-                                </Button>
-                            )}
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
+                                        >
+                                            <MoreVertical className="w-4 h-4 mr-1" />
+                                            More
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent className="bg-[#1C1C1C] border-[#333] z-[100] text-gray-200" align="end">
+                                        <DropdownMenuItem
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                const isRestricted = videoRestricted;
+                                                if (!isRestricted) {
+                                                    if (confirm('Stop all participant videos and restrict them?')) {
+                                                        useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
+                                                        setVideoRestriction(true);
+                                                    }
+                                                } else {
+                                                    if (confirm('Allow participants to start their video?')) {
+                                                        setVideoRestriction(false);
+                                                    }
+                                                }
+                                            }}
+                                            className={cn("cursor-pointer flex items-center justify-between", videoRestricted ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300" : "hover:bg-[#333]")}
+                                        >
+                                            <div className="flex items-center">
+                                                {videoRestricted ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
+                                                {videoRestricted ? "Allow Participant Video" : "Disable All Video"}
+                                            </div>
+                                            {videoRestricted && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 px-1.5 py-0.5 rounded">Active</span>}
+                                        </DropdownMenuItem>
 
+                                        <DropdownMenuItem
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+                                                if (!isSuspended) {
+                                                    if (confirm('Suspend all participant activities? This turns off video, audio, chat, and screen sharing.')) {
+                                                        useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
+                                                        useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
+                                                        useMeetingStore.getState().updateMeetingSettings({
+                                                            suspendParticipantActivities: true,
+                                                            micAllowed: false,
+                                                            cameraAllowed: false,
+                                                            screenShareAllowed: false,
+                                                            chatAllowed: false
+                                                        });
+                                                        toast.success("Participant activities suspended.");
+                                                    }
+                                                } else {
+                                                    if (confirm('Resume participant activities?')) {
+                                                        useMeetingStore.getState().updateMeetingSettings({
+                                                            suspendParticipantActivities: false,
+                                                            micAllowed: true,
+                                                            cameraAllowed: true,
+                                                            screenShareAllowed: true,
+                                                            chatAllowed: true
+                                                        });
+                                                        toast.success("Participant activities resumed.");
+                                                    }
+                                                }
+                                            }}
+                                            className={cn("cursor-pointer flex items-center justify-between", useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300" : "hover:bg-red-500/10 text-red-500")}
+                                        >
+                                            <div className="flex items-center">
+                                                {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? <Check className="w-4 h-4 mr-2 text-red-400" /> : <AlertCircle className="w-4 h-4 mr-2" />}
+                                                {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "Resume Activities" : "Suspend Activities"}
+                                            </div>
+                                            {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 px-1.5 py-0.5 rounded">Suspended</span>}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => {
+                                                const currentLocked = useMeetingStore.getState().meeting?.settings?.isLocked;
+                                                useMeetingStore.getState().updateMeetingSettings({ isLocked: !currentLocked });
+                                                toast.success(!currentLocked ? "Meeting Locked. No new participants can join." : "Meeting Unlocked.");
+                                            }}
+                                            className="hover:bg-[#333] cursor-pointer"
+                                        >
+                                            {useMeetingStore.getState().meeting?.settings?.isLocked ? <LockIcon className="w-4 h-4 mr-2 text-green-400" /> : <LockIcon className="w-4 h-4 mr-2 text-red-400" />}
+                                            {useMeetingStore.getState().meeting?.settings?.isLocked ? "Unlock Meeting" : "Lock Meeting"}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => {
+                                                const msg = window.prompt("Enter host broadcast message:");
+                                                if (msg?.trim()) {
+                                                    const { meetingId, sendHostBroadcast } = useChatStore.getState();
+                                                    if (meetingId) {
+                                                        sendHostBroadcast(meetingId, msg.trim());
+                                                    }
+                                                    toast.success("Broadcast sent!");
+                                                }
+                                            }}
+                                            className="hover:bg-[#333] cursor-pointer"
+                                        >
+                                            <MessageSquare className="w-4 h-4 mr-2" />
+                                            Broadcast Message
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
                         </div>
                     </div>
 
@@ -835,7 +939,7 @@ export function ParticipantsPanel() {
                                                         Admit
                                                     </Button>
                                                     <button
-                                                        onClick={() => useChatStore.getState().rejectParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
+                                                        onClick={() => useChatStore.getState().denyParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
                                                         className="text-white hover:text-gray-300 text-sm font-medium transition-colors"
                                                     >
                                                         Deny
@@ -889,6 +993,15 @@ export function ParticipantsPanel() {
                                         }
                                     }}
                                     onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
+                                    onRename={isCurrentUser && (canControl || meeting?.settings?.allowRename !== false) ? () => {
+                                        const newName = window.prompt("Enter new name:", participant.name);
+                                        if (newName && newName.trim()) {
+                                            updateParticipant(participant.id, { name: newName.trim() });
+                                            if (meeting?.id) {
+                                                useChatStore.getState().emitParticipantUpdate(meeting.id, participant.id, { name: newName.trim() });
+                                            }
+                                        }
+                                    } : undefined}
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
                                     hostCount={hostCount}
@@ -936,6 +1049,7 @@ interface ParticipantItemProps {
     onToggleVideoAllowed: () => void;
     onRequestMedia: (userId: string, type: 'audio' | 'video') => void;
     onToggleVideo?: () => void;
+    onRename?: () => void;
     displayedRole?: Participant['role'];
     coHostCount: number;
     hostCount: number;
@@ -956,6 +1070,7 @@ function ParticipantItem({
     onToggleVideoAllowed,
     onRequestMedia,
     onToggleVideo,
+    onRename,
     isOriginalHost = false,
     displayedRole = participant.role,
     coHostCount,
@@ -1052,7 +1167,7 @@ function ParticipantItem({
                     </Button>
                 )}
 
-                {canControl && !isCurrentUser && (
+                {((canControl && !isCurrentUser) || (isCurrentUser && !!onRename)) && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button size="sm" variant="ghost" className="hover:bg-[#2D2D2D]">
@@ -1063,28 +1178,35 @@ function ParticipantItem({
                             align="end"
                             className="bg-[#232323] border-[#404040]"
                         >
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isAudioMuted && (
+                            {isCurrentUser && onRename && (
+                                <DropdownMenuItem onClick={onRename}>
+                                    <Edit2 className="w-4 h-4 mr-2" />
+                                    Rename
+                                </DropdownMenuItem>
+                            )}
+
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isAudioMuted && !isCurrentUser && (
                                 <DropdownMenuItem onClick={onToggleMute}>
                                     <MicOff className="w-4 h-4 mr-2" />
                                     Mute
                                 </DropdownMenuItem>
                             )}
 
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isAudioMuted && (
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isAudioMuted && !isCurrentUser && (
                                 <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'audio')}>
                                     <Mic className="w-4 h-4 mr-2" />
                                     Ask to Unmute
                                 </DropdownMenuItem>
                             )}
 
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isVideoOff && (
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isVideoOff && !isCurrentUser && (
                                 <DropdownMenuItem onClick={onToggleVideoAllowed}>
                                     <VideoOff className="w-4 h-4 mr-2 text-red-500" />
                                     Turn Off Camera
                                 </DropdownMenuItem>
                             )}
 
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isVideoOff && (
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isVideoOff && !isCurrentUser && (
                                 <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'video')}>
                                     <Video className="w-4 h-4 mr-2" />
                                     Ask to Start Video
@@ -1108,12 +1230,7 @@ function ParticipantItem({
                                         </DropdownMenuItem>
                                     )}
 
-                                    {effectiveRole === 'host' && (
-                                        <DropdownMenuItem onClick={onRevokeHost} className="text-yellow-400">
-                                            <Crown className="w-4 h-4 mr-2" />
-                                            Remove Host
-                                        </DropdownMenuItem>
-                                    )}
+
 
                                     {effectiveRole !== 'co-host' && effectiveRole !== 'host' && (
                                         <DropdownMenuItem
@@ -1130,7 +1247,7 @@ function ParticipantItem({
                                         </DropdownMenuItem>
                                     )}
 
-                                    {effectiveRole === 'co-host' && (
+                                    {effectiveRole === 'co-host' && !isCurrentUser && (
                                         <DropdownMenuItem
                                             onClick={onRevokeCoHost}
                                             className="text-yellow-400"
@@ -1142,19 +1259,15 @@ function ParticipantItem({
                                 </>
                             )}
 
-                            <DropdownMenuItem
-                                onClick={() => {
-                                    if (effectiveRole === 'host') {
-                                        alert('Cannot remove a participant with Host role. Revoke Host role first.');
-                                        return;
-                                    }
-                                    onRemove();
-                                }}
-                                className="text-red-500"
-                            >
-                                <X className="w-4 h-4 mr-2" />
-                                Remove
-                            </DropdownMenuItem>
+                            {canChangeRoles && !isCurrentUser && effectiveRole !== 'host' && !isOriginalHost && participant.role !== 'host' && (
+                                <DropdownMenuItem
+                                    onClick={onRemove}
+                                    className="text-red-500"
+                                >
+                                    <X className="w-4 h-4 mr-2" />
+                                    Remove
+                                </DropdownMenuItem>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -1477,7 +1590,7 @@ export function AICompanionPanel() {
         // Branding
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);
-        doc.text("Generated by ConnectPro AI Companion", margin, yPos);
+        doc.text("Generated by NeuralChat AI Companion", margin, yPos);
         yPos += 10;
 
         // Header Rect
@@ -1883,6 +1996,125 @@ export function AICompanionPanel() {
                         )}
 
                     </Tabs>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * TRANSCRIPT PANEL
+ * ------------------------------------------------------------------------------------------------- */
+
+export function TranscriptPanel() {
+    const { isTranscriptOpen, setTranscriptOpen, transcripts } = useTranscriptionStore();
+    const [searchQuery, setSearchQuery] = useState('');
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto scroll to bottom when new transcripts arrive (only if not searching)
+    useEffect(() => {
+        if (isTranscriptOpen && !searchQuery) {
+            transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [transcripts, isTranscriptOpen, searchQuery]);
+
+    const filteredTranscripts = transcripts.filter(t =>
+        t.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.participantName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const handleDownloadTranscript = () => {
+        if (transcripts.length === 0) return;
+        const textToSave = transcripts.map(t => {
+            const time = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return `[${time}] ${t.participantName}: ${t.text}`;
+        }).join('\n\n');
+
+        const blob = new Blob([textToSave], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Meeting_Transcript_${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <AnimatePresence>
+            {isTranscriptOpen && (
+                <motion.div
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="
+            fixed right-0 top-0 bottom-20
+            w-full md:w-80 lg:w-96
+            bg-[#1C1C1C]
+            border-l border-[#404040]
+            rounded-none
+            z-30 flex flex-col min-h-0 overflow-hidden
+            shadow-2xl
+          "
+                >
+                    {/* HEADER */}
+                    <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-blue-400" />
+                            Live Transcript
+                        </h3>
+                    </div>
+
+                    {/* SEARCH & ACTIONS */}
+                    <div className="p-4 border-b border-[#404040] flex flex-col gap-3 flex-shrink-0 bg-[#232323]">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                            <Input
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search transcript..."
+                                className="pl-9 h-9 bg-[#1A1A1A] border-[#404040] text-sm text-white focus-visible:ring-1 focus-visible:ring-blue-500 rounded-lg"
+                            />
+                        </div>
+                        <Button
+                            onClick={handleDownloadTranscript}
+                            disabled={transcripts.length === 0}
+                            className="w-full bg-[#333] hover:bg-[#444] text-white border-none h-9 flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            Save Transcript
+                        </Button>
+                    </div>
+
+                    {/* TRANSCRIPT LIST */}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 font-mono custom-scrollbar">
+                        {filteredTranscripts.length > 0 ? (
+                            filteredTranscripts.map((t, idx) => (
+                                <div key={idx} className="flex flex-col gap-1.5 p-3 rounded-xl bg-[#252525] border border-[#333] hover:border-[#444] transition-colors group">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-blue-400">{t.participantName}</span>
+                                        <span className="text-[10px] text-gray-500">
+                                            {new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {t.text}
+                                    </p>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-60">
+                                <MessageSquare className="w-10 h-10 text-gray-500" />
+                                <div>
+                                    <p className="text-sm text-white font-medium">No transcripts found</p>
+                                    <p className="text-xs text-gray-400 mt-1">{searchQuery ? "Try a different search term" : "Meeting captions will appear here"}</p>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={transcriptEndRef} />
+                    </div>
                 </motion.div>
             )}
         </AnimatePresence>

@@ -47,15 +47,17 @@ interface ChatState {
   allowVideoAll: (meetingId: string) => void;
   endMeeting: (meetingId: string) => void;
   admitParticipant: (meetingId: string, socketId: string) => void;
-  rejectParticipant: (meetingId: string, socketId: string) => void;
+  denyParticipant: (meetingId: string, socketId: string) => void;
   toggleWaitingRoom: (meetingId: string, enabled: boolean) => void;
   updateMeetingSettings: (meetingId: string, settings: Partial<any>) => void;
   deleteMessageForMe: (messageId: string) => void;
   deleteMessageForEveryone: (messageId: string) => void;
   markAsRead: () => void;
   requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
+  sendHostBroadcast: (meetingId: string, text: string) => void;
   setFrequentQuestionUsers: (users: any[]) => void;
   clearFrequentQuestionUsers: () => void;
+  emitCaptionLanguage: (meetingId: string, language: string) => void;
   reset: () => void;
 }
 
@@ -427,6 +429,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (data.status === 'admitted') {
         import('./useMeetingStore').then((store) => {
           store.useMeetingStore.getState().setIsWaiting(false);
+          store.useMeetingStore.getState().setMeetingJoined(true);
         });
       } else if (data.status === 'waiting') {
         import('./useMeetingStore').then((store) => {
@@ -439,6 +442,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
           window.location.replace('/#/');
         });
       }
+    });
+
+    socket.on('admitted_to_meeting', () => {
+      console.log('Admitted to meeting event received');
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setIsWaiting(false);
+        store.useMeetingStore.getState().setMeetingJoined(true);
+      });
+    });
+
+    socket.on('participant_denied', (data: { message?: string }) => {
+      console.log('Denied by host');
+      import('sonner').then(({ toast }) => toast.error(data.message || 'Access denied by host'));
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().leaveMeeting();
+        window.location.replace('/#/');
+      });
+    });
+
+    socket.on('participant_waiting', (participant: any) => {
+      console.log('New participant in waiting room:', participant);
+      import('./useParticipantsStore').then((store) => {
+        const ps = store.useParticipantsStore.getState();
+        // Check if already in WR to avoid duplicates
+        const exists = ps.waitingRoom.some(p => p.socketId === participant.socketId || p.id === participant.participantId);
+        if (!exists) {
+          const waitingEntry = {
+            id: participant.participantId,
+            socketId: participant.socketId,
+            name: participant.name,
+            joinedAt: new Date()
+          };
+          ps.syncWaitingRoom([...ps.waitingRoom, waitingEntry]);
+        }
+      });
     });
 
     socket.on('recording_requested', (data: { userId: string, userName: string }) => {
@@ -500,6 +538,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('media_request', (data: { type: 'audio' | 'video', fromName: string }) => {
       import('./useMeetingStore').then((store) => {
         store.useMeetingStore.getState().setPendingMediaRequest(data);
+      });
+    });
+
+    socket.on('host_broadcast', (data: { text: string }) => {
+      import('sonner').then(({ toast }) => {
+        toast('Host Broadcast', {
+          description: data.text,
+          duration: 10000,
+          icon: '📣'
+        });
+      });
+    });
+
+    socket.on('caption_language_changed', (data: { language: string }) => {
+      import('./useTranscriptionStore').then((store) => {
+        store.useTranscriptionStore.getState().setSpeakingLanguage(data.language);
+      });
+      import('sonner').then(({ toast }) => {
+        toast.info(`Caption language changed to ${data.language}`);
       });
     });
 
@@ -690,11 +747,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   admitParticipant: (meetingId, socketId) => {
+    console.log(`Emitting admit_participant for ${socketId} in meeting ${meetingId}`);
     get().socket?.emit('admit_participant', { meetingId, socketId });
   },
 
-  rejectParticipant: (meetingId, socketId) => {
-    get().socket?.emit('reject_participant', { meetingId, socketId });
+  denyParticipant: (meetingId, socketId) => {
+    console.log(`Emitting deny_participant for ${socketId} in meeting ${meetingId}`);
+    get().socket?.emit('deny_participant', { meetingId, socketId });
   },
 
   toggleWaitingRoom: (meetingId, enabled) => {
@@ -721,7 +780,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('request_media', { meetingId, userId, type });
   },
 
+  sendHostBroadcast: (meetingId, text) => {
+    get().socket?.emit('host_broadcast', { meetingId, text });
+  },
+
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
+
+  emitCaptionLanguage: (meetingId, language) => {
+    get().socket?.emit('caption_language_change', { meeting_id: meetingId, language });
+  },
 
   requestVideoStart: (meetingId, targetUserId, requesterName) => {
     get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });

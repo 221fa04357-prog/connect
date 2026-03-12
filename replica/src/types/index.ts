@@ -1,4 +1,4 @@
-// Core TypeScript types for the ConnectPro application
+// Core TypeScript types for the NeuralChat application
 
 export type UserRole = 'host' | 'co-host' | 'participant';
 
@@ -7,10 +7,11 @@ export interface User {
   name: string;
   email: string;
   subscriptionPlan?: 'free' | 'pro' | 'enterprise';
+  subscription_plan?: 'free' | 'pro' | 'enterprise';
   role?: UserRole;
 }
 
-export type ViewMode = 'gallery' | 'speaker';
+export type ViewMode = 'gallery' | 'speaker' | 'multi-speaker' | 'immersive';
 export type ChatType = 'public' | 'private';
 
 export interface Participant {
@@ -78,6 +79,18 @@ export interface MeetingSettings {
   recordAutomatically?: boolean;
   muteParticipantsOnEntry?: boolean;
   recordingAllowedForAll?: boolean;
+  isLocked?: boolean;
+  captionsAllowed?: boolean;
+  captionLanguageLocked?: boolean;
+  // View mode preferences
+  hideParticipantsWithoutVideo?: boolean;
+  hideSelfView?: boolean;
+  followHostVideoOrder?: boolean;
+  // Participant capabilities
+  allowRename?: boolean;
+  allowDocumentShare?: boolean;
+  allowMultipleScreenShares?: boolean;
+  suspendParticipantActivities?: boolean;
 }
 
 export interface Meeting {

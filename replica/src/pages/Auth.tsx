@@ -44,6 +44,30 @@ export function Login() {
     });
     const [errors, setErrors] = useState({ email: '', password: '' });
     const [touched, setTouched] = useState({ email: false, password: false });
+    const location = useLocation();
+    const setAuth = useAuthStore((state) => state.setAuth);
+
+    useState(() => {
+        // Handle OAuth callback auto-login
+        const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1]);
+        const authData = params.get('auth_data');
+        if (authData) {
+            try {
+                const user = JSON.parse(decodeURIComponent(authData));
+                setAuth(user);
+                // Redirect to previous page or landing
+                const pendingRedirect = localStorage.getItem('neuralchat_post_login_redirect');
+                if (pendingRedirect) {
+                    localStorage.removeItem('neuralchat_post_login_redirect');
+                    window.location.href = `/#${pendingRedirect}`;
+                } else {
+                    window.location.href = '/#/';
+                }
+            } catch (err) {
+                console.error('OAuth parse failed', err);
+            }
+        }
+    });
 
     function validate(field: string, value: string) {
         switch (field) {
@@ -93,9 +117,9 @@ export function Login() {
                     password: formData.password
                 });
                 // If guest was redirected here after session expiry, send them back to the join page
-                const pendingRedirect = localStorage.getItem('connectpro_post_login_redirect');
+                const pendingRedirect = localStorage.getItem('neuralchat_post_login_redirect');
                 if (pendingRedirect) {
-                    localStorage.removeItem('connectpro_post_login_redirect');
+                    localStorage.removeItem('neuralchat_post_login_redirect');
                     navigate(pendingRedirect);
                 } else {
                     navigate('/');
@@ -133,7 +157,7 @@ export function Login() {
                     </Button>
                     <div className="flex items-center justify-center gap-2 mb-6 sm:mb-8">
                         <Video className="w-8 h-8 sm:w-10 sm:h-10 text-[#0B5CFF]" />
-                        <span className="text-xl sm:text-2xl font-bold text-white">ConnectPro</span>
+                        <span className="text-xl sm:text-2xl font-bold text-white">NeuralChat</span>
                     </div>
 
                     <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-2">
@@ -321,7 +345,7 @@ export function ResetPassword() {
                 <div className="bg-[#232323] rounded-2xl shadow-2xl p-8">
                     <div className="flex items-center justify-center gap-2 mb-8">
                         <Video className="w-10 h-10 text-[#0B5CFF]" />
-                        <span className="text-2xl font-bold text-white">ConnectPro</span>
+                        <span className="text-2xl font-bold text-white">NeuralChat</span>
                     </div>
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Reset Password</h2>
                     <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
@@ -564,7 +588,7 @@ export function Register() {
                     </Button>
                     <div className="flex items-center justify-center gap-2 mb-8">
                         <Video className="w-10 h-10 text-[#0B5CFF]" />
-                        <span className="text-2xl font-bold text-white">ConnectPro</span>
+                        <span className="text-2xl font-bold text-white">NeuralChat</span>
                     </div>
 
                     <h2 className="text-2xl font-bold text-white text-center mb-2">

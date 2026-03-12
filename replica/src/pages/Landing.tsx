@@ -155,7 +155,7 @@ export default function Landing() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between mobile-header-inner">
           <div className="flex items-center gap-2 mobile-logo-group">
             <Video className="w-8 h-8 text-white flex-shrink-0" />
-            <span className="text-2xl font-bold text-white mobile-logo-text">ConnectPro</span>
+            <span className="text-2xl font-bold text-white mobile-logo-text">NeuralChat</span>
           </div>
           <div className="flex items-center gap-4 mobile-nav-group">
             <Tooltip>

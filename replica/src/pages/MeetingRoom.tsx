@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { VideoGrid } from '@/components/meeting/MeetingVideo';
 import MeetingControls from '@/components/meeting/MeetingControls';
-import { ChatPanel, ParticipantsPanel, AICompanionPanel } from '@/components/meeting/MeetingLayout';
+import { ChatPanel, ParticipantsPanel, AICompanionPanel, TranscriptPanel } from '@/components/meeting/MeetingLayout';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +19,7 @@ import { TranscriptionManager } from '@/components/meeting/TranscriptionManager'
 import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay';
 import { CaptionSettings } from '@/components/meeting/CaptionSettings';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
+import { MeetingStats } from '@/components/meeting/MeetingStats';
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -48,7 +49,9 @@ export default function MeetingRoom() {
     connectionQuality,
     setConnectionQuality,
     isJoinedAsHost,
-    hasHydrated
+    hasHydrated,
+    isStatsOpen,
+    toggleStats
   } = useMeetingStore();
 
   const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
@@ -105,21 +108,6 @@ export default function MeetingRoom() {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
       ]
     });
 
@@ -699,7 +687,27 @@ export default function MeetingRoom() {
 
             setLocalStream(stream);
           } catch (err) {
-            console.error("Failed to access camera:", err);
+            console.error("Failed to access camera/microphone together:", err);
+            // Fallback: If camera is in use by another app (Device in use), try getting JUST audio!
+            try {
+              console.log("MeetingRoom: Falling back to audio-only stream...");
+              const { selectedAudioId, isAudioMuted } = useMeetingStore.getState();
+              const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true
+                }
+              });
+
+              audioStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+              console.log('MeetingRoom: Fallback local audio stream set successfully.');
+
+              setLocalStream(audioStream);
+            } catch (fallbackErr) {
+              console.error("Failed to access microphone during fallback:", fallbackErr);
+            }
           }
         }
       } else {
@@ -962,12 +970,20 @@ export default function MeetingRoom() {
       <ChatPanel />
       <ParticipantsPanel />
       <AICompanionPanel />
+      <TranscriptPanel />
       <VideoStartRequestPopup />
 
       {/* Real-time Transcription System */}
       <TranscriptionManager />
       <TranscriptionOverlay />
       <CaptionSettings />
+
+      {/* Statistics Panel */}
+      <MeetingStats
+        isOpen={isStatsOpen}
+        onClose={() => toggleStats()}
+        peerConnections={peerConnections}
+      />
     </div>
   );
 }
