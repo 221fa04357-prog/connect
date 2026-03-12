@@ -26,6 +26,11 @@ const DEFAULT_VIDEO_REQUEST_STATE: VideoRequestState = {
   requesterName: '',
   requesterId: '',
 };
+
+export interface PreSuspensionState {
+  isAudioMuted: boolean;
+  isVideoOff: boolean;
+}
 // ──────────────────────────────────────────────────────────────────────────────
 
 interface MeetingState {
@@ -152,6 +157,9 @@ interface MeetingState {
 
   videoPermissions: VideoPermissions;
   setVideoPermission: (userId: string, status: 'accepted' | 'rejected' | 'pending') => void;
+
+  preSuspensionState: PreSuspensionState | null;
+  setPreSuspensionState: (state: PreSuspensionState | null) => void;
 }
 
 
@@ -197,6 +205,9 @@ export const useMeetingStore = create<MeetingState>()(
 
       videoRequestState: { status: 'idle', requesterName: '', requesterId: '' },
       videoPermissions: {},
+
+      preSuspensionState: null,
+      setPreSuspensionState: (state) => set({ preSuspensionState: state }),
 
       isMiniVisible: false,
       meetingJoined: false,

@@ -822,25 +822,30 @@ export function ParticipantsPanel() {
                                         <DropdownMenuItem
                                             onClick={(e) => {
                                                 e.preventDefault();
-                                                const isRestricted = videoRestricted;
-                                                if (!isRestricted) {
+                                                const settings = useMeetingStore.getState().meeting?.settings || {};
+                                                const isCameraAllowed = settings.cameraAllowed !== false;
+                                                
+                                                if (isCameraAllowed) {
                                                     if (confirm('Stop all participant videos and restrict them?')) {
-                                                        useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
+                                                        const meetingId = useMeetingStore.getState().meeting?.id || '';
+                                                        useChatStore.getState().stopVideoAll(meetingId);
+                                                        useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: false });
                                                         setVideoRestriction(true);
                                                     }
                                                 } else {
                                                     if (confirm('Allow participants to start their video?')) {
+                                                        useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: true });
                                                         setVideoRestriction(false);
                                                     }
                                                 }
                                             }}
-                                            className={cn("cursor-pointer flex items-center justify-between", videoRestricted ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300" : "hover:bg-[#333]")}
+                                            className={cn("cursor-pointer flex items-center justify-between", !(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300" : "hover:bg-[#333]")}
                                         >
                                             <div className="flex items-center">
-                                                {videoRestricted ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
-                                                {videoRestricted ? "Allow Participant Video" : "Disable All Video"}
+                                                {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
+                                                {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "Allow Participant Video" : "Disable All Video"}
                                             </div>
-                                            {videoRestricted && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 px-1.5 py-0.5 rounded">Active</span>}
+                                            {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 px-1.5 py-0.5 rounded">Restricted</span>}
                                         </DropdownMenuItem>
 
                                         <DropdownMenuItem
@@ -849,8 +854,7 @@ export function ParticipantsPanel() {
                                                 const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
                                                 if (!isSuspended) {
                                                     if (confirm('Suspend all participant activities? This turns off video, audio, chat, and screen sharing.')) {
-                                                        useChatStore.getState().stopVideoAll(useMeetingStore.getState().meeting?.id || '');
-                                                        useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
+                                                        const meetingId = useMeetingStore.getState().meeting?.id || '';
                                                         useMeetingStore.getState().updateMeetingSettings({
                                                             suspendParticipantActivities: true,
                                                             micAllowed: false,
@@ -858,6 +862,7 @@ export function ParticipantsPanel() {
                                                             screenShareAllowed: false,
                                                             chatAllowed: false
                                                         });
+                                                        setVideoRestriction(true);
                                                         toast.success("Participant activities suspended.");
                                                     }
                                                 } else {
@@ -869,17 +874,18 @@ export function ParticipantsPanel() {
                                                             screenShareAllowed: true,
                                                             chatAllowed: true
                                                         });
+                                                        setVideoRestriction(false);
                                                         toast.success("Participant activities resumed.");
                                                     }
                                                 }
                                             }}
-                                            className={cn("cursor-pointer flex items-center justify-between", useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300" : "hover:bg-red-500/10 text-red-500")}
+                                            className={cn("cursor-pointer flex items-center justify-between", useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20 hover:text-zinc-300" : "hover:bg-zinc-500/10 text-zinc-300")}
                                         >
                                             <div className="flex items-center">
-                                                {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? <Check className="w-4 h-4 mr-2 text-red-400" /> : <AlertCircle className="w-4 h-4 mr-2" />}
+                                                {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? <Check className="w-4 h-4 mr-2 text-zinc-400" /> : <AlertCircle className="w-4 h-4 mr-2 text-zinc-400" />}
                                                 {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "Resume Activities" : "Suspend Activities"}
                                             </div>
-                                            {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 px-1.5 py-0.5 rounded">Suspended</span>}
+                                            {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-zinc-500/20 px-1.5 py-0.5 rounded">Suspended</span>}
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                             onClick={() => {
