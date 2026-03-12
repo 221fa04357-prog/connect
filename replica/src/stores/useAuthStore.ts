@@ -11,10 +11,11 @@ interface AuthState {
     logout: () => Promise<void>;
     fetchCurrentUser: () => Promise<void>;
     setSubscription: (plan: User['subscriptionPlan']) => void;
+    setAuth: (user: User) => void;
 }
 
 // Helpers for localStorage
-const AUTH_KEY = 'connectpro_auth';
+const AUTH_KEY = 'neuralchat_auth';
 function saveAuth(user: User | null, isAuthenticated: boolean) {
     if (isAuthenticated && user) {
         localStorage.setItem(AUTH_KEY, JSON.stringify({ user, isAuthenticated }));
@@ -146,6 +147,14 @@ export const useAuthStore = create<AuthState>((set, get) => {
             const updatedUser = { ...user, subscription_plan: plan };
             saveAuth(updatedUser, true);
             set({ user: updatedUser, isSubscribed: plan !== 'free' });
+        },
+        setAuth: (user) => {
+            saveAuth(user, true);
+            set({
+                user,
+                isAuthenticated: true,
+                isSubscribed: user.subscription_plan !== 'free'
+            });
         }
     };
 });

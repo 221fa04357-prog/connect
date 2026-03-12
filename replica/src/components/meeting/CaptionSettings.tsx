@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, Lock } from 'lucide-react';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
+import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useChatStore } from '@/stores/useChatStore';
 import { Button } from '@/components/ui';
 
 const QUICK_LANGUAGES = ['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Malayalam', 'Marathi', 'Gujarati', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Korean', 'Arabic'];
@@ -39,8 +42,23 @@ export function CaptionSettings() {
         speakingLanguage,
         setSpeakingLanguage,
         isTranscriptionEnabled,
-        setTranscriptionEnabled
+        setTranscriptionEnabled,
+        fontType, setFontType,
+        fontSize, setFontSize,
+        captionColor, setCaptionColor,
+        captionPosition, setCaptionPosition
     } = useTranscriptionStore();
+
+    const { meeting } = useMeetingStore();
+    const { user } = useAuthStore();
+    const { socket, meetingId, emitCaptionLanguage } = useChatStore();
+
+    // Check if user is host
+    const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
+
+    // Check caption settings
+    const isLanguageLocked = meeting?.settings?.captionLanguageLocked === true;
+    const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
 
     const [view, setView] = useState<'main' | 'language'>('main');
 
@@ -48,10 +66,18 @@ export function CaptionSettings() {
 
     const handleSelectLanguage = (lang: string) => {
         setSpeakingLanguage(lang);
+        // Broadcast to all participants immediately when selected
+        if (meetingId) {
+            emitCaptionLanguage(meetingId, lang);
+        }
     };
 
     const handleSave = () => {
         setTranscriptionEnabled(true); // Automatically turn on captions when user interacts with settings
+        // Re-broadcast selected language on save to ensure all participants are in sync
+        if (meetingId) {
+            emitCaptionLanguage(meetingId, speakingLanguage);
+        }
         setSettingsOpen(false);
         setView('main');
     };
@@ -116,19 +142,85 @@ export function CaptionSettings() {
 
                                     {/* Language Selector Trigger */}
                                     <button
-                                        onClick={() => setView('language')}
-                                        className="w-full flex items-center justify-between p-4 bg-[#2D2D2D] rounded-2xl hover:bg-[#3D3D3D] transition-all group border border-transparent hover:border-blue-500/30"
+                                        onClick={() => {
+                                            if (isLanguageLocked && !isJoinedAsHost) return;
+                                            setView('language');
+                                        }}
+                                        disabled={isLanguageLocked && !isJoinedAsHost}
+                                        className={`w-full flex items-center justify-between p-4 bg-[#2D2D2D] rounded-2xl transition-all group border ${isLanguageLocked && !isJoinedAsHost ? 'opacity-50 cursor-not-allowed border-[#333]' : 'hover:bg-[#3D3D3D] border-transparent hover:border-blue-500/30'}`}
                                     >
-                                        <div className="flex flex-col items-start">
+                                        <div className="flex flex-col items-start gap-1">
                                             <span className="text-gray-200 font-medium">My speaking language</span>
+                                            {isLanguageLocked && !isJoinedAsHost && (
+                                                <span className="text-[10px] text-yellow-500 flex items-center gap-1 font-semibold uppercase tracking-wider">
+                                                    <Lock className="w-3 h-3" /> Locked by Host
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-blue-400 font-medium font-mono text-sm uppercase tracking-wider">
                                                 {speakingLanguage}
                                             </span>
-                                            <ChevronRight className="w-5 h-5 text-gray-500" />
+                                            <ChevronRight className={`w-5 h-5 ${isLanguageLocked && !isJoinedAsHost ? 'text-gray-600' : 'text-gray-500'}`} />
                                         </div>
                                     </button>
+
+                                    {/* Appearance Settings */}
+                                    <div className="space-y-3 p-4 bg-[#2D2D2D] rounded-2xl border border-[#333]">
+                                        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Appearance</h3>
+
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-gray-200 font-medium text-sm">Font Style</span>
+                                            <select
+                                                value={fontType}
+                                                onChange={(e) => setFontType(e.target.value)}
+                                                className="bg-[#1C1C1C] border border-[#333] text-sm text-white rounded-lg px-2 py-1 outline-none"
+                                            >
+                                                <option value="Inter">Inter</option>
+                                                <option value="Mono">Monospace</option>
+                                                <option value="Serif">Serif</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-gray-200 font-medium text-sm">Font Size</span>
+                                            <select
+                                                value={fontSize}
+                                                onChange={(e) => setFontSize(e.target.value)}
+                                                className="bg-[#1C1C1C] border border-[#333] text-sm text-white rounded-lg px-2 py-1 outline-none"
+                                            >
+                                                <option value="small">Small</option>
+                                                <option value="normal">Normal</option>
+                                                <option value="large">Large</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-gray-200 font-medium text-sm">Color</span>
+                                            <div className="flex gap-2">
+                                                {['white', 'yellow', 'green', 'black'].map(c => (
+                                                    <button
+                                                        key={c}
+                                                        onClick={() => setCaptionColor(c)}
+                                                        className={`w-5 h-5 rounded-full border-2 ${captionColor === c ? 'border-blue-500 scale-110' : 'border-gray-500'} transition-transform bg-${c === 'white' ? 'white' : c === 'black' ? 'black' : c + '-400'}`}
+                                                        style={{ backgroundColor: c === 'yellow' ? '#facc15' : c === 'green' ? '#4ade80' : c }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-gray-200 font-medium text-sm">Position</span>
+                                            <select
+                                                value={captionPosition}
+                                                onChange={(e) => setCaptionPosition(e.target.value as 'bottom' | 'floating')}
+                                                className="bg-[#1C1C1C] border border-[#333] text-sm text-white rounded-lg px-2 py-1 outline-none"
+                                            >
+                                                <option value="bottom">Bottom Overlay</option>
+                                                <option value="floating">Top Floating</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="flex-1 min-h-[60px]" />
                             </div>

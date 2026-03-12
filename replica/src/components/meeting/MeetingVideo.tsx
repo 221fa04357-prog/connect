@@ -379,7 +379,7 @@ export function VideoGrid() {
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
     }, [focusedParticipantId]);
-    const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing } = useMeetingStore();
+    const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing, meeting } = useMeetingStore();
     const { remoteScreenStreams } = useMediaStore();
     const { user } = useAuthStore();
 
@@ -391,17 +391,33 @@ export function VideoGrid() {
         }
     };
 
-    // Filter participants based on Self View setting
-    const visibleParticipants = participants.filter(p => {
+    // Filter participants based on Video, Self View, and Settings
+    let visibleParticipants = participants.filter(p => {
         const isLocal =
             p.id === user?.id ||
             p.id === `participant-${user?.id}` ||
-            (user?.role === 'host' && p.id === 'participant-1');
-        if (isLocal) {
-            return showSelfView;
+            (user?.role === 'host' && p.id === 'participant-1') ||
+            p.id === useChatStore.getState().localUserId;
+
+        if (isLocal && (meeting?.settings?.hideSelfView || !showSelfView)) {
+            return false;
         }
+
+        if (meeting?.settings?.hideParticipantsWithoutVideo && p.isVideoOff) {
+            return false;
+        }
+
         return true;
     });
+
+    // Apply Host Video Order sorting if setting is enabled
+    if (meeting?.settings?.followHostVideoOrder) {
+        visibleParticipants = [...visibleParticipants].sort((a, b) => {
+            if (a.role === 'host') return -1;
+            if (b.role === 'host') return 1;
+            return 0;
+        });
+    }
 
     // Identify who is sharing screen
     const remoteSharingParticipant = participants.find(p => p.isScreenSharing && !p.id.includes(user?.id || ''));
@@ -428,6 +444,132 @@ export function VideoGrid() {
                             fullscreen
                             onExitFullscreen={() => setFocusedParticipant(null)}
                         />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // View Mode Logic (Speaker)
+    if (viewMode === 'speaker' && !sharingParticipant && !focusedParticipantId && visibleParticipants.length > 1) {
+        const currentLocalUserId = user?.id || `guest-${useChatStore.getState().socket?.id}`;
+
+        let speakerParticipant = null;
+        if (activeSpeakerId) {
+            speakerParticipant = visibleParticipants.find(p => p.id === activeSpeakerId);
+        }
+        if (!speakerParticipant && pinnedParticipantId) {
+            speakerParticipant = visibleParticipants.find(p => p.id === pinnedParticipantId);
+        }
+        if (!speakerParticipant) {
+            speakerParticipant = visibleParticipants.find(p => p.id !== currentLocalUserId) || visibleParticipants[0];
+        }
+
+        const otherParticipants = visibleParticipants.filter(p => p.id !== speakerParticipant?.id);
+
+        return (
+            <div className="flex flex-col h-full w-full p-4 overflow-hidden pt-[30px] pb-[105px]">
+                {/* Main Speaker Area */}
+                {speakerParticipant && (
+                    <div className="flex-1 min-w-0 bg-black rounded-xl overflow-hidden mb-4 relative">
+                        <VideoTile
+                            participant={speakerParticipant}
+                            isActive={true}
+                            isPinned={pinnedParticipantId === speakerParticipant.id}
+                            onPin={() => handlePin(speakerParticipant.id)}
+                            onClick={() => setFocusedParticipant(speakerParticipant.id)}
+                            fullscreen={true}
+                            className="w-full h-full object-contain"
+                        />
+                    </div>
+                )}
+
+                {/* Other Participants (Bottom Row) */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar shrink-0 shadow-sm border border-[#333] p-2 rounded-xl bg-[#1C1C1C]">
+                    {otherParticipants.map((participant) => (
+                        <div key={participant.id} className="w-48 aspect-video shrink-0">
+                            <VideoTile
+                                participant={participant}
+                                isActive={participant.id === activeSpeakerId}
+                                isPinned={pinnedParticipantId === participant.id}
+                                onPin={() => handlePin(participant.id)}
+                                onClick={() => setFocusedParticipant(participant.id)}
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // View Mode Logic (Multi-Speaker)
+    if (viewMode === 'multi-speaker' && !sharingParticipant && !focusedParticipantId && visibleParticipants.length > 2) {
+        // Just an active speaker focus but allowing top 3-4 to take bulk space
+        const topSpeakers = visibleParticipants.slice(0, Math.min(4, visibleParticipants.length));
+        const restParticipants = visibleParticipants.slice(topSpeakers.length);
+
+        return (
+            <div className="flex flex-col h-full w-full p-4 overflow-hidden pt-[30px] pb-[105px] gap-2">
+                <div className="flex-1 grid grid-cols-2 gap-2">
+                    {topSpeakers.map((participant) => (
+                        <div key={participant.id} className="w-full h-full bg-black rounded-xl overflow-hidden relative">
+                            <VideoTile
+                                participant={participant}
+                                isActive={participant.id === activeSpeakerId}
+                                isPinned={pinnedParticipantId === participant.id}
+                                onPin={() => handlePin(participant.id)}
+                                onClick={() => setFocusedParticipant(participant.id)}
+                                fullscreen={true}
+                                className="w-full h-full object-cover"
+                            />
+                        </div>
+                    ))}
+                </div>
+                {restParticipants.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar shrink-0 shadow-sm border border-[#333] p-2 rounded-xl bg-[#1C1C1C] h-32">
+                        {restParticipants.map((participant) => (
+                            <div key={participant.id} className="w-48 aspect-video shrink-0">
+                                <VideoTile
+                                    participant={participant}
+                                    isActive={participant.id === activeSpeakerId}
+                                    isPinned={pinnedParticipantId === participant.id}
+                                    onPin={() => handlePin(participant.id)}
+                                    onClick={() => setFocusedParticipant(participant.id)}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // View Mode Logic (Immersive)
+    if (viewMode === 'immersive' && !sharingParticipant && !focusedParticipantId) {
+        return (
+            <div className="flex flex-col h-full w-full p-4 overflow-hidden pt-[30px] pb-[105px]">
+                <div className="w-full h-full bg-[#1C1C1C] rounded-2xl border border-[#333] relative overflow-hidden shadow-2xl">
+                    <div className="absolute inset-0 opacity-10 pointer-events-none scale-150 blur-3xl animate-pulse bg-blue-500/20 rounded-full" />
+
+                    <div className="absolute inset-x-8 bottom-8 top-16 grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 place-content-center">
+                        {visibleParticipants.map((participant, i) => (
+                            <motion.div
+                                key={participant.id}
+                                initial={{ y: 50, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1, transition: { delay: i * 0.1 } }}
+                                className="relative rounded-2xl overflow-hidden shadow-2xl border-4 border-white/5 bg-black"
+                                style={{ aspectRatio: '16/9' }}
+                            >
+                                <VideoTile
+                                    participant={participant}
+                                    isActive={participant.id === activeSpeakerId}
+                                    isPinned={pinnedParticipantId === participant.id}
+                                    onPin={() => handlePin(participant.id)}
+                                    onClick={() => setFocusedParticipant(participant.id)}
+                                    fullscreen={true}
+                                />
+                            </motion.div>
+                        ))}
                     </div>
                 </div>
             </div>

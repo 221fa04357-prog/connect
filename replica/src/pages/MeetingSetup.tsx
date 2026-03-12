@@ -783,7 +783,7 @@ export function CreateMeeting() {
             start_timestamp: Date.now(),
             duration: 60,
             settings: {
-                enableWaitingRoom: true,
+                enableWaitingRoom: formData.waitingRoom,
                 allowParticipantsToUnmute: true,
                 allowParticipantsToShareScreen: true,
                 disableParticipantVideo: false,
@@ -1312,12 +1312,31 @@ export function CreateMeeting() {
                                 </div>
                             ) : (
                                 <div className="text-center py-12">
-                                    <p className="text-gray-400 mb-8">
+                                    <p className="text-gray-400 mb-6 font-medium">
                                         Start an instant meeting right now
                                     </p>
+
+                                    {/* Instant Meeting Waiting Room Toggle */}
+                                    <div className="max-w-xs mx-auto mb-10 flex items-center justify-center">
+                                        <div className="flex items-center gap-3 bg-[#1C1C1C] p-3 px-6 rounded-full border border-[#404040]/50 hover:border-[#0B5CFF]/40 transition-all duration-300 shadow-lg group">
+                                            <Switch
+                                                id="instant-waiting-room"
+                                                checked={formData.waitingRoom}
+                                                onCheckedChange={(checked) => setFormData({ ...formData, waitingRoom: checked })}
+                                                className="data-[state=checked]:bg-[#0B5CFF]"
+                                            />
+                                            <Label
+                                                htmlFor="instant-waiting-room"
+                                                className="text-sm font-semibold text-gray-300 cursor-pointer select-none group-hover:text-white transition-colors"
+                                            >
+                                                Enable Waiting Room
+                                            </Label>
+                                        </div>
+                                    </div>
+
                                     <Button
                                         onClick={handleInstantMeeting}
-                                        className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-12 py-6 text-lg"
+                                        className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-12 py-7 text-xl font-bold rounded-2xl shadow-[0_8px_30px_rgb(11,92,255,0.3)] border-none transform active:scale-95 transition-all"
                                     >
                                         Start Instant Meeting
                                     </Button>

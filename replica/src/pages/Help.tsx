@@ -27,7 +27,7 @@ export default function Help() {
             case 'getting-started':
                 return (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-                        <h2 className="text-3xl font-bold mb-6">Getting Started with ConnectPro</h2>
+                        <h2 className="text-3xl font-bold mb-6">Getting Started with NeuralChat</h2>
                         <div className="space-y-6">
                             <div className="bg-[#232323] p-6 rounded-xl border border-[#333]">
                                 <h3 className="text-xl font-semibold mb-3">1. Create an Account</h3>

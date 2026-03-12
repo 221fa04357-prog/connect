@@ -1,7 +1,7 @@
 /**
  * caption.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Standalone real-time caption system for the ConnectPro webinar application.
+ * Standalone real-time caption system for the NeuralChat webinar application.
  *
  * What this module does
  *   1. Requests microphone access from the browser
@@ -29,7 +29,7 @@
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** URL of the FastAPI caption server */
-const CAPTION_SERVER_URL = 'http://localhost:8765/transcribe';
+const CAPTION_SERVER_URL = '/api/transcribe';
 
 /** How many milliseconds each audio chunk spans (matches MediaRecorder slice) */
 const CHUNK_INTERVAL_MS = 2000;

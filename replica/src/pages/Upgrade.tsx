@@ -126,7 +126,7 @@ const faqs = [
 
 export default function Upgrade() {
     const navigate = useNavigate();
-    const { user } = useAuthStore();
+    const { user, setSubscription } = useAuthStore();
     const currentPlan = user?.subscriptionPlan || 'free';
     const [billingAnnual, setBillingAnnual] = useState(false);
     const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -135,14 +135,24 @@ export default function Upgrade() {
     const handleUpgrade = async (planId: string) => {
         if (planId === 'free' || planId === currentPlan) return;
         if (planId === 'enterprise') {
-            window.open('mailto:sales@connectpro.app?subject=Enterprise Plan Inquiry', '_blank');
+            window.open('mailto:sales@neuralchat.app?subject=Enterprise Plan Inquiry', '_blank');
             return;
         }
         setLoading(planId);
-        // Simulate payment flow — replace with real Razorpay integration
+        // Simulate trial activation or payment flow
         setTimeout(() => {
             setLoading(null);
-            alert('Payment gateway integration coming soon! Please contact support@connectpro.app to upgrade.');
+            if (planId === 'pro') {
+                import('sonner').then(({ toast }) => {
+                    toast.success('14-Day Free Trial Activated!', {
+                        description: 'Welcome to NeuralChat! Explore all pro features now.'
+                    });
+                });
+                setSubscription('pro');
+                setTimeout(() => navigate('/'), 1500);
+            } else {
+                alert('Enterprise plan inquiry sent! Our team will contact you shortly.');
+            }
         }, 1200);
     };
 
@@ -171,7 +181,7 @@ export default function Upgrade() {
                     </button>
                     <div>
                         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Upgrade Your Plan</h1>
-                        <p className="text-gray-400 mt-1">Unlock the full power of Connect Pro</p>
+                        <p className="text-gray-400 mt-1">Unlock the full power of NeuralChat</p>
                     </div>
                 </motion.div>
 
@@ -208,8 +218,8 @@ export default function Upgrade() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: 0.1 + i * 0.1 }}
                                 className={`relative rounded-2xl border overflow-hidden flex flex-col transition-transform hover:-translate-y-1 duration-300 ${isPopular
-                                        ? 'border-[#0B5CFF] shadow-[0_0_40px_rgba(11,92,255,0.25)]'
-                                        : 'border-white/10'
+                                    ? 'border-[#0B5CFF] shadow-[0_0_40px_rgba(11,92,255,0.25)]'
+                                    : 'border-white/10'
                                     }`}
                             >
                                 {/* Plan gradient header */}
@@ -246,7 +256,7 @@ export default function Upgrade() {
                                         {plan.features.map((f) => (
                                             <li key={f} className="flex items-start gap-2 text-sm text-gray-200">
                                                 <Check className={`w-4 h-4 mt-0.5 flex-shrink-0 ${plan.id === 'enterprise' ? 'text-[#7C3AED]' :
-                                                        plan.id === 'pro' ? 'text-[#0B5CFF]' : 'text-gray-500'
+                                                    plan.id === 'pro' ? 'text-[#0B5CFF]' : 'text-gray-500'
                                                     }`} />
                                                 {f}
                                             </li>
@@ -265,10 +275,10 @@ export default function Upgrade() {
                                         onClick={() => handleUpgrade(plan.id)}
                                         disabled={isCurrentPlan || plan.ctaDisabled || loading === plan.id}
                                         className={`w-full h-11 font-semibold rounded-xl transition-all ${isCurrentPlan
-                                                ? 'bg-white/10 text-gray-400 cursor-default'
-                                                : plan.id === 'enterprise'
-                                                    ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white'
-                                                    : 'bg-[#0B5CFF] hover:bg-[#0948c7] text-white shadow-lg shadow-blue-500/25'
+                                            ? 'bg-white/10 text-gray-400 cursor-default'
+                                            : plan.id === 'enterprise'
+                                                ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white'
+                                                : 'bg-[#0B5CFF] hover:bg-[#0948c7] text-white shadow-lg shadow-blue-500/25'
                                             }`}
                                     >
                                         {loading === plan.id ? (
@@ -379,7 +389,7 @@ export default function Upgrade() {
                             <Zap className="w-10 h-10 text-[#0B5CFF] mx-auto mb-4" fill="currentColor" />
                             <h2 className="text-2xl md:text-3xl font-bold mb-3">Ready to upgrade?</h2>
                             <p className="text-gray-400 mb-6 max-w-md mx-auto text-sm">
-                                Join thousands of teams already using Connect Pro.
+                                Join thousands of teams already using NeuralChat.
                                 Start your 14-day free trial today — no credit card required.
                             </p>
                             <div className="flex flex-col sm:flex-row gap-3 justify-center">

@@ -16,26 +16,111 @@ require('dotenv').config();
 
 const axios = require('axios');
 const FormData = require('form-data');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const MicrosoftStrategy = require('passport-microsoft').Strategy;
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 
-async function transcribeWithWhisper(audioPath) {
+// ================= PASSPORT CONFIG =================
+
+passport.serializeUser((user, done) => {
+    done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
     try {
-        const fs = require('fs');
-        const fileStream = fs.createReadStream(audioPath);
-        const form = new FormData();
-        form.append('audio', fileStream, path.basename(audioPath));
+        const result = await db.query('SELECT * FROM users WHERE id = $1', [id]);
+        done(null, result.rows[0]);
+    } catch (err) {
+        done(err, null);
+    }
+});
 
-        const response = await axios.post('http://127.0.0.1:8765/transcribe', form, {
-            headers: {
-                ...form.getHeaders()
+// Google Strategy
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_google_client_id') {
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${process.env.AUTH_CALLBACK_URL || 'http://localhost:5005'}/api/auth/google/callback`
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            const email = profile.emails[0].value;
+            const name = profile.displayName;
+            const avatar = profile.photos[0].value;
+
+            // Check if user exists
+            let result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+            let user;
+
+            if (result.rows.length === 0) {
+                // Create user
+                const id = `user-google-${profile.id}`;
+                // Random default password hash for OAuth users
+                const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
+                const insertResult = await db.query(
+                    'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+                    [id, name, email, passwordHash, avatar]
+                );
+                user = insertResult.rows[0];
+            } else {
+                user = result.rows[0];
+                // Update avatar if provided
+                if (avatar && !user.avatar) {
+                    await db.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, user.id]);
+                    user.avatar = avatar;
+                }
             }
-        });
-
-        if (response.data && response.data.text) {
-            return response.data.text;
+            return done(null, user);
+        } catch (err) {
+            return done(err, null);
         }
-        return "";
+    }));
+}
+
+// Microsoft Strategy
+if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your_microsoft_client_id') {
+    passport.use(new MicrosoftStrategy({
+        clientID: process.env.MICROSOFT_CLIENT_ID,
+        clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+        callbackURL: `${process.env.AUTH_CALLBACK_URL || 'http://localhost:5005'}/api/auth/microsoft/callback`,
+        scope: ['user.read']
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            const email = profile.emails[0].value;
+            const name = profile.displayName;
+
+            // Check if user exists
+            let result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+            let user;
+
+            if (result.rows.length === 0) {
+                // Create user
+                const id = `user-ms-${profile.id}`;
+                const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
+                const insertResult = await db.query(
+                    'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
+                    [id, name, email, passwordHash]
+                );
+                user = insertResult.rows[0];
+            } else {
+                user = result.rows[0];
+            }
+            return done(null, user);
+        } catch (err) {
+            return done(err, null);
+        }
+    }));
+}
+
+async function transcribeWithWhisper(audioPath, language = null) {
+    try {
+        // Switch from local Python server to Groq Whisper for better speed, accuracy and Vercel compatibility
+        const text = await groqService.transcribeAudio(audioPath, language);
+        return text || "";
     } catch (error) {
-        console.error("Python Caption Server Error:", error.message);
+        console.error("Groq Transcription Error (via whisper fallback):", error.message);
         return "";
     }
 }
@@ -53,7 +138,9 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
     try {
-        const text = await transcribeWithWhisper(req.file.path);
+        // Pass to Groq for cloud-based transcription
+        const text = await groqService.transcribeAudio(req.file.path);
+        
         // Clean up temp file
         try { fs.unlinkSync(req.file.path); } catch (e) { }
 
@@ -285,6 +372,17 @@ app.use(cors({
     credentials: true
 }));
 
+app.use(cookieParser());
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'neural_chat_secret_key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 }
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 app.use(express.json());
 
 // Root route
@@ -352,8 +450,18 @@ io.on('connection', (socket) => {
                     return;
                 }
 
+                if (meetingSettings.isLocked && !isHost) {
+                    console.log(`User ${user?.name} blocked from joining locked meeting ${meetingId}`);
+                    socket.emit('join_error', {
+                        code: 'MEETING_LOCKED',
+                        message: 'This meeting has been locked by the host.'
+                    });
+                    return;
+                }
+
                 // --- WAITING ROOM LOGIC ---
-                const enableWaitingRoom = meetingSettings.enableWaitingRoom === true;
+                // Support both boolean true and string "true" logic dynamically
+                const enableWaitingRoom = meetingSettings.enableWaitingRoom === true || meetingSettings.enableWaitingRoom === 'true';
 
                 if (enableWaitingRoom && !isHost) {
                     const userId = user?.id || `guest-${socket.id}`;
@@ -384,6 +492,14 @@ io.on('connection', (socket) => {
                         }
                         const waitingRoom = waitingRooms.get(meetingId);
 
+                        // Cleanup duplicate waiting entries for the same user
+                        for (const [existingSocketId, p] of waitingRoom.entries()) {
+                            if (p.id === userId && existingSocketId !== socket.id) {
+                                console.log(`Cleaning up old waiting room session for user ${userId} (socket ${existingSocketId})`);
+                                waitingRoom.delete(existingSocketId);
+                            }
+                        }
+
                         const participantData = {
                             id: userId,
                             name: user?.name || 'Guest',
@@ -398,12 +514,20 @@ io.on('connection', (socket) => {
                         waitingRoom.set(socket.id, participantData);
                         socket.join(meetingId); // Join the meeting room so host can see them, but they are in 'waiting' state
 
+                        // Notify the joining user that they are waiting
                         socket.emit('waiting_room_status', {
                             status: 'waiting',
                             message: 'Wait for the host to let you in.'
                         });
 
-                        // Notify host about the new waiting participant
+                        // Notify host about the new waiting participant (Specific event as requested)
+                        io.to(meetingId).emit('participant_waiting', {
+                            participantId: userId,
+                            socketId: socket.id,
+                            name: user?.name || 'Guest'
+                        });
+
+                        // Also send a full list update for redundancy and new joins
                         const waitingParticipants = Array.from(waitingRoom.values());
                         io.to(meetingId).emit('waiting_room_update', waitingParticipants);
                         return;
@@ -492,6 +616,7 @@ io.on('connection', (socket) => {
         };
 
         room.set(socket.id, participantData);
+        socket.join(meetingId); // CRITICAL: Ensure joining the socket room for broadcasts
 
         console.log(`User ${participantData.name} (${socket.id}) joined meeting: ${meetingId}`);
 
@@ -514,6 +639,11 @@ io.on('connection', (socket) => {
             if (waitingRoom.has(socket.id)) {
                 waitingRoom.delete(socket.id);
                 io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
+            }
+
+            // IF THIS IS A HOST, send them the current waiting room list
+            if (isHost) {
+                socket.emit('waiting_room_update', Array.from(waitingRoom.values()));
             }
         }
 
@@ -790,6 +920,21 @@ io.on('connection', (socket) => {
         io.to(meeting_id).emit('allow_video_all');
     });
 
+    socket.on('host_broadcast', (data) => {
+        const { meetingId, text } = data;
+        io.to(meetingId).emit('host_broadcast', { text });
+    });
+
+    // --- Caption Language Sync ---
+    socket.on('caption_language_change', (data) => {
+        const { meeting_id, language } = data;
+        if (meeting_id && language) {
+            // Broadcast to ALL participants in the room (including sender)
+            io.to(meeting_id).emit('caption_language_changed', { language });
+            console.log(`Caption language changed to "${language}" in meeting ${meeting_id}`);
+        }
+    });
+
     // --- Waiting Room Controls ---
     socket.on('admit_participant', (data) => {
         const { meetingId, socketId } = data;
@@ -817,7 +962,8 @@ io.on('connection', (socket) => {
                 [meetingId, p.id, 'admitted']
             ).catch(err => console.error('Error persisting participant admission:', err));
 
-            // Notify the admitted user
+            // Notify the admitted user (Specific event as requested)
+            io.to(socketId).emit('admitted_to_meeting', { meetingId });
             io.to(socketId).emit('waiting_room_status', { status: 'admitted' });
 
             // Broadcast updates
@@ -828,7 +974,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('reject_participant', (data) => {
+    socket.on('deny_participant', (data) => {
         const { meetingId, socketId } = data;
         const waitingRoom = waitingRooms.get(meetingId);
 
@@ -842,13 +988,14 @@ io.on('connection', (socket) => {
                 [meetingId, p.id, 'rejected']
             ).catch(err => console.error('Error persisting participant rejection:', err));
 
-            // Notify the rejected user
+            // Notify the denied/rejected user (Specific event as requested)
+            io.to(socketId).emit('participant_denied', { message: 'The host has denied your entry.' });
             io.to(socketId).emit('waiting_room_status', { status: 'rejected', message: 'The host has denied your entry.' });
 
             // Broadcast waiting room update
             io.to(meetingId).emit('waiting_room_update', Array.from(waitingRoom.values()));
 
-            console.log(`User ${p.name} rejected from meeting ${meetingId}`);
+            console.log(`User ${p.name} rejected from meeting ${meetingId} (via deny_participant)`);
         }
     });
 
@@ -862,8 +1009,9 @@ io.on('connection', (socket) => {
                 settings.enableWaitingRoom = enabled;
                 await db.query('UPDATE meetings SET settings = $1 WHERE id = $2', [JSON.stringify(settings), meetingId]);
 
-                // Broadcast setting change
+                // Broadcast setting change to everyone not just for the WR switch, but to keep the whole meeting store in sync
                 io.to(meetingId).emit('waiting_room_setting_updated', { enabled });
+                io.to(meetingId).emit('meeting_controls_updated', settings);
 
                 // If disabling, admit everyone currently waiting
                 if (!enabled && waitingRooms.has(meetingId)) {
@@ -935,7 +1083,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('audio_chunk', async (data) => {
-        const { meetingId, participantId, participantName, audioBlob } = data;
+        const { meetingId, participantId, participantName, audioBlob, language } = data;
         if (!meetingId || !audioBlob) return;
 
         try {
@@ -944,37 +1092,44 @@ io.on('connection', (socket) => {
             const fileName = `audio_${meetingId}_${socket.id}_${Date.now()}.webm`;
             const filePath = path.join(tempDir, fileName);
 
-            fs.writeFileSync(filePath, Buffer.from(audioBlob));
+            const buffer = Buffer.from(audioBlob);
+            fs.writeFileSync(filePath, buffer);
+            console.log(`[Transcription] Received audio chunk (${buffer.length} bytes) from ${participantName} [Lang: ${language || 'auto'}]`);
 
-            // ✅ USE WHISPER (KEEP THIS)
-            const text = await transcribeWithWhisper(filePath);
+            // ✅ USE WHISPER
+            const text = await transcribeWithWhisper(filePath, language);
 
             // Clean up
             fs.unlinkSync(filePath);
 
             if (text && text.trim().length > 0) {
+                // Determine speaker's role
+                let role = 'participant';
+                const room = rooms.get(meetingId);
+                if (room) {
+                    const participant = room.get(socket.id);
+                    if (participant && participant.role) {
+                        role = participant.role;
+                    }
+                }
 
                 const segment = {
                     participantId,
                     participantName,
+                    role,
                     text: text.trim(),
                     timestamp: new Date().toISOString()
                 };
 
-                // Store in memory
                 if (!meetingTranscripts.has(meetingId)) {
                     meetingTranscripts.set(meetingId, []);
                 }
-
                 meetingTranscripts.get(meetingId).push(segment);
 
-                // Broadcast transcript
+                // Broadcast
                 io.to(meetingId).emit('transcription_received', segment);
-
             }
-
         } catch (error) {
-
             console.error('Transcription error:', error);
         }
     });
@@ -1208,6 +1363,19 @@ io.on('connection', (socket) => {
 });
 
 // Auth Endpoints
+// Google OAuth Routes
+app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/api/auth/google/callback', passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL}/#/login?error=auth_failed` }), (req, res) => {
+    const userData = encodeURIComponent(JSON.stringify(req.user));
+    res.redirect(`${process.env.FRONTEND_URL}/#/login?auth_data=${userData}`);
+});
+
+// Microsoft OAuth Routes
+app.get('/api/auth/microsoft', passport.authenticate('microsoft'));
+app.get('/api/auth/microsoft/callback', passport.authenticate('microsoft', { failureRedirect: `${process.env.FRONTEND_URL}/#/login?error=auth_failed` }), (req, res) => {
+    const userData = encodeURIComponent(JSON.stringify(req.user));
+    res.redirect(`${process.env.FRONTEND_URL}/#/login?auth_data=${userData}`);
+});
 app.post('/api/auth/register', async (req, res) => {
     const { name, email, password } = req.body;
     const normalizedEmail = email.toLowerCase();

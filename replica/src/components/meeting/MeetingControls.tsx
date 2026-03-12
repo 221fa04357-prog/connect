@@ -9,7 +9,7 @@ import {
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
     Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
-    Undo, Redo, Download, BarChart3, AlertCircle, Languages
+    Undo, Redo, Download, BarChart3, AlertCircle, Languages, FileText, Activity
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -80,11 +80,12 @@ function TopBar() {
     const [copied, setCopied] = useState(false);
     // Removed controlled state usage to fix closing issue
 
-    // Derived state for panel close button
-    const isPanelOpen = isParticipantsOpen || isChatOpen;
+    const { isTranscriptOpen, setTranscriptOpen } = useTranscriptionStore();
+    const isPanelOpen = isParticipantsOpen || isChatOpen || isTranscriptOpen;
     const handleClosePanel = () => {
         if (isParticipantsOpen) toggleParticipants();
         if (isChatOpen) toggleChat();
+        if (isTranscriptOpen) setTranscriptOpen(false);
     };
 
     const getConnectionColor = () => {
@@ -433,7 +434,7 @@ function TopBar() {
             </div>
 
             <div
-                className="absolute top-4 right-4 pointer-events-auto flex items-center gap-2"
+                className="absolute top-4 right-4 pointer-events-auto flex items-center gap-5"
             >
                 {/* Connection Status */}
                 {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
@@ -468,30 +469,35 @@ function TopBar() {
                     </div>
                 )}
 
-                {/* Timer */}
-                {!isWhiteboardOpen && timeLeft && (
-                    <div className={cn(
-                        "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
-                        (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
-                            ? "bg-red-500/80 text-white animate-pulse"
-                            : "bg-black/40 text-gray-200"
-                    )}>
-                        <Clock className="w-3 h-3" />
-                        <span className="text-xs font-mono font-medium">{timeLeft}</span>
-                    </div>
-                )}
+                {/* Timer and Panel Controls */}
+                <div className="flex items-center gap-2">
 
-                {/* Panel Close Button (X) - Only visible when panel is open */}
-                {isPanelOpen && (
-                    <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={handleClosePanel}
-                        className="w-8 h-8 rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/10 shadow-lg"
-                    >
-                        <X className="w-4 h-4" />
-                    </Button>
-                )}
+
+                    {/* Timer */}
+                    {!isWhiteboardOpen && timeLeft && (
+                        <div className={cn(
+                            "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg -translate-y-2.5",
+                            (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
+                                ? "bg-red-500/80 text-white animate-pulse"
+                                : "bg-black/40 text-gray-200"
+                        )}>
+                            <Clock className="w-3 h-3" />
+                            <span className="text-xs font-mono font-medium">{timeLeft}</span>
+                        </div>
+                    )}
+
+                    {/* Panel Close Button (X) - Only visible when panel is open */}
+                    {isPanelOpen && (
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={handleClosePanel}
+                            className="w-8 h-8 rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/10 shadow-lg -translate-y-2.5"
+                        >
+                            <X className="w-4 h-4" />
+                        </Button>
+                    )}
+                </div>
             </div>
 
 
@@ -928,6 +934,17 @@ function SettingsModal() {
 
                                                         <div className="flex items-center justify-between">
                                                             <div className="space-y-0.5">
+                                                                <Label>Multiple Screen Shares</Label>
+                                                                <p className="text-xs text-gray-500">Allow multiple participants to share simultaneously</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.allowMultipleScreenShares === true}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ allowMultipleScreenShares: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
                                                                 <Label>Allow Chat</Label>
                                                                 <p className="text-xs text-gray-500">Participants can send messages</p>
                                                             </div>
@@ -947,22 +964,128 @@ function SettingsModal() {
                                                                 onCheckedChange={(checked) => updateMeetingSettings({ recordingAllowedForAll: checked })}
                                                             />
                                                         </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Captions</Label>
+                                                                <p className="text-xs text-gray-500">Participants can view live meeting captions</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.captionsAllowed !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ captionsAllowed: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Lock Caption Language</Label>
+                                                                <p className="text-xs text-gray-500">Only host can change the spoken language</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.captionLanguageLocked === true}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ captionLanguageLocked: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Renaming</Label>
+                                                                <p className="text-xs text-gray-500">Participants can rename themselves</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.allowRename !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ allowRename: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-0.5">
+                                                                <Label>Allow Document Share</Label>
+                                                                <p className="text-xs text-gray-500">Participants can upload files</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.allowDocumentShare !== false}
+                                                                onCheckedChange={(checked) => updateMeetingSettings({ allowDocumentShare: checked })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between pt-4 border-t border-[#404040]">
+                                                            <div className="space-y-0.5">
+                                                                <Label className="text-red-400">Suspend Participant Activities</Label>
+                                                                <p className="text-xs text-gray-500">Mute all, stop video, stop chat, and stop screen sharing immediately</p>
+                                                            </div>
+                                                            <Switch
+                                                                checked={meeting?.settings?.suspendParticipantActivities === true}
+                                                                className="data-[state=checked]:bg-red-500"
+                                                                onCheckedChange={(checked) => {
+                                                                    updateMeetingSettings({
+                                                                        suspendParticipantActivities: checked,
+                                                                        // Force disable multiple avenues if suspended
+                                                                        micAllowed: !checked,
+                                                                        cameraAllowed: !checked,
+                                                                        screenShareAllowed: !checked,
+                                                                        chatAllowed: !checked
+                                                                    });
+                                                                }}
+                                                            />
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         )}
 
-                                        <div className="space-y-2">
-                                            <Label>Default View Mode</Label>
-                                            <Select defaultValue="gallery">
-                                                <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
-                                                    <SelectItem value="gallery">Gallery View</SelectItem>
-                                                    <SelectItem value="speaker">Speaker View</SelectItem>
-                                                </SelectContent>
-                                            </Select>
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label>Default View Mode</Label>
+                                                <Select
+                                                    value={settings.viewMode || 'gallery'}
+                                                    onValueChange={(value: any) => setSettings({ ...settings, viewMode: value })}
+                                                >
+                                                    <SelectTrigger className="bg-[#1C1C1C] border-[#404040]">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="bg-[#232323] border-[#404040] z-[200]">
+                                                        <SelectItem value="gallery">Gallery View</SelectItem>
+                                                        <SelectItem value="speaker">Speaker View</SelectItem>
+                                                        <SelectItem value="multi-speaker">Multi-speaker View</SelectItem>
+                                                        <SelectItem value="immersive">Immersive View</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                                                <div className="space-y-0.5">
+                                                    <Label>Hide non-video participants</Label>
+                                                    <p className="text-xs text-gray-500">Don't show tiles for audio-only users</p>
+                                                </div>
+                                                <Switch
+                                                    checked={meeting?.settings?.hideParticipantsWithoutVideo === true}
+                                                    onCheckedChange={(checked) => updateMeetingSettings({ hideParticipantsWithoutVideo: checked })}
+                                                />
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                                                <div className="space-y-0.5">
+                                                    <Label>Hide self view</Label>
+                                                    <p className="text-xs text-gray-500">Remove your own video from the gallery</p>
+                                                </div>
+                                                <Switch
+                                                    checked={meeting?.settings?.hideSelfView === true}
+                                                    onCheckedChange={(checked) => updateMeetingSettings({ hideSelfView: checked })}
+                                                />
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-4 bg-[#1C1C1C] rounded-lg border border-[#404040]">
+                                                <div className="space-y-0.5">
+                                                    <Label>Follow Host Video Order</Label>
+                                                    <p className="text-xs text-gray-500">Host grid arrangement applies to all</p>
+                                                </div>
+                                                <Switch
+                                                    checked={meeting?.settings?.followHostVideoOrder === true}
+                                                    onCheckedChange={(checked) => updateMeetingSettings({ followHostVideoOrder: checked })}
+                                                    disabled={!isJoinedAsHost}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1109,6 +1232,94 @@ function ShareScreenModal({ open, onOpenChange, onConfirm }: ShareScreenModalPro
     );
 }
 
+// --- AdvancedSharingModal.tsx ---
+
+interface AdvancedSharingModalProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}
+
+function AdvancedSharingModal({ open, onOpenChange }: AdvancedSharingModalProps) {
+    const { meeting, updateMeetingSettings } = useMeetingStore();
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md bg-[#1C1C1C] border-[#333] text-white">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Settings className="w-5 h-5 text-gray-400" />
+                        Advanced Sharing Options
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div className="py-4 space-y-6">
+                    <div className="space-y-4">
+                        <Label className="text-gray-300 text-sm font-semibold">How many participants can share at the same time?</Label>
+                        <div className="space-y-3 pl-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="multiple-shares"
+                                    checked={meeting?.settings?.allowMultipleScreenShares !== true}
+                                    onChange={() => updateMeetingSettings({ allowMultipleScreenShares: false })}
+                                    className="w-4 h-4 text-blue-500 bg-transparent border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                                />
+                                <span className="text-sm text-gray-300">One participant can share at a time</span>
+                            </label>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="multiple-shares"
+                                    checked={meeting?.settings?.allowMultipleScreenShares === true}
+                                    onChange={() => updateMeetingSettings({ allowMultipleScreenShares: true })}
+                                    className="w-4 h-4 text-blue-500 bg-transparent border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                                />
+                                <span className="text-sm text-gray-300">Multiple participants can share simultaneously</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <Label className="text-gray-300 text-sm font-semibold">Who can share?</Label>
+                        <div className="space-y-3 pl-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="who-can-share"
+                                    checked={meeting?.settings?.screenShareAllowed !== false}
+                                    onChange={() => updateMeetingSettings({ screenShareAllowed: true })}
+                                    className="w-4 h-4 text-blue-500 bg-transparent border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                                />
+                                <span className="text-sm text-gray-300">All Participants</span>
+                            </label>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="who-can-share"
+                                    checked={meeting?.settings?.screenShareAllowed === false}
+                                    onChange={() => updateMeetingSettings({ screenShareAllowed: false })}
+                                    className="w-4 h-4 text-blue-500 bg-transparent border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                                />
+                                <span className="text-sm text-gray-300">Only Host</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <DialogFooter className="gap-2 sm:justify-end">
+                    <Button
+                        variant="ghost"
+                        onClick={() => onOpenChange(false)}
+                        className="hover:bg-[#333] text-gray-300"
+                    >
+                        Close
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 // --- ControlBar.tsx ---
 
 const reactionEmojis = ['👍', '❤️', '😂', '👏', '🎉', '😮'];
@@ -1194,6 +1405,8 @@ function ControlBar() {
         setShowHostMutePopup,
         isAnalyticsOpen,
         toggleAnalytics,
+        isStatsOpen,
+        toggleStats,
         pendingMediaRequest,
         setPendingMediaRequest
     } = useMeetingStore();
@@ -1252,6 +1465,7 @@ function ControlBar() {
     const [showScreenShareOptions, setShowScreenShareOptions] = useState(false);
     const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
+    const [showAdvancedSharingOpen, setShowAdvancedSharingOpen] = useState(false);
     const yesButtonRef = useRef<HTMLButtonElement>(null);
 
     // Auto-focus Yes button when modals open
@@ -1744,6 +1958,14 @@ function ControlBar() {
         } else {
             if (!screenShareAllowed) {
                 import('sonner').then(({ toast }) => toast.error('Host has disabled screen sharing for participants.'));
+                return;
+            }
+            // Check concurrent screen sharing limit
+            const allowMultiple = meeting?.settings?.allowMultipleScreenShares === true;
+            const { participants } = useParticipantsStore.getState();
+            const activeSharers = participants.filter(p => p.isScreenSharing && p.id !== (user?.id || ''));
+            if (!allowMultiple && activeSharers.length > 0) {
+                import('sonner').then(({ toast }) => toast.error('Only one participant can share at a time. Ask the current sharer to stop first.'));
                 return;
             }
             // Direct start - bypassing intermediate modal
@@ -2384,10 +2606,30 @@ function ControlBar() {
                                         </DropdownMenuItem>
                                     )}
                                     <DropdownMenuSeparator className="bg-[#333]" />
-                                    <DropdownMenuItem disabled>
-                                        Multiple participants can share simultaneously
+                                    <DropdownMenuItem
+                                        disabled={!isHost}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            if (isHost) {
+                                                const current = meeting?.settings?.allowMultipleScreenShares === true;
+                                                useMeetingStore.getState().updateMeetingSettings({ allowMultipleScreenShares: !current });
+                                            }
+                                        }}
+                                        className="cursor-pointer flex items-center justify-between"
+                                    >
+                                        <span className="flex-1">Multiple participants can share simultaneously</span>
+                                        {meeting?.settings?.allowMultipleScreenShares && <Check className="w-4 h-4 text-green-500" />}
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem disabled>
+                                    <DropdownMenuItem
+                                        disabled={!isHost}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            if (isHost) {
+                                                setShowAdvancedSharingOpen(true);
+                                            }
+                                        }}
+                                        className="cursor-pointer"
+                                    >
                                         Advanced sharing options...
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
@@ -2438,6 +2680,10 @@ function ControlBar() {
                                 </DropdownMenuTrigger>
                             </div>
                             <DropdownMenuContent className="bg-[#1A1A1A] border-[#333] text-gray-200">
+                                <DropdownMenuItem onClick={() => useTranscriptionStore.getState().setTranscriptOpen(true)} className="cursor-pointer">
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    View Full Transcript
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => useTranscriptionStore.getState().setSettingsOpen(true)} className="cursor-pointer">
                                     <Settings className="w-4 h-4 mr-2" />
                                     Caption Settings
@@ -2451,7 +2697,7 @@ function ControlBar() {
                                 <div className="outline-none flex-none">
                                     <ControlButton
                                         icon={MoreVertical}
-                                        label="More"
+                                        label="Tools"
                                         onClick={() => { }}
                                         isActiveState={isHandRaised}
                                     />
@@ -2492,6 +2738,10 @@ function ControlBar() {
                                         Meeting Analytics
                                     </DropdownMenuItem>
                                 )}
+                                <DropdownMenuItem onClick={toggleStats} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                    <Activity className="w-4 h-4 mr-2" />
+                                    {isStatsOpen ? 'Hide Statistics' : 'Network Statistics'}
+                                </DropdownMenuItem>
                                 {isHost && !isSubscribed && (
                                     <DropdownMenuItem onClick={() => setShowUpgradeModal(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                         <Clock className="w-4 h-4 mr-2" />
@@ -2796,6 +3046,11 @@ function ControlBar() {
                 open={showShareModal}
                 onOpenChange={setShowShareModal}
                 onConfirm={handleStartScreenShare}
+            />
+
+            <AdvancedSharingModal
+                open={showAdvancedSharingOpen}
+                onOpenChange={setShowAdvancedSharingOpen}
             />
 
             {/* Leave Confirmation Modal */}

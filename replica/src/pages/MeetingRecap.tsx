@@ -99,7 +99,7 @@ export default function MeetingRecap() {
         // Title
         doc.setFontSize(22);
         doc.setTextColor(11, 92, 255); // Blue
-        doc.text("ConnectPro Meeting Recap", margin, yPos);
+        doc.text("NeuralChat Meeting Recap", margin, yPos);
         yPos += 12;
 
         // Meeting Metadata
@@ -423,7 +423,7 @@ export default function MeetingRecap() {
                                         <div className="p-8 md:p-10 rounded-2xl bg-gradient-to-br from-[#0B5CFF]/20 to-purple-600/10 border border-blue-500/20 flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl">
                                             <div className="text-center md:text-left">
                                                 <h4 className="font-semibold text-blue-100 text-2xl mb-2">Did we miss something?</h4>
-                                                <p className="text-sm text-blue-200/70 max-w-sm">ConnectPro AI learns from your feedback to provide better summaries. Help us improve for your next meeting.</p>
+                                                <p className="text-sm text-blue-200/70 max-w-sm">NeuralChat AI learns from your feedback to provide better summaries. Help us improve for your next meeting.</p>
                                             </div>
                                             <Button className="w-full md:w-auto bg-white text-blue-600 hover:bg-gray-100 font-bold px-10 h-14 text-lg group shrink-0 shadow-lg">
                                                 Edit Recap <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />

@@ -21,7 +21,7 @@ async function getChatCompletion(messages, model = "llama-3.3-70b-versatile") {
             messages: [
                 {
                     role: "system",
-                    content: "You are an intelligent AI Companion for ConnectPro, a video conferencing platform. Your goal is to help users during meetings by summarizing discussions, tracking action items, and answering questions based on the meeting context. Be concise, professional, and helpful."
+                    content: "You are an intelligent AI Companion for NeuralChat, a video conferencing platform. Your goal is to help users during meetings by summarizing discussions, tracking action items, and answering questions based on the meeting context. Be concise, professional, and helpful."
                 },
                 ...messages
             ],
@@ -82,25 +82,63 @@ async function summarizeMeeting(transcript) {
     return getChatCompletion(messages);
 }
 
+const HALLUCINATION_PHRASES = [
+    "I don't even know",
+    "I'm not sure what to say",
+    "even know what to say",
+    "thank you for watching",
+    "thanks for watching",
+    "subscribe to my channel",
+    "please subscribe",
+    "you for watching",
+    "I don't know what to say",
+    "I don't know",
+    "even know",
+    "don't know",
+    "what to say",
+    "thank you",
+    "thanks.",
+    "thanks"
+];
+
 /**
- * Transcribe audio chunk using Groq Whisper
- * @param {Buffer} audioBuffer - Binary audio data
- * @param {string} fileName - Name of the temporary file
+ * Transcribe audio file using Groq Whisper
+ * @param {string} audioPath - Path to the audio file
+ * @param {string} language - ISO language code (default: en)
  */
-async function transcribeAudio(file) {
+async function transcribeAudio(audioPath, language = "en") {
     if (!groq) {
         throw new Error("GROQ_API_KEY is missing");
     }
 
     try {
+        const fs = require('fs');
         const transcription = await groq.audio.transcriptions.create({
-            file: file,
+            file: fs.createReadStream(audioPath),
             model: "whisper-large-v3",
             response_format: "json",
-            language: "en",
+            language: language || "en",
+            prompt: "NeuralChat meeting transcript. Speak clearly.", // Helps guide Whisper
+            temperature: 0.0, // More deterministic, helps reduce hallucinations
         });
 
-        return transcription.text || "";
+        let text = transcription.text || "";
+
+        // Post-processing: Hallucination filtering
+        const cleanText = text.trim();
+        const lowerText = cleanText.toLowerCase();
+
+        // If the entire text is a common hallucination or contains it in a suspicious way (short strings)
+        if (cleanText.length < 30) {
+            for (const phrase of HALLUCINATION_PHRASES) {
+                if (lowerText.includes(phrase.toLowerCase()) && cleanText.length < phrase.length + 10) {
+                    console.log(`[Transcription] Filtered hallucination: "${cleanText}"`);
+                    return "";
+                }
+            }
+        }
+
+        return cleanText;
     } catch (error) {
         console.error("Groq Transcription Error:", error);
         throw error;

@@ -170,7 +170,7 @@ export default function SummaryModal({ isOpen, onClose }: SummaryModalProps) {
                     </div>
 
                     <div className="p-4 bg-[#161616] border-t border-[#333] text-[10px] text-gray-500 text-center uppercase tracking-widest font-bold">
-                        ConnectPro AI Companion • Powered by llama-3.3-70b
+                        NeuralChat AI Companion • Powered by llama-3.3-70b
                     </div>
                 </motion.div>
             </div>

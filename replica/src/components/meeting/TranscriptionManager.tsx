@@ -11,6 +11,7 @@ export function TranscriptionManager() {
     const {
         addTranscript,
         isTranscriptionEnabled,
+        setTranscriptionEnabled,
         setCurrentCaption,
         clearCurrentCaption,
     } = useTranscriptionStore();
@@ -20,13 +21,14 @@ export function TranscriptionManager() {
     const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Listen for transcription results from the shared socket
+    // REMOVED `isTranscriptionEnabled` from the array logic so that ALL users get incoming captions!
     useEffect(() => {
-        if (!socket) return; // FIX: allow all participants to see captions by removing isTranscriptionEnabled check here!
+        if (!socket) return;
 
         const handleTranscription = (data: any) => {
             if (data.text) {
                 console.log('%c[Transcription] Received: ' + data.text, 'color: #0B5CFF; font-weight: bold;');
-                handleNewTranscription(data.text, data.participantName || 'Guest');
+                handleNewTranscription(data.text, data.participantName || 'Guest', data.participantId, data.role);
             }
         };
 
@@ -36,20 +38,18 @@ export function TranscriptionManager() {
         };
     }, [socket]);
 
-    const handleNewTranscription = (text: string, speakerName: string) => {
+    const handleNewTranscription = (text: string, speakerName: string, speakerId?: string, speakerRole?: 'host' | 'participant') => {
         if (!text || text.trim().length === 0) return;
 
         addTranscript({
-            participantId: user?.id || 'guest',
+            participantId: speakerId || 'guest',
             participantName: speakerName,
             text: text.trim(),
             timestamp: new Date().toISOString()
         });
 
-        const isHost = useMeetingStore.getState().isJoinedAsHost;
-        const speakerRole = isHost ? 'host' : 'participant';
-
-        setCurrentCaption(text.trim(), speakerName, speakerRole);
+        const roleToUse = speakerRole || 'participant';
+        setCurrentCaption(text.trim(), speakerName, roleToUse);
 
         if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
         captionTimerRef.current = setTimeout(() => {
@@ -57,8 +57,19 @@ export function TranscriptionManager() {
         }, 5000); // Hide after 5s of silence
     };
 
+    const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
+
+    // React to captions being disabled globally
     useEffect(() => {
-        if (!isTranscriptionEnabled || !localStream || isAudioMuted) {
+        if (!isCaptionsAllowed && isTranscriptionEnabled) {
+            setTranscriptionEnabled(false);
+            import('sonner').then(({ toast }) => toast.info('The host has disabled closed captions.'));
+        }
+    }, [isCaptionsAllowed, isTranscriptionEnabled, setTranscriptionEnabled]);
+
+    // We only START the recorder if local transcription is enabled AND allowed globally!
+    useEffect(() => {
+        if (!isTranscriptionEnabled || !isCaptionsAllowed || !localStream || isAudioMuted) {
             stopRecording();
             return;
         }
@@ -67,7 +78,7 @@ export function TranscriptionManager() {
             stopRecording();
             if (typeof cleanup === 'function') cleanup();
         };
-    }, [isTranscriptionEnabled, localStream, isAudioMuted]);
+    }, [isTranscriptionEnabled, isCaptionsAllowed, localStream, isAudioMuted]);
 
     const startRecording = () => {
         if (mediaRecorderRef.current || !localStream || !socket) return;
@@ -89,7 +100,7 @@ export function TranscriptionManager() {
             let isSpeakingInSegment = false;
 
             const startChunk = () => {
-                if (!isTranscriptionEnabled || !localStream || isAudioMuted || !socket) return;
+                if (!isTranscriptionEnabled || !isCaptionsAllowed || !localStream || isAudioMuted || !socket) return;
 
                 if (audioCtx.state === 'suspended') audioCtx.resume();
 
@@ -97,15 +108,20 @@ export function TranscriptionManager() {
                 mediaRecorderRef.current = recorder;
 
                 recorder.ondataavailable = async (event) => {
+                    const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
                     if (isSpeakingInSegment && event.data.size > 0 && socket.connected) {
-                        // Send as arrayBuffer for cleaner transmission through Socket.io
-                        const buffer = await event.data.arrayBuffer();
-                        socket.emit('audio_chunk', {
-                            meetingId: meeting?.id,
-                            participantId: user?.id || 'guest',
-                            participantName: user?.name || 'Guest',
-                            audioBlob: buffer
-                        });
+                        try {
+                            const buffer = await event.data.arrayBuffer();
+                            socket.emit('audio_chunk', {
+                                meetingId: meeting?.id,
+                                participantId: user?.id || 'guest',
+                                participantName: user?.name || 'Guest',
+                                audioBlob: buffer,
+                                language: speakingLanguage
+                            });
+                        } catch (err) {
+                            console.error('[Transcription] Error sending audio chunk:', err);
+                        }
                     }
                     isSpeakingInSegment = false;
                 };
@@ -115,9 +131,10 @@ export function TranscriptionManager() {
                 chunkTimerRef.current = setTimeout(() => {
                     if (recorder.state === 'recording') {
                         recorder.stop();
-                        startChunk();
+                        // Request next chunk immediately
+                        requestAnimationFrame(startChunk);
                     }
-                }, 2000); // FIX: 2.0s chunks for smoother real-time feel to combine fragments!
+                }, 3000); // 3.0s chunks give Whisper more context for better accuracy
             };
 
             const analyser = audioCtx.createAnalyser();
@@ -129,7 +146,7 @@ export function TranscriptionManager() {
                 if (!isTranscriptionEnabled || !audioCtx) return;
                 analyser.getByteFrequencyData(dataArray);
                 const peak = Math.max(...Array.from(dataArray));
-                if (peak > 5) isSpeakingInSegment = true; // Lower threshold to catch softer speech
+                if (peak > 3) isSpeakingInSegment = true; // Even more sensitive (3 vs 5) to catch brief words like "Hi"
                 requestAnimationFrame(checkVolume);
             };
             checkVolume();
@@ -155,6 +172,8 @@ export function TranscriptionManager() {
             mediaRecorderRef.current = null;
         }
     };
+
+    if (!isCaptionsAllowed && !isTranscriptionEnabled) return null;
 
     return null;
 }
