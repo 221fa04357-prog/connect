@@ -2381,6 +2381,7 @@ function ControlBar() {
                             <div className="flex-none flex items-center bg-[#1A1A1A] rounded-md overflow-hidden hover:bg-[#2A2A2A] transition-colors border border-transparent hover:border-[#444]">
                                 <button
                                     onClick={handleAudioToggle}
+                                    disabled={!micAllowed}
                                     className={cn(
                                         "flex flex-col items-center justify-center w-14 h-14 px-1 py-1 gap-1 outline-none",
                                         isAudioMuted && "text-red-500",
@@ -2393,7 +2394,7 @@ function ControlBar() {
                                         isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />
                                     )}
                                     <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
-                                        {isAudioMuted ? 'Unmute' : 'Mute'}
+                                        {!micAllowed ? 'Locked' : (isAudioMuted ? 'Unmute' : 'Mute')}
                                     </span>
                                 </button>
                                 <DropdownMenuTrigger asChild>
@@ -2456,16 +2457,16 @@ function ControlBar() {
                                     className={cn(
                                         "flex flex-col items-center justify-center w-14 h-14 px-1 py-1 gap-1 outline-none",
                                         isVideoOff && "text-red-500",
-                                        !videoAllowed && "text-gray-500"
+                                        !videoAllowed && "opacity-50 cursor-not-allowed"
                                     )}
                                 >
                                     {!videoAllowed ? (
-                                        <Lock className="w-5 h-5" />
+                                        <Lock className="w-5 h-5 text-gray-500" />
                                     ) : (
                                         isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />
                                     )}
                                     <span className="text-[10px] sm:text-[11px] font-medium text-gray-300">
-                                        Video
+                                        {!videoAllowed ? 'Locked' : 'Video'}
                                     </span>
                                 </button>
                                 <DropdownMenuTrigger asChild disabled={!videoAllowed}>
@@ -2577,7 +2578,7 @@ function ControlBar() {
                                             </div>
                                         </div>
                                         <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 group-hover:text-white whitespace-nowrap">
-                                            Share Screen
+                                            {!screenShareAllowed ? 'Locked' : 'Share Screen'}
                                         </span>
                                     </div>
                                 </DropdownMenuTrigger>

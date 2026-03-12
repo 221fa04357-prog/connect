@@ -564,9 +564,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       import('./useMeetingStore').then((store) => {
         const ms = store.useMeetingStore.getState();
         if (ms.meeting) {
+          const prevSettings = ms.meeting.settings || {};
           ms.setMeeting({ ...ms.meeting, settings });
 
           if (!ms.isJoinedAsHost) {
+            // --- CAPTURE STATE WHEN SUSPENDED ---
+            if (settings.suspendParticipantActivities === true && prevSettings.suspendParticipantActivities !== true) {
+              console.log('Activities suspended: Capturing current media state');
+              ms.setPreSuspensionState({
+                isAudioMuted: ms.isAudioMuted,
+                isVideoOff: ms.isVideoOff
+              });
+            }
+
+            // --- RESTORE STATE WHEN RESUMED ---
+            if (settings.suspendParticipantActivities === false && prevSettings.suspendParticipantActivities === true) {
+              console.log('Activities resumed: Restoring previous media state');
+              const preState = ms.preSuspensionState;
+              if (preState) {
+                // Restore Audio if it was ON
+                if (!preState.isAudioMuted && ms.isAudioMuted) {
+                  ms.setAudioMuted(false);
+                }
+                // Restore Video if it was ON
+                if (!preState.isVideoOff && ms.isVideoOff) {
+                  ms.setVideoOff(false);
+                }
+                // Clear the saved state
+                ms.setPreSuspensionState(null);
+              }
+            }
+
             if (settings.micAllowed === false && !ms.isAudioMuted) {
               ms.setAudioMuted(true);
               import('sonner').then(({ toast }) => toast.warning('Host has disabled microphones.'));
