@@ -116,8 +116,10 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
 
 async function transcribeWithWhisper(audioPath, language = null) {
     try {
+        console.log(`[Transcription] Starting Groq transcription for: ${path.basename(audioPath)}`);
         // Switch from local Python server to Groq Whisper for better speed, accuracy and Vercel compatibility
         const text = await groqService.transcribeAudio(audioPath, language);
+        console.log(`[Transcription] Groq result: "${text || 'EMPTY'}"`);
         return text || "";
     } catch (error) {
         console.error("Groq Transcription Error (via whisper fallback):", error.message);
@@ -136,16 +138,36 @@ const upload = multer({ dest: os.tmpdir() });
 // Add a POST endpoint for transcription (better for Vercel than WebSockets)
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+    const { meetingId, participantId, participantName, language } = req.body;
 
     try {
         // Pass to Groq for cloud-based transcription
-        const text = await groqService.transcribeAudio(req.file.path);
+        const text = await groqService.transcribeAudio(req.file.path, language);
         
         // Clean up temp file
         try { fs.unlinkSync(req.file.path); } catch (e) { }
 
-        if (text) {
-            return res.json({ text: text.trim(), language: 'en' });
+        if (text && text.trim().length > 0) {
+            // Broadcast to the meeting room via existing socket logic
+            if (meetingId) {
+                const segment = {
+                    participantId: participantId || 'guest',
+                    participantName: participantName || 'Guest',
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Add to transcripts store
+                if (!meetingTranscripts.has(meetingId)) {
+                    meetingTranscripts.set(meetingId, []);
+                }
+                meetingTranscripts.get(meetingId).push(segment);
+
+                // Emit to all socket clients in that room
+                io.to(meetingId).emit('transcription_received', segment);
+            }
+
+            return res.json({ text: text.trim() });
         }
         return res.status(204).send();
     } catch (err) {

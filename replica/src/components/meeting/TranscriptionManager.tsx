@@ -111,16 +111,19 @@ export function TranscriptionManager() {
                     const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
                     if (isSpeakingInSegment && event.data.size > 0 && socket.connected) {
                         try {
-                            const buffer = await event.data.arrayBuffer();
-                            socket.emit('audio_chunk', {
-                                meetingId: meeting?.id,
-                                participantId: user?.id || 'guest',
-                                participantName: user?.name || 'Guest',
-                                audioBlob: buffer,
-                                language: speakingLanguage
+                            const formData = new FormData();
+                            formData.append('audio', event.data, `audio_${Date.now()}.webm`);
+                            formData.append('meetingId', meeting?.id || '');
+                            formData.append('participantId', user?.id || 'guest');
+                            formData.append('participantName', user?.name || 'Guest');
+                            formData.append('language', speakingLanguage || 'en');
+
+                            await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
+                                method: 'POST',
+                                body: formData
                             });
                         } catch (err) {
-                            console.error('[Transcription] Error sending audio chunk:', err);
+                            console.error('[Transcription] Error sending audio chunk via HTTP:', err);
                         }
                     }
                     isSpeakingInSegment = false;
