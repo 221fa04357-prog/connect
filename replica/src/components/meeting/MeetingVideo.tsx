@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui'; // Consolidated import
 import { useMediaStore } from '@/stores/useMediaStore';
+import { toast } from 'sonner';
 
 // --- VideoTile.tsx ---
 
@@ -104,6 +105,11 @@ export function VideoTile({
         if (showMicConfirm || showVideoConfirm) return;
 
         if (isLocal) {
+            const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+            if (isSuspended && !isHostOrCoHost) {
+                toast.error("Activities are suspended by host");
+                return;
+            }
             setMicConfirm(true);
         } else if (isHostOrCoHost) {
             if (!participant.isAudioMuted) {
@@ -123,6 +129,11 @@ export function VideoTile({
         if (showMicConfirm || showVideoConfirm) return;
 
         if (isLocal) {
+            const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+            if (isSuspended && !isHostOrCoHost) {
+                toast.error("Activities are suspended by host");
+                return;
+            }
             setVideoConfirm(true);
         } else if (isHostOrCoHost) {
             if (!participant.isVideoOff) {

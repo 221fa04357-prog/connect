@@ -1841,6 +1841,10 @@ function ControlBar() {
 
     const confirmAudioToggle = async () => {
         setMicConfirm(false);
+        if (meeting?.settings?.suspendParticipantActivities && !isHostOrCoHost) {
+            import('sonner').then(({ toast }) => toast.error('Activities are suspended by host.'));
+            return;
+        }
         const currentIsMuted = isAudioMuted;
         const currentStream = useMeetingStore.getState().localStream;
 
@@ -1891,6 +1895,10 @@ function ControlBar() {
 
     const confirmVideoToggle = async () => {
         setVideoConfirm(false);
+        if (meeting?.settings?.suspendParticipantActivities && !isHostOrCoHost) {
+            import('sonner').then(({ toast }) => toast.error('Activities are suspended by host.'));
+            return;
+        }
         const currentIsVideoOff = isVideoOff;
         const currentStream = useMeetingStore.getState().localStream;
 
