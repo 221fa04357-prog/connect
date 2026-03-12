@@ -116,8 +116,10 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
 
 async function transcribeWithWhisper(audioPath, language = null) {
     try {
+        console.log(`[Transcription] Starting Groq transcription for: ${path.basename(audioPath)}`);
         // Switch from local Python server to Groq Whisper for better speed, accuracy and Vercel compatibility
         const text = await groqService.transcribeAudio(audioPath, language);
+        console.log(`[Transcription] Groq result: "${text || 'EMPTY'}"`);
         return text || "";
     } catch (error) {
         console.error("Groq Transcription Error (via whisper fallback):", error.message);
@@ -129,6 +131,42 @@ async function transcribeWithWhisper(audioPath, language = null) {
 const app = express();
 const server = http.createServer(app);
 
+// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
+const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
+
+// Allow both localhost and Vercel production origin
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://connect-eta-one.vercel.app"
+];
+
+// If FRONTEND_URL is set in env, add it too
+if (process.env.FRONTEND_URL && !allowedOrigins.includes(frontendOrigin)) {
+    allowedOrigins.push(frontendOrigin);
+}
+
+// CRITICAL: Middleware MUST be initialized before routes
+app.use(cors({
+    origin: function (origin, callback) {
+        // allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1 && frontendOrigin !== "*") {
+            var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+}));
+
+app.use(express.json());
+app.use(cookieParser());
+
+// Transcription store (moved up for visibility)
+const meetingTranscripts = new Map();
+
 // ================= TRANSCRIPTION CONFIG =================
 const multer = require('multer');
 const upload = multer({ dest: os.tmpdir() });
@@ -136,16 +174,40 @@ const upload = multer({ dest: os.tmpdir() });
 // Add a POST endpoint for transcription (better for Vercel than WebSockets)
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+    const { meetingId, participantId, participantName, language } = req.body;
 
     try {
+        if (!process.env.GROQ_API_KEY) {
+            console.error('[Transcription] Error: GROQ_API_KEY is missing');
+            return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
+        }
         // Pass to Groq for cloud-based transcription
-        const text = await groqService.transcribeAudio(req.file.path);
+        const text = await groqService.transcribeAudio(req.file.path, language);
         
         // Clean up temp file
         try { fs.unlinkSync(req.file.path); } catch (e) { }
 
-        if (text) {
-            return res.json({ text: text.trim(), language: 'en' });
+        if (text && text.trim().length > 0) {
+            // Broadcast to the meeting room via existing socket logic
+            if (meetingId) {
+                const segment = {
+                    participantId: participantId || 'guest',
+                    participantName: participantName || 'Guest',
+                    text: text.trim(),
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Add to transcripts store
+                if (!meetingTranscripts.has(meetingId)) {
+                    meetingTranscripts.set(meetingId, []);
+                }
+                meetingTranscripts.get(meetingId).push(segment);
+
+                // Emit to all socket clients in that room
+                io.to(meetingId).emit('transcription_received', segment);
+            }
+
+            return res.json({ text: text.trim() });
         }
         return res.status(204).send();
     } catch (err) {
@@ -154,9 +216,6 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
 });
 
-
-// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
-const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
 
 // Database Initialization Logic
 async function initializeDatabase() {
@@ -359,7 +418,7 @@ async function finalizeAnalytics(meetingId) {
 
 const io = new Server(server, {
     cors: {
-        origin: frontendOrigin,
+        origin: allowedOrigins,
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -367,12 +426,6 @@ const io = new Server(server, {
 
 const port = process.env.PORT || 5001;
 
-app.use(cors({
-    origin: frontendOrigin,
-    credentials: true
-}));
-
-app.use(cookieParser());
 app.use(session({
     secret: process.env.SESSION_SECRET || 'neural_chat_secret_key',
     resave: false,
@@ -382,8 +435,6 @@ app.use(session({
 
 app.use(passport.initialize());
 app.use(passport.session());
-
-app.use(express.json());
 
 // Root route
 app.get("/", (req, res) => {
@@ -399,7 +450,6 @@ const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantDa
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
-const meetingTranscripts = new Map(); // meetingId -> Array of transcription segments
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
