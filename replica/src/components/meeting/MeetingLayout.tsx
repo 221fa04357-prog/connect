@@ -667,6 +667,15 @@ export function ParticipantsPanel() {
     const isOriginalHost = meeting?.originalHostId === user?.id;
     const { setLocalStream, toggleAudio, toggleVideo } = useMeetingStore();
 
+    const handleHandRaise = () => {
+        const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+        if (isSuspended && !canControl) {
+            toast.error("Activities are suspended by host");
+            return;
+        }
+        if (currentUserParticipant) toggleHandRaise(currentUserParticipant.id);
+    };
+
     useEffect(() => {
         if (!socket) return;
 
@@ -680,6 +689,11 @@ export function ParticipantsPanel() {
     }, [socket, setFrequentQuestionUsers]);
 
     const handleAudioToggle = async () => {
+        const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+        if (isSuspended && !canControl) {
+            toast.error("Activities are suspended by host");
+            return;
+        }
         const currentIsMuted = useMeetingStore.getState().isAudioMuted;
         const currentStream = useMeetingStore.getState().localStream;
         const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
@@ -710,6 +724,11 @@ export function ParticipantsPanel() {
     };
 
     const handleVideoToggle = async () => {
+        const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+        if (isSuspended && !canControl) {
+            toast.error("Activities are suspended by host");
+            return;
+        }
         const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
         const currentStream = useMeetingStore.getState().localStream;
         const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
@@ -977,7 +996,7 @@ export function ParticipantsPanel() {
                                     canControl={canControl}
                                     canChangeRoles={canChangeRoles}
                                     isOriginalHost={isOriginalHost}
-                                    onToggleHand={() => toggleHandRaise(participant.id)}
+                                    onToggleHand={handleHandRaise}
                                     onToggleMute={isCurrentUser ? handleAudioToggle : () => {
                                         if (!participant.isAudioMuted) {
                                             muteParticipant(participant.id);
@@ -1083,6 +1102,8 @@ function ParticipantItem({
     hostCount,
 }: ParticipantItemProps) {
     const effectiveRole = displayedRole || participant.role;
+    const isSuspended = useMeetingStore(state => state.meeting?.settings?.suspendParticipantActivities);
+    const isLocked = isSuspended && !canControl;
 
     return (
         <div className="flex items-center justify-between p-4 hover:bg-[#232323]">
@@ -1121,9 +1142,10 @@ function ParticipantItem({
                                     onRequestMedia(participant.id, 'audio');
                                 }
                             }}
+                            disabled={isLocked && isCurrentUser}
                             className={cn(
-                                "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
-                                (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
+                                "p-2 -m-2 transition-all rounded-full active:scale-90",
+                                isCurrentUser ? (isLocked ? "cursor-not-allowed opacity-50" : "hover:bg-white/5") : (canControl ? "hover:bg-white/5" : "cursor-default backdrop-none")
                             )}
                         >
                             {participant.isAudioMuted ? (
@@ -1140,9 +1162,10 @@ function ParticipantItem({
                                     onRequestMedia(participant.id, 'video');
                                 }
                             }}
+                            disabled={isLocked && isCurrentUser}
                             className={cn(
-                                "p-2 -m-2 transition-all hover:bg-white/5 rounded-full active:scale-90",
-                                (!isCurrentUser && !canControl) && "cursor-default backdrop-none"
+                                "p-2 -m-2 transition-all rounded-full active:scale-90",
+                                isCurrentUser ? (isLocked ? "cursor-not-allowed opacity-50" : "hover:bg-white/5") : (canControl ? "hover:bg-white/5" : "cursor-default backdrop-none")
                             )}
                         >
                             {participant.isVideoOff ? (
@@ -1164,9 +1187,11 @@ function ParticipantItem({
                         size="sm"
                         variant="ghost"
                         onClick={onToggleHand}
+                        disabled={isLocked}
                         className={cn(
                             'hover:bg-[#2D2D2D]',
-                            participant.isHandRaised && 'text-yellow-500'
+                            participant.isHandRaised && 'text-yellow-500',
+                            isLocked && 'cursor-not-allowed opacity-50'
                         )}
                     >
                         <Hand className="w-4 h-4" />
