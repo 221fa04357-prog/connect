@@ -82,29 +82,31 @@ async function summarizeMeeting(transcript) {
     return getChatCompletion(messages);
 }
 
-const HALLUCINATION_PHRASES = [
-    "I don't even know",
-    "I'm not sure what to say",
-    "even know what to say",
-    "thank you for watching",
-    "thanks for watching",
-    "subscribe to my channel",
-    "please subscribe",
-    "you for watching",
-    "I don't know what to say",
-    "I don't know",
-    "even know",
-    "don't know",
-    "what to say",
-    "thank you",
-    "thanks.",
-    "thanks"
-];
+// No filtering phrases - per user request for raw transcription.
+
+const LANGUAGE_MAPPING = {
+    'English': 'en',
+    'Spanish': 'es',
+    'French': 'fr',
+    'German': 'de',
+    'Italian': 'it',
+    'Portuguese': 'pt',
+    'Chinese': 'zh',
+    'Japanese': 'ja',
+    'Korean': 'ko',
+    'Russian': 'ru',
+    'Hindi': 'hi',
+    'Arabic': 'ar',
+    'Turkish': 'tr',
+    'Dutch': 'nl',
+    'Vietnamese': 'vi',
+    'Indonesian': 'id'
+};
 
 /**
  * Transcribe audio file using Groq Whisper
  * @param {string} audioPath - Path to the audio file
- * @param {string} language - ISO language code (default: en)
+ * @param {string} language - ISO language code or full name (default: en)
  */
 async function transcribeAudio(audioPath, language = "en") {
     if (!groq) {
@@ -113,32 +115,110 @@ async function transcribeAudio(audioPath, language = "en") {
 
     try {
         const fs = require('fs');
-        const transcription = await groq.audio.transcriptions.create({
-            file: fs.createReadStream(audioPath),
-            model: "whisper-large-v3",
-            response_format: "json",
-            language: language || "en",
-            prompt: "NeuralChat meeting transcript. Speak clearly.", // Helps guide Whisper
-            temperature: 0.0, // More deterministic, helps reduce hallucinations
-        });
+        const path = require('path');
 
-        let text = transcription.text || "";
+        if (!fs.existsSync(audioPath)) {
+            throw new Error(`Audio file not found: ${audioPath}`);
+        }
 
-        // Post-processing: Hallucination filtering
-        const cleanText = text.trim();
-        const lowerText = cleanText.toLowerCase();
+        const stats = fs.statSync(audioPath);
+        if (stats.size === 0) {
+            console.warn(`[Transcription] Warning: Audio file is empty: ${audioPath}`);
+            return "";
+        }
+        
+        console.log(`[Transcription] Processing audio: ${path.basename(audioPath)} (${stats.size} bytes)`);
 
-        // If the entire text is a common hallucination or contains it in a suspicious way (short strings)
-        if (cleanText.length < 30) {
-            for (const phrase of HALLUCINATION_PHRASES) {
-                if (lowerText.includes(phrase.toLowerCase()) && cleanText.length < phrase.length + 10) {
-                    console.log(`[Transcription] Filtered hallucination: "${cleanText}"`);
-                    return "";
+        // Map language name to ISO code if necessary
+        let langCode = "en";
+        if (language && typeof language === 'string') {
+            const normalizedLang = language.trim();
+            // Check if it's already an ISO code (2 chars)
+            if (normalizedLang.length === 2) {
+                langCode = normalizedLang.toLowerCase();
+            } else {
+                // Check mapping (case-insensitive)
+                const mapped = Object.entries(LANGUAGE_MAPPING).find(
+                    ([name]) => name.toLowerCase() === normalizedLang.toLowerCase()
+                );
+                if (mapped) {
+                    langCode = mapped[1];
+                } else {
+                    console.warn(`[Transcription] Unsupported language name: "${language}", defaulting to "en"`);
+                    langCode = "en";
                 }
             }
         }
 
-        return cleanText;
+        const transcription = await groq.audio.transcriptions.create({
+            file: await Groq.toFile(fs.readFileSync(audioPath), path.basename(audioPath), { type: 'audio/webm' }),
+            model: "whisper-large-v3",
+            response_format: "verbose_json",
+            language: langCode,
+            temperature: 0.0,
+        });
+
+        // --- Confidence Filtering Logic ---
+        // Whisper metadata keys:
+        // no_speech_prob: Higher means likely silence.
+        // avg_logprob: Lower (more negative) means lower confidence in text.
+        
+        const segments = transcription.segments || [];
+        if (segments.length === 0) {
+            console.log(`[Transcription] No segments returned for chunk.`);
+            return "";
+        }
+
+        // Filter segments based on confidence markers
+        const clearSegments = segments.filter(seg => {
+            const noSpeech = seg.no_speech_prob || 0;
+            const logProb = seg.avg_logprob || 0;
+            const rawText = (seg.text || "").trim();
+            const text = rawText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+
+            // Logging for all segments to help tune thresholds
+            console.log(`[Transcription] Segment: "${rawText}" (no_speech=${noSpeech.toFixed(2)}, logprob=${logProb.toFixed(2)})`);
+
+            // 1. High probability of no speech (Standard hallucination trigger)
+            if (noSpeech > 0.6) {
+                console.log(`[Transcription] Filtered: High no_speech_prob`);
+                return false;
+            }
+
+            // 2. Very low average log probability (Random text trigger)
+            if (logProb < -1.0) {
+                console.log(`[Transcription] Filtered: Low log_prob`);
+                return false;
+            }
+
+            // 3. Solitary Hallucination Filter (Highly Sensitive)
+            // If the chunk consists ONLY of a known hallucination phrase,
+            // we reject it even if the confidence markers are mostly okay.
+            const commonHallucinations = ["thank you", "thanks for watching", "thanks", "bye", "you"];
+            const isHallucination = commonHallucinations.includes(text);
+            
+            // Rejection criteria for solitary common phrases:
+            // - If it's a known hallucination AND no_speech_prob is > 0.1 (any sign of silence)
+            // - OR if it's the ONLY segment in the chunk (solitary) and confidence is borderline
+            if (isHallucination) {
+                if (noSpeech > 0.1 || (segments.length === 1 && (noSpeech > 0.05 || logProb < -0.2))) {
+                    console.log(`[Transcription] Rejected isolated hallucination: "${rawText}"`);
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        const finalText = clearSegments.map(s => s.text).join(" ").trim();
+        
+        if (finalText.length > 0) {
+            console.log(`[Transcription] Final Result: "${finalText}"`);
+        } else if (transcription.text && transcription.text.trim().length > 0) {
+            console.log(`[Transcription] Suppressed raw: "${transcription.text}" (Metadata-based filter)`);
+        }
+
+        return finalText;
     } catch (error) {
         console.error("Groq Transcription Error:", error);
         throw error;

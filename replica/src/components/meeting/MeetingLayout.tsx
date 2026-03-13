@@ -1506,16 +1506,19 @@ export function AICompanionPanel() {
     const handleSuggestActions = async () => {
         if (isSuggestingActions) return;
 
-        const transcript = chatMessages.map(m => `${m.senderName}: ${m.content}`).join('\n');
-        if (!transcript.trim()) {
-            toast.error("Transcript is empty. Chat a bit before suggesting actions.");
+        const spokenTranscript = useTranscriptionStore.getState().transcripts.map(t => `${t.participantName}: ${t.text}`).join('\n');
+        const chatTranscript = chatMessages.map(m => `${m.senderName}: ${m.content}`).join('\n');
+        const fullTranscript = `--- SPOKEN TRANSCRIPT ---\n${spokenTranscript}\n\n--- CHAT TRANSCRIPT ---\n${chatTranscript}`;
+
+        if (!spokenTranscript.trim() && !chatTranscript.trim()) {
+            toast.error("Transcript is empty. Talk or chat a bit before suggesting actions.");
             return;
         }
 
         setIsSuggestingActions(true);
 
         try {
-            const prompt = `Based on this meeting transcript, identify specific actionable tasks OR suggest logical next steps based on the discussion topics. Aim to provide practical items even if not explicitly stated as todos. Return ONLY a JSON array of strings, e.g. ["Research X", "Set up follow-up", "Update document"]. Transcript: \n\n${transcript}`;
+            const prompt = `Based on this meeting transcript (both spoken and chat), identify specific actionable tasks OR suggest logical next steps based on the discussion topics. Aim to provide practical items even if not explicitly stated as todos. Return ONLY a JSON array of strings, e.g. ["Research X", "Set up follow-up", "Update document"]. Transcript: \n\n${fullTranscript}`;
 
             const response = await fetch(`${API}/api/ai/chat`, {
                 method: 'POST',
@@ -1565,8 +1568,11 @@ export function AICompanionPanel() {
         setIsGeneratingSummary(true);
 
         try {
-            const transcript = chatMessages.map(m => `${m.senderName}: ${m.content}`).join('\n');
-            const prompt = `Provide a bulleted list of key summary points for this meeting so far. Return ONLY the bullet points, one per line, starting with "• ". Transcript: \n\n${transcript}`;
+            const spokenTranscript = useTranscriptionStore.getState().transcripts.map(t => `${t.participantName}: ${t.text}`).join('\n');
+            const chatTranscript = chatMessages.map(m => `${m.senderName}: ${m.content}`).join('\n');
+            const fullTranscript = `--- SPOKEN TRANSCRIPT ---\n${spokenTranscript}\n\n--- CHAT TRANSCRIPT ---\n${chatTranscript}`;
+
+            const prompt = `Provide a bulleted list of key summary points for this meeting so far based on the following spoken and chat transcripts. Return ONLY the bullet points, one per line, starting with "• ". Transcript: \n\n${fullTranscript}`;
 
             const response = await fetch(`${API}/api/ai/chat`, {
                 method: 'POST',

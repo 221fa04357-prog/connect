@@ -169,12 +169,24 @@ const meetingTranscripts = new Map();
 
 // ================= TRANSCRIPTION CONFIG =================
 const multer = require('multer');
-const upload = multer({ dest: os.tmpdir() });
+const transcriptionStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, os.tmpdir());
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname) || '.webm';
+        cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+    }
+});
+const upload = multer({ storage: transcriptionStorage });
 
 // Add a POST endpoint for transcription (better for Vercel than WebSockets)
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
-    const { meetingId, participantId, participantName, language } = req.body;
+    const { meetingId, participantId, participantName, language, role } = req.body;
+    
+    console.log(`[Transcription] received /api/transcribe: meeting=${meetingId}, user=${participantName}, role=${role || 'none'}, file=${req.file.filename} (${req.file.size} bytes)`);
 
     try {
         if (!process.env.GROQ_API_KEY) {
@@ -193,6 +205,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
                 const segment = {
                     participantId: participantId || 'guest',
                     participantName: participantName || 'Guest',
+                    role: role || 'participant',
                     text: text.trim(),
                     timestamp: new Date().toISOString()
                 };
@@ -204,7 +217,10 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
                 meetingTranscripts.get(meetingId).push(segment);
 
                 // Emit to all socket clients in that room
+                console.log(`[Transcription] Broadcasting segment to room ${meetingId}: "${text.trim().substring(0, 30)}..."`);
                 io.to(meetingId).emit('transcription_received', segment);
+            } else {
+                console.warn('[Transcription] Cannot broadcast: meetingId is missing in request body');
             }
 
             return res.json({ text: text.trim() });

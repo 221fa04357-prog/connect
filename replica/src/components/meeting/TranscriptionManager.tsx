@@ -54,7 +54,7 @@ export function TranscriptionManager() {
         if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
         captionTimerRef.current = setTimeout(() => {
             clearCurrentCaption();
-        }, 5000); // Hide after 5s of silence
+        }, 3000); // Hide after 3s of silence (snappier responsive feeling)
     };
 
     const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
@@ -67,7 +67,179 @@ export function TranscriptionManager() {
         }
     }, [isCaptionsAllowed, isTranscriptionEnabled, setTranscriptionEnabled]);
 
+    const startRecording = () => {
+        if (mediaRecorderRef.current || !localStream) {
+            console.log('[Transcription] Cannot start: ', { 
+                hasRecorder: !!mediaRecorderRef.current, 
+                hasStream: !!localStream 
+            });
+            return;
+        }
+
+        try {
+            const tracks = localStream.getAudioTracks();
+            console.log(`[Transcription] Audio tracks found: ${tracks.length}`);
+            tracks.forEach((t, i) => {
+                console.log(`[Transcription] Track [${i}]: id=${t.id}, label=${t.label}, enabled=${t.enabled}, muted=${t.muted}, state=${t.readyState}`);
+            });
+
+            const audioTrack = tracks[0];
+            if (!audioTrack) {
+                console.warn('[Transcription] No audio track found in localStream');
+                return;
+            }
+
+            // 1. Setup AudioContext and Analyser directly on localStream
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(localStream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            source.connect(analyser);
+
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            let isSpeakingInSegment = false;
+            let currentAverageVolume = 0;
+            let speakingFramesThreshold = 3; // ~50ms (more responsive)
+            let speakingFramesCount = 0;
+
+            const checkVolume = () => {
+                if (!audioCtx || audioCtx.state === 'closed') return;
+                
+                analyser.getByteTimeDomainData(dataArray);
+                
+                let sumSquares = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    const normalized = (dataArray[i] - 128) / 128;
+                    sumSquares += normalized * normalized;
+                }
+                const rms = Math.sqrt(sumSquares / dataArray.length);
+                currentAverageVolume = rms * 100; // Scale to 0-100
+                (window as any)._lastVadRms = currentAverageVolume;
+
+                // Sensitivity threshold: 0.3 (Lowered to capture even quiet initial greetings)
+                if (currentAverageVolume > 0.3) {
+                    speakingFramesCount++;
+                    if (speakingFramesCount >= speakingFramesThreshold) {
+                        isSpeakingInSegment = true;
+                    }
+                } else {
+                    speakingFramesCount = Math.max(0, speakingFramesCount - 1);
+                }
+                
+                requestAnimationFrame(checkVolume);
+            };
+            checkVolume();
+
+            // Log volume periodically for debugging
+            const logVolumeInterval = setInterval(() => {
+                const muteState = useMeetingStore.getState().isAudioMuted;
+                const captionsOn = useTranscriptionStore.getState().isTranscriptionEnabled;
+                const lang = useTranscriptionStore.getState().speakingLanguage;
+                console.log(`[Transcription] VAD: rms=${currentAverageVolume.toFixed(2)}, frames=${speakingFramesCount}, speaking=${isSpeakingInSegment}, mute=${muteState}, uiEnabled=${captionsOn}, lang=${lang}`);
+            }, 3000);
+
+            // 2. Setup MediaRecorder
+            const recorder = new MediaRecorder(localStream, { mimeType: 'audio/webm;codecs=opus' });
+            mediaRecorderRef.current = recorder;
+
+            // Prevent GC and provide debug access
+            (recorder as any)._debugNodes = { audioCtx, source, analyser };
+
+            recorder.ondataavailable = async (event) => {
+                const hasData = event.data.size > 0;
+                const forceSend = (window as any)._forceTranscription === true;
+                const muteState = useMeetingStore.getState().isAudioMuted;
+                
+                console.log(`[Transcription] chunk ready: ${event.data.size}b, spoke: ${isSpeakingInSegment} (force=${forceSend}, mute=${muteState})`);
+                
+                if (hasData) {
+                    // CRITICAL: Requirement #8 - Only send to Whisper if NOT muted and we detected speech
+                    if (!muteState && (isSpeakingInSegment || forceSend)) {
+                        const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
+                        const isHost = useMeetingStore.getState().isJoinedAsHost;
+                        const role = isHost ? 'host' : 'participant';
+                        const meetingId = meeting?.id || '';
+                        
+                        console.log(`[Transcription] POSTing chunk (lang=${speakingLanguage}, role=${role})...`);
+                        const formData = new FormData();
+                        formData.append('audio', event.data, 'segment.webm');
+                        formData.append('meetingId', meetingId);
+                        formData.append('participantId', user?.id || 'guest');
+                        formData.append('participantName', user?.name || 'Guest');
+                        formData.append('language', speakingLanguage);
+                        formData.append('role', role);
+
+                        try {
+                            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            if (response.ok) {
+                                if (response.status === 204) return;
+                                const data = await response.json();
+                                if (data.text) console.log(`[Transcription] Result: "${data.text}"`);
+                            } else {
+                                const errText = await response.text();
+                                console.error(`[Transcription] API error ${response.status}:`, errText);
+                            }
+                        } catch (err) {
+                            console.error('[Transcription] Request failed:', err);
+                        }
+                    } else if (muteState) {
+                        console.log('[Transcription] Suppressing chunk: Microphone is muted.');
+                    } else {
+                        console.log('[Transcription] Suppressing chunk: No speech detected.');
+                    }
+                    
+                    // Always reset speaking flag for next segment
+                    isSpeakingInSegment = false;
+                }
+            };
+
+            recorder.onstop = () => {
+                // Restart immediately if still enabled - ignore mute so we keep signal monitoring alive
+                if (mediaRecorderRef.current === recorder && isTranscriptionEnabled && isCaptionsAllowed) {
+                    try { recorder.start(); } catch(e) {}
+                }
+            };
+
+            // Initial start
+            recorder.start();
+
+            // Instead of timeslice, we stop and restart every 5 seconds to force a new valid file
+            // Increased to 5s for better acoustic context in Whisper
+            const segmentInterval = setInterval(() => {
+                if (recorder.state === 'recording') {
+                    recorder.stop();
+                }
+            }, 5000);
+
+            return () => {
+                clearInterval(logVolumeInterval);
+                clearInterval(segmentInterval);
+                mediaRecorderRef.current = null;
+                if (recorder.state !== 'inactive') recorder.stop();
+                if (audioCtx.state !== 'closed') audioCtx.close();
+            };
+        } catch (err) {
+            console.error('Failed to start transcription recorder:', err);
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current) {
+            if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
+            mediaRecorderRef.current = null;
+        }
+    };
+
     // We only START the recorder if local transcription is enabled AND allowed globally!
+    // Requirement #8: Only capture when mic is ON and captions are enabled.
     useEffect(() => {
         if (!isTranscriptionEnabled || !isCaptionsAllowed || !localStream || isAudioMuted) {
             stopRecording();
@@ -79,99 +251,6 @@ export function TranscriptionManager() {
             if (typeof cleanup === 'function') cleanup();
         };
     }, [isTranscriptionEnabled, isCaptionsAllowed, localStream, isAudioMuted]);
-
-    const startRecording = () => {
-        if (mediaRecorderRef.current || !localStream || !socket) return;
-
-        try {
-            const audioTrack = localStream.getAudioTracks()[0];
-            if (!audioTrack) return;
-
-            // Apply noise suppression at hardware level
-            audioTrack.applyConstraints({
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            }).catch(e => console.warn('[Transcription] Constraints fail:', e));
-
-            const audioStream = new MediaStream([audioTrack.clone()]);
-            const audioCtx = new AudioContext();
-
-            let isSpeakingInSegment = false;
-
-            const startChunk = () => {
-                if (!isTranscriptionEnabled || !isCaptionsAllowed || !localStream || isAudioMuted || !socket) return;
-
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-
-                const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm;codecs=opus' });
-                mediaRecorderRef.current = recorder;
-
-                recorder.ondataavailable = async (event) => {
-                    const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
-                    if (isSpeakingInSegment && event.data.size > 0 && socket.connected) {
-                        try {
-                            const buffer = await event.data.arrayBuffer();
-                            socket.emit('audio_chunk', {
-                                meetingId: meeting?.id,
-                                participantId: user?.id || 'guest',
-                                participantName: user?.name || 'Guest',
-                                audioBlob: buffer,
-                                language: speakingLanguage
-                            });
-                        } catch (err) {
-                            console.error('[Transcription] Error sending audio chunk:', err);
-                        }
-                    }
-                    isSpeakingInSegment = false;
-                };
-
-                recorder.start();
-
-                chunkTimerRef.current = setTimeout(() => {
-                    if (recorder.state === 'recording') {
-                        recorder.stop();
-                        // Request next chunk immediately
-                        requestAnimationFrame(startChunk);
-                    }
-                }, 3000); // 3.0s chunks give Whisper more context for better accuracy
-            };
-
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            audioCtx.createMediaStreamSource(audioStream).connect(analyser);
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-            const checkVolume = () => {
-                if (!isTranscriptionEnabled || !audioCtx) return;
-                analyser.getByteFrequencyData(dataArray);
-                const peak = Math.max(...Array.from(dataArray));
-                if (peak > 3) isSpeakingInSegment = true; // Even more sensitive (3 vs 5) to catch brief words like "Hi"
-                requestAnimationFrame(checkVolume);
-            };
-            checkVolume();
-
-            startChunk();
-
-            return () => {
-                if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
-                mediaRecorderRef.current = null;
-                audioCtx.close();
-                audioStream.getTracks().forEach(t => t.stop());
-            };
-        } catch (err) {
-            console.error('Failed to start transcription recorder:', err);
-        }
-    };
-
-    const stopRecording = () => {
-        if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
-        if (mediaRecorderRef.current) {
-            if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
-            mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
-            mediaRecorderRef.current = null;
-        }
-    };
 
     if (!isCaptionsAllowed && !isTranscriptionEnabled) return null;
 
