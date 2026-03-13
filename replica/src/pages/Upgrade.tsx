@@ -20,11 +20,11 @@ const plans = [
         color: '#404040',
         gradient: 'from-[#2a2a2a] to-[#1a1a1a]',
         features: [
-            '40-min meeting limit',
+            '40 minute meeting limit',
             'Up to 100 participants',
             'Basic chat',
             'Screen sharing',
-            '5 recordings/month',
+            '1 free cloud record',
         ],
         notIncluded: [
             'Cloud recording',
@@ -48,13 +48,13 @@ const plans = [
         gradient: 'from-[#0B5CFF] to-[#052e80]',
         features: [
             'Unlimited meeting duration',
-            'Up to 500 participants',
-            'Cloud Recording (5 GB)',
-            'Whiteboard & collaboration',
-            'Live transcription',
-            'Social media streaming',
-            'AI meeting summaries',
-            'Priority email support',
+            'Up to 300 participants',
+            'Cloud recording (10GB)',
+            'AI notes & Transcription',
+            'Live translation',
+            'Custom branding',
+            'Co-host capabilities',
+            'Waiting room limits',
         ],
         notIncluded: [
             'Custom branding',
@@ -72,16 +72,16 @@ const plans = [
         period: '',
         description: 'For large organizations',
         badge: 'Contact Sales',
-        color: '#7C3AED',
-        gradient: 'from-[#7C3AED] to-[#4C1D95]',
+        color: '#0B5CFF',
+        gradient: 'from-[#0B5CFF] to-[#052e80]',
         features: [
-            'Unlimited everything',
+            'Unlimited meeting',
             'Unlimited participants',
             'Unlimited cloud storage',
-            'Custom branding & domain',
-            'SSO & advanced security',
+            'Advanced meeting analytics',
+            'API & SDK integrations',
             'Dedicated account manager',
-            'SLA guarantee',
+            'SSO / SAML',
             '24/7 phone support',
         ],
         notIncluded: [],
@@ -135,23 +135,17 @@ export default function Upgrade() {
     const handleUpgrade = async (planId: string) => {
         if (planId === 'free' || planId === currentPlan) return;
         if (planId === 'enterprise') {
-            window.open('mailto:sales@neuralchat.app?subject=Enterprise Plan Inquiry', '_blank');
+            navigate('/contact');
             return;
         }
         setLoading(planId);
-        // Simulate trial activation or payment flow
+        // Simulate payment navigation
         setTimeout(() => {
             setLoading(null);
             if (planId === 'pro') {
-                import('sonner').then(({ toast }) => {
-                    toast.success('14-Day Free Trial Activated!', {
-                        description: 'Welcome to NeuralChat! Explore all pro features now.'
-                    });
-                });
-                setSubscription('pro');
-                setTimeout(() => navigate('/'), 1500);
+                navigate('/payment');
             } else {
-                alert('Enterprise plan inquiry sent! Our team will contact you shortly.');
+                navigate('/contact');
             }
         }, 1200);
     };
@@ -167,7 +161,7 @@ export default function Upgrade() {
             {/* Ambient background glow */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-200px] left-[-200px] w-[600px] h-[600px] rounded-full bg-[#0B5CFF]/10 blur-[120px]" />
-                <div className="absolute bottom-[-200px] right-[-200px] w-[500px] h-[500px] rounded-full bg-[#7C3AED]/10 blur-[120px]" />
+                <div className="absolute bottom-[-200px] right-[-200px] w-[500px] h-[500px] rounded-full bg-[#0B5CFF]/10 blur-[120px]" />
             </div>
 
             <div className="relative z-10 max-w-6xl mx-auto px-4 py-8 md:py-12">
@@ -255,9 +249,7 @@ export default function Upgrade() {
                                     <ul className="space-y-3 mb-6 flex-1">
                                         {plan.features.map((f) => (
                                             <li key={f} className="flex items-start gap-2 text-sm text-gray-200">
-                                                <Check className={`w-4 h-4 mt-0.5 flex-shrink-0 ${plan.id === 'enterprise' ? 'text-[#7C3AED]' :
-                                                    plan.id === 'pro' ? 'text-[#0B5CFF]' : 'text-gray-500'
-                                                    }`} />
+                                                <Check className={`w-4 h-4 mt-0.5 flex-shrink-0 text-[#0B5CFF]`} />
                                                 {f}
                                             </li>
                                         ))}
@@ -273,11 +265,11 @@ export default function Upgrade() {
 
                                     <Button
                                         onClick={() => handleUpgrade(plan.id)}
-                                        disabled={isCurrentPlan || plan.ctaDisabled || loading === plan.id}
+                                        disabled={loading === plan.id || plan.ctaDisabled}
                                         className={`w-full h-11 font-semibold rounded-xl transition-all ${isCurrentPlan
-                                            ? 'bg-white/10 text-gray-400 cursor-default'
+                                            ? 'bg-[#0B5CFF] text-white cursor-default shadow-lg shadow-blue-500/25'
                                             : plan.id === 'enterprise'
-                                                ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white'
+                                                ? 'bg-[#0B5CFF] hover:bg-[#0948c7] text-white'
                                                 : 'bg-[#0B5CFF] hover:bg-[#0948c7] text-white shadow-lg shadow-blue-500/25'
                                             }`}
                                     >

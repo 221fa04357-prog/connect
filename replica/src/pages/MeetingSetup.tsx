@@ -324,6 +324,7 @@ export function JoinMeeting() {
                 ...meetingData,
                 startTime: new Date(startTimeStamp),
                 hostId: meetingData.host_id,
+                originalHostId: meetingData.host_id,
                 isRecording: false,
                 isScreenSharing: false,
                 viewMode: 'gallery'
@@ -887,6 +888,7 @@ export function CreateMeeting() {
                                             ...scheduledMeetingData,
                                             startTime: new Date(scheduledMeetingData.start_time),
                                             hostId: scheduledMeetingData.host_id,
+                                            originalHostId: scheduledMeetingData.host_id,
                                             isRecording: false,
                                             isScreenSharing: false,
                                             viewMode: 'gallery'

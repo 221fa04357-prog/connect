@@ -12,6 +12,7 @@ interface TranscriptionState {
     isTranscriptionEnabled: boolean;
     isSettingsOpen: boolean;
     speakingLanguage: string;
+    translationLanguage: string;
     currentCaption: string;
     currentSpeakerName: string;
     currentSpeakerRole: 'host' | 'participant';
@@ -24,6 +25,7 @@ interface TranscriptionState {
     setSummaryOpen: (open: boolean) => void;
     setTranscriptOpen: (open: boolean) => void;
     setSpeakingLanguage: (language: string) => void;
+    setTranslationLanguage: (language: string) => void;
     clearTranscripts: () => void;
     setCurrentCaption: (text: string, name: string, role: 'host' | 'participant') => void;
     clearCurrentCaption: () => void;
@@ -49,6 +51,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set) => ({
     })(),
     isSettingsOpen: false,
     speakingLanguage: 'English',
+    translationLanguage: 'Original',
     currentCaption: '',
     currentSpeakerName: '',
     currentSpeakerRole: 'participant',
@@ -76,6 +79,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set) => ({
     setSummaryOpen: (open) => set({ isSummaryOpen: open }),
     setTranscriptOpen: (open) => set({ isTranscriptOpen: open }),
     setSpeakingLanguage: (language) => set({ speakingLanguage: language }),
+    setTranslationLanguage: (language) => set({ translationLanguage: language }),
     clearTranscripts: () => set({ transcripts: [] }),
     setCurrentCaption: (text, name, role) => set({ currentCaption: text, currentSpeakerName: name, currentSpeakerRole: role }),
     clearCurrentCaption: () => set({ currentCaption: '', currentSpeakerName: '', currentSpeakerRole: 'participant' }),
