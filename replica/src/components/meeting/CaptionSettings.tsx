@@ -41,6 +41,8 @@ export function CaptionSettings() {
         setSettingsOpen,
         speakingLanguage,
         setSpeakingLanguage,
+        translationLanguage,
+        setTranslationLanguage,
         isTranscriptionEnabled,
         setTranscriptionEnabled,
         fontType, setFontType,
@@ -60,7 +62,7 @@ export function CaptionSettings() {
     const isLanguageLocked = meeting?.settings?.captionLanguageLocked === true;
     const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
 
-    const [view, setView] = useState<'main' | 'language'>('main');
+    const [view, setView] = useState<'main' | 'speaking' | 'translation'>('main');
 
     if (!isSettingsOpen) return null;
 
@@ -144,7 +146,7 @@ export function CaptionSettings() {
                                     <button
                                         onClick={() => {
                                             if (isLanguageLocked && !isJoinedAsHost) return;
-                                            setView('language');
+                                            setView('speaking');
                                         }}
                                         disabled={isLanguageLocked && !isJoinedAsHost}
                                         className={`w-full flex items-center justify-between p-4 bg-[#2D2D2D] rounded-2xl transition-all group border ${isLanguageLocked && !isJoinedAsHost ? 'opacity-50 cursor-not-allowed border-[#333]' : 'hover:bg-[#3D3D3D] border-transparent hover:border-blue-500/30'}`}
@@ -162,6 +164,22 @@ export function CaptionSettings() {
                                                 {speakingLanguage}
                                             </span>
                                             <ChevronRight className={`w-5 h-5 ${isLanguageLocked && !isJoinedAsHost ? 'text-gray-600' : 'text-gray-500'}`} />
+                                        </div>
+                                    </button>
+
+                                    {/* Translation Selector Trigger */}
+                                    <button
+                                        onClick={() => setView('translation')}
+                                        className="w-full flex items-center justify-between p-4 bg-[#2D2D2D] rounded-2xl transition-all group border border-transparent hover:border-blue-500/30 hover:bg-[#3D3D3D]"
+                                    >
+                                        <div className="flex flex-col items-start gap-1">
+                                            <span className="text-gray-200 font-medium">Translate captions to</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-blue-400 font-medium font-mono text-sm uppercase tracking-wider">
+                                                {translationLanguage}
+                                            </span>
+                                            <ChevronRight className="text-gray-500 w-5 h-5" />
                                         </div>
                                     </button>
 
@@ -226,8 +244,8 @@ export function CaptionSettings() {
                             </div>
                         )}
 
-                        {/* VIEW: LANGUAGE SELECTOR */}
-                        {view === 'language' && (
+                        {/* VIEW: SPEAKING LANGUAGE SELECTOR */}
+                        {view === 'speaking' && (
                             <div className="flex flex-col h-full overflow-hidden">
                                 <div className="flex items-center justify-between p-4 border-b border-[#333]">
                                     <button
@@ -277,6 +295,55 @@ export function CaptionSettings() {
                                                 {lang}
                                             </span>
                                             {lang === speakingLanguage && (
+                                                <Check className="w-5 h-5 text-blue-400" />
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VIEW: TRANSLATION LANGUAGE SELECTOR */}
+                        {view === 'translation' && (
+                            <div className="flex flex-col h-full overflow-hidden">
+                                <div className="flex items-center justify-between p-4 border-b border-[#333]">
+                                    <button
+                                        onClick={() => setView('main')}
+                                        className="p-2 hover:bg-[#2D2D2D] rounded-full"
+                                    >
+                                        <ChevronLeft className="w-6 h-6" />
+                                    </button>
+                                    <h2 className="text-xl font-bold">Translate to</h2>
+                                    <button
+                                        onClick={handleSave}
+                                        className="text-white bg-blue-600 font-bold px-4 py-1.5 rounded-lg hover:bg-blue-500 transition-all"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+
+                                <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                    <button
+                                        onClick={() => setTranslationLanguage('Original')}
+                                        className="w-full flex items-center justify-between p-4 hover:bg-[#2D2D2D] transition-colors border-b border-[#2D2D2D]/50"
+                                    >
+                                        <span className={translationLanguage === 'Original' ? 'text-blue-400 font-medium' : 'text-gray-200'}>
+                                            Original (No Translation)
+                                        </span>
+                                        {translationLanguage === 'Original' && (
+                                            <Check className="w-5 h-5 text-blue-400" />
+                                        )}
+                                    </button>
+                                    {LANGUAGES.map((lang) => (
+                                        <button
+                                            key={lang}
+                                            onClick={() => setTranslationLanguage(lang)}
+                                            className="w-full flex items-center justify-between p-4 hover:bg-[#2D2D2D] transition-colors border-b border-[#2D2D2D]/50 last:border-0"
+                                        >
+                                            <span className={lang === translationLanguage ? 'text-blue-400 font-medium' : 'text-gray-200'}>
+                                                {lang}
+                                            </span>
+                                            {lang === translationLanguage && (
                                                 <Check className="w-5 h-5 text-blue-400" />
                                             )}
                                         </button>

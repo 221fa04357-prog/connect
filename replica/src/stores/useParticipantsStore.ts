@@ -203,13 +203,15 @@ export const useParticipantsStore = create<ParticipantsState>()(
 
       makeHost: (id: string) => {
         set((state) => {
-          const currentHostCount = state.participants.filter(p => p.role === 'host').length;
-          if (currentHostCount >= 2) return {};
           const next = { ...state.transientRoles };
-          next[id] = ('host' as Participant['role']);
-          const participants = state.participants.map(p => p.id === id ? { ...p, role: ('host' as Participant['role']) } : p);
 
-          // Broadcast update
+          // Simply promote the target to host — DO NOT demote any existing host
+          next[id] = 'host' as Participant['role'];
+          const participants = state.participants.map(p =>
+            p.id === id ? { ...p, role: 'host' as Participant['role'] } : p
+          );
+
+          // Broadcast update for the newly promoted host only
           import('./useChatStore').then((chatStore) => {
             const cs = chatStore.useChatStore.getState();
             if (cs.meetingId) {
@@ -218,7 +220,10 @@ export const useParticipantsStore = create<ParticipantsState>()(
           });
 
           const res = { transientRoles: next, participants };
-          setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+          setTimeout(() => eventBus.publish('participants:update', {
+            participants: useParticipantsStore.getState().participants,
+            transientRoles: useParticipantsStore.getState().transientRoles
+          }, { source: INSTANCE_ID }));
           return res;
         });
       },

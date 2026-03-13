@@ -12,6 +12,8 @@ interface ChatState {
   localUserId: string | null;
   selectedRecipientId: string | null;
   frequentQuestionUsers: { participantId: string, name: string, count: number }[];
+  smartReplies: string[];
+  isFetchingSmartReplies: boolean;
 
   // Recording Permission methods
   requestRecordingPermission: (meetingId: string, userId: string, userName: string) => void;
@@ -55,9 +57,13 @@ interface ChatState {
   markAsRead: () => void;
   requestMedia: (meetingId: string, userId: string, type: 'audio' | 'video') => void;
   sendHostBroadcast: (meetingId: string, text: string) => void;
+  banParticipant: (meetingId: string, participantId: string) => void;
+  kickParticipant: (meetingId: string, participantId: string) => void;
+  forceMediaState: (meetingId: string, participantId: string, type: 'audio' | 'video', state: boolean) => void;
   setFrequentQuestionUsers: (users: any[]) => void;
   clearFrequentQuestionUsers: () => void;
   emitCaptionLanguage: (meetingId: string, language: string) => void;
+  fetchSmartReplies: (chatContext: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -73,6 +79,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   localUserId: null,
   selectedRecipientId: null,
   frequentQuestionUsers: [],
+  smartReplies: [],
+  isFetchingSmartReplies: false,
 
   initSocket: (meetingId, user, initialState) => {
     if (get().socket) return;
@@ -452,12 +460,124 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('participant_denied', (data: { message?: string }) => {
-      console.log('Denied by host');
-      import('sonner').then(({ toast }) => toast.error(data.message || 'Access denied by host'));
+    socket.on('resource_shared', (resource: any) => {
+      import('./useResourceStore').then((store) => {
+        store.useResourceStore.getState().addResource(resource);
+      });
+      import('sonner').then(({ toast }) => {
+        toast.info(`New resource shared: ${resource.title}`, {
+          description: `By ${resource.sender_name}`,
+          icon: '📎'
+        });
+      });
+    });
+
+    socket.on('breakout_rooms_created', (data: { rooms: any[] }) => {
+      import('./useBreakoutStore').then((store) => {
+        const bs = store.useBreakoutStore.getState();
+        bs.setRooms(data.rooms);
+        bs.setBreakoutActive(true);
+        
+        // Find if I'm assigned to a room
+        const myId = get().localUserId;
+        const myRoom = data.rooms.find(r => r.participants.includes(myId));
+        if (myRoom) {
+          import('sonner').then(({ toast }) => {
+            toast.info(`You have been assigned to Breakout Room: ${myRoom.name}`, {
+              action: {
+                label: 'Join Now',
+                onClick: () => bs.joinRoom(meetingId, myRoom.id)
+              },
+              duration: 15000
+            });
+          });
+        }
+      });
+    });
+
+    socket.on('breakout_rooms_closed', () => {
+      import('./useBreakoutStore').then((store) => {
+        const bs = store.useBreakoutStore.getState();
+        if (bs.currentRoomId) {
+          bs.leaveRoom(meetingId, bs.currentRoomId);
+        }
+        bs.setBreakoutActive(false);
+        bs.setRooms([]);
+        import('sonner').then(({ toast }) => toast.info('Breakout rooms have been closed. Returning to main meeting.'));
+      });
+    });
+
+    socket.on('poll_created', (poll: any) => {
+      import('./usePollStore').then((store) => {
+        store.usePollStore.getState().setPolls([...store.usePollStore.getState().polls, poll]);
+        import('sonner').then(({ toast }) => toast.info(`New Poll: ${poll.question}`, {
+          action: {
+            label: 'Vote',
+            onClick: () => store.usePollStore.getState().setPollPanelOpen(true)
+          }
+        }));
+      });
+    });
+
+    socket.on('poll_voted', (data: { poll_id: number, votes: any[] }) => {
+      import('./usePollStore').then((store) => {
+        store.usePollStore.getState().updatePollVotes(data.poll_id, data.votes);
+      });
+    });
+
+    socket.on('poll_closed', (data: { poll_id: number }) => {
+      import('./usePollStore').then((store) => {
+        const polls = store.usePollStore.getState().polls;
+        store.usePollStore.getState().setPolls(polls.map(p => p.id === data.poll_id ? { ...p, status: 'closed' } : p));
+      });
+    });
+
+    socket.on('polls_fetched', (polls: any[]) => {
+      import('./usePollStore').then((store) => {
+        store.usePollStore.getState().setPolls(polls);
+      });
+    });
+
+    socket.on('participant_denied', (data: { message?: string, reason?: string }) => {
+      console.log('Denied by host', data.reason);
+      const msg = data.reason === 'banned' ? 'You have been banned from this meeting.' : (data.message || 'Access denied by host');
+      import('sonner').then(({ toast }) => toast.error(msg));
       import('./useMeetingStore').then((store) => {
         store.useMeetingStore.getState().leaveMeeting();
         window.location.replace('/#/');
+      });
+    });
+
+    socket.on('participant_banned', (data: { meetingId: string }) => {
+      import('sonner').then(({ toast }) => toast.error('You have been banned from this meeting.'));
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().leaveMeeting();
+        window.location.replace('/#/');
+      });
+    });
+
+    socket.on('media_state_forced', (data: { type: 'audio' | 'video', state: boolean }) => {
+      import('./useMeetingStore').then((store) => {
+        const ms = store.useMeetingStore.getState();
+        if (data.type === 'audio') {
+          // If state is true (mute), we force mute
+          if (data.state) {
+            if (!ms.isAudioMuted) ms.setAudioMuted(true);
+            import('sonner').then(({ toast }) => toast.info('The host has muted your microphone.'));
+          } else {
+            // Unmute - controversial, usually we just request, but let's follow USER instruction for "force"
+            if (ms.isAudioMuted) ms.setAudioMuted(false);
+            import('sonner').then(({ toast }) => toast.success('The host has unmuted your microphone.'));
+          }
+        } else if (data.type === 'video') {
+          if (data.state) {
+            if (!ms.isVideoOff) ms.setVideoOff(true);
+            import('sonner').then(({ toast }) => toast.info('The host has turned off your camera.'));
+          } else {
+            if (ms.isVideoOff) ms.setVideoOff(false);
+            import('sonner').then(({ toast }) => toast.success('The host has turned on your camera.'));
+          }
+        }
       });
     });
 
@@ -812,6 +932,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('host_broadcast', { meetingId, text });
   },
 
+  banParticipant: (meetingId, participantId) => {
+    get().socket?.emit('ban_participant', { meetingId, participantId });
+  },
+
+  kickParticipant: (meetingId, participantId) => {
+    get().socket?.emit('kick_participant', { meetingId, participantId });
+  },
+
+  forceMediaState: (meetingId, participantId, type, state) => {
+    get().socket?.emit('force_media_state', { meetingId, participantId, type, state });
+  },
+
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
 
   emitCaptionLanguage: (meetingId, language) => {
@@ -829,6 +961,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   markAsRead: () => set({ unreadCount: 0 }),
 
   clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
+
+  fetchSmartReplies: async (chatContext) => {
+    if (get().isFetchingSmartReplies) return;
+    set({ isFetchingSmartReplies: true });
+    try {
+      const response = await fetch(`${API}/api/ai/smart-replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatContext }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        set({ smartReplies: data.replies || [] });
+      }
+    } catch (err) {
+      console.error('Error fetching smart replies:', err);
+    } finally {
+      set({ isFetchingSmartReplies: false });
+    }
+  },
 
   reset: () => {
     const { socket } = get();

@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui'; // Consolidated import
 import { useMediaStore } from '@/stores/useMediaStore';
+import { useBreakoutStore } from '@/stores/useBreakoutStore';
 import { toast } from 'sonner';
 
 // --- VideoTile.tsx ---
@@ -393,6 +394,7 @@ export function VideoGrid() {
     const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing, meeting } = useMeetingStore();
     const { remoteScreenStreams } = useMediaStore();
     const { user } = useAuthStore();
+    const { currentRoomId, rooms, isBreakoutActive } = useBreakoutStore();
 
     const handlePin = (participantId: string) => {
         if (pinnedParticipantId === participantId) {
@@ -420,6 +422,16 @@ export function VideoGrid() {
 
         return true;
     });
+
+    // 🚀 NEW: Filter by Breakout Room
+    if (isBreakoutActive && currentRoomId) {
+        const currentRoom = rooms.find(r => r.id === currentRoomId);
+        if (currentRoom) {
+            visibleParticipants = visibleParticipants.filter(p => 
+                currentRoom.participants.includes(p.id) || p.role === 'host'
+            );
+        }
+    }
 
     // Apply Host Video Order sorting if setting is enabled
     if (meeting?.settings?.followHostVideoOrder) {

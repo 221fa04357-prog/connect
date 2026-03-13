@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { VideoGrid } from '@/components/meeting/MeetingVideo';
 import MeetingControls from '@/components/meeting/MeetingControls';
-import { ChatPanel, ParticipantsPanel, AICompanionPanel, TranscriptPanel } from '@/components/meeting/MeetingLayout';
+import { ChatPanel, ParticipantsPanel, AICompanionPanel, TranscriptPanel, ResourceHubPanel } from '@/components/meeting/MeetingLayout';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,8 @@ import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay'
 import { CaptionSettings } from '@/components/meeting/CaptionSettings';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { MeetingStats } from '@/components/meeting/MeetingStats';
+import { BreakoutPanel } from '@/components/meeting/BreakoutPanel';
+import { PollPanel } from '@/components/meeting/PollPanel';
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -971,6 +973,9 @@ export default function MeetingRoom() {
       <ParticipantsPanel />
       <AICompanionPanel />
       <TranscriptPanel />
+      <ResourceHubPanel />
+      <BreakoutPanel />
+      <PollPanel />
       <VideoStartRequestPopup />
 
       {/* Real-time Transcription System */}

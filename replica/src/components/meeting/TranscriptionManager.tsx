@@ -108,16 +108,17 @@ export function TranscriptionManager() {
                 mediaRecorderRef.current = recorder;
 
                 recorder.ondataavailable = async (event) => {
-                    const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
                     if (isSpeakingInSegment && event.data.size > 0 && socket.connected) {
                         try {
+                            const { speakingLanguage, translationLanguage } = useTranscriptionStore.getState();
                             const buffer = await event.data.arrayBuffer();
                             socket.emit('audio_chunk', {
                                 meetingId: meeting?.id,
                                 participantId: user?.id || 'guest',
                                 participantName: user?.name || 'Guest',
                                 audioBlob: buffer,
-                                language: speakingLanguage
+                                language: speakingLanguage,
+                                targetLanguage: translationLanguage
                             });
                         } catch (err) {
                             console.error('[Transcription] Error sending audio chunk:', err);
