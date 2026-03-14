@@ -270,61 +270,9 @@ async function transcribeAudio(audioPath, language = "en") {
     }
 }
 
-/**
- * Generate 3 smart replies based on chat context
- * @param {string} chatContext - Recent messages in the chat
- */
-async function generateSmartReplies(chatContext) {
-    const prompt = `
-        Based on the following meeting chat context, generate 3 short, professional, and relevant smart reply suggestions.
-        The suggestions should be natural, varied (e.g., one affirmative, one questioning, one informative), and under 10 words each.
-        
-        Return ONLY a JSON array of 3 strings.
-        
-        Context:
-        ${chatContext}
-    `;
-
-    try {
-        const response = await getChatCompletion([{ role: "user", content: prompt }], "llama-3.3-70b-versatile");
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]).slice(0, 3);
-        }
-        return ["Got it!", "Could you clarify?", "Thanks for sharing."];
-    } catch (error) {
-        console.error("Error generating smart replies:", error);
-        return ["Got it!", "Understood.", "Looking into it."];
-    }
-/**
- * Translate text into a target language
- * @param {string} text - The text to translate
- * @param {string} targetLanguage - Language name or ISO code
- */
-async function translateText(text, targetLanguage) {
-    if (!text || !targetLanguage || targetLanguage.toLowerCase() === 'original') return text;
-
-    const prompt = `
-        Translate the following text exactly into ${targetLanguage}. 
-        Return ONLY the translated text without any explanations or extra characters.
-        
-        Text: "${text}"
-    `;
-
-    try {
-        const response = await getChatCompletion([{ role: "user", content: prompt }], "llama3-8b-8192");
-        return response.trim().replace(/^"|"$/g, '');
-    } catch (error) {
-        console.error("Error translating text:", error);
-        return text; // Return original on failure
-    }
-}
-
 module.exports = {
     getChatCompletion,
     summarizeMeeting,
     generateRecapContent,
-    transcribeAudio,
-    generateSmartReplies,
-    translateText
+    transcribeAudio
 };
