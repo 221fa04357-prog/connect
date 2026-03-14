@@ -250,7 +250,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
     } catch (err) {
         console.error('API Transcribe error:', err);
-        return res.status(500).json({ error: 'Transcription failed' });
+        return res.status(500).json({ error: 'Transcription failed: ' + (err.message || 'Unknown error') });
     }
 });
 

@@ -151,7 +151,7 @@ async function transcribeAudio(audioPath, language = "en") {
         }
 
         const transcription = await groq.audio.transcriptions.create({
-            file: await Groq.toFile(fs.readFileSync(audioPath), path.basename(audioPath), { type: 'audio/webm' }),
+            file: fs.createReadStream(audioPath),
             model: "whisper-large-v3",
             response_format: "verbose_json",
             language: langCode,
