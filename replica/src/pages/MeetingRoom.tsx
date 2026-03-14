@@ -65,6 +65,7 @@ export default function MeetingRoom() {
   const negotiationTimeoutRef = useRef<Record<string, any>>({});
   const lastScreenShareIdRef = useRef<string | null>(null);
   const receivedStreamsRef = useRef<Record<string, Set<MediaStream>>>({}); // socketId -> Set of streams
+  const signalingQueueRef = useRef<Record<string, Promise<void>>>({});
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
@@ -302,50 +303,62 @@ export default function MeetingRoom() {
           // Stable rule: Peer with the "smaller" ID is polite.
           const isPolite = socketId < from;
 
-          try {
-            let pc = peerConnections.current[from];
+          const processSignal = async () => {
+            try {
+              let pc = peerConnections.current[from];
 
-            if (!pc) {
-              pc = createPeerConnection(from, isPolite);
-            }
-
-            if (signal.type === 'offer') {
-              const offerCollision = makingOfferRef.current[from] || pc.signalingState !== "stable";
-              ignoreOfferRef.current[from] = !isPolite && offerCollision;
-
-              if (ignoreOfferRef.current[from]) {
-                console.log("Glare detected: Ignoring offer from", from);
-                return;
+              if (!pc) {
+                pc = createPeerConnection(from, isPolite);
               }
 
-              console.log(`Received OFFER from ${from} (Polite: ${isPolite})`);
-              await pc.setRemoteDescription(new RTCSessionDescription(signal));
-              await pc.setLocalDescription();
+              if (signal.type === 'offer') {
+                const offerCollision = makingOfferRef.current[from] || pc.signalingState !== "stable";
+                ignoreOfferRef.current[from] = !isPolite && offerCollision;
 
-              useChatStore.getState().socket?.emit('signal_send', {
-                to: from,
-                from: socketId,
-                signal: pc.localDescription
-              });
-            } else if (signal.type === 'answer') {
-              console.log(`Received ANSWER from ${from} `);
-              if (pc.signalingState === "have-local-offer") {
+                if (ignoreOfferRef.current[from]) {
+                  console.log("Glare detected: Ignoring offer from", from);
+                  return;
+                }
+
+                console.log(`Received OFFER from ${from} (Polite: ${isPolite})`);
                 await pc.setRemoteDescription(new RTCSessionDescription(signal));
-              } else {
-                console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState} `);
-              }
-            } else if (signal.candidate) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(signal));
-              } catch (err) {
-                if (!ignoreOfferRef.current[from]) {
-                  console.error("Error adding ICE candidate:", err);
+                await pc.setLocalDescription();
+
+                useChatStore.getState().socket?.emit('signal_send', {
+                  to: from,
+                  from: socketId,
+                  signal: pc.localDescription
+                });
+              } else if (signal.type === 'answer') {
+                console.log(`Received ANSWER from ${from} `);
+                if (pc.signalingState === "have-local-offer") {
+                  await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                } else {
+                  console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState} `);
+                }
+              } else if (signal.candidate) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(signal));
+                } catch (err) {
+                  if (!ignoreOfferRef.current[from]) {
+                    console.error("Error adding ICE candidate:", err);
+                  }
                 }
               }
+            } catch (err: any) {
+              if (err?.name === 'InvalidStateError') {
+                console.warn(`Signaling state warning for peer ${from}: ${err.message}`);
+              } else {
+                console.error("Signaling error for peer", from, ":", err);
+              }
             }
-          } catch (err) {
-            console.error("Signaling error for peer", from, ":", err);
+          };
+
+          // Use a queue to prevent concurrent state modifications for the same peer
+          if (!signalingQueueRef.current[from]) {
+            signalingQueueRef.current[from] = Promise.resolve();
           }
+          signalingQueueRef.current[from] = signalingQueueRef.current[from].then(processSignal);
         });
       }
     }
