@@ -150,56 +150,63 @@ export function TranscriptionManager() {
             (recorder as any)._debugNodes = { audioCtx, source, analyser };
 
             recorder.ondataavailable = async (event) => {
-                const hasData = event.data.size > 0;
-                const forceSend = (window as any)._forceTranscription === true;
-                const muteState = useMeetingStore.getState().isAudioMuted;
-                
-                console.log(`[Transcription] chunk ready: ${event.data.size}b, spoke: ${isSpeakingInSegment} (force=${forceSend}, mute=${muteState})`);
-                
-                if (hasData) {
-                    // CRITICAL: Requirement #8 - Only send to Whisper if NOT muted and we detected speech
-                    if (!muteState && (isSpeakingInSegment || forceSend)) {
-                        const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
-                        const isHost = useMeetingStore.getState().isJoinedAsHost;
-                        const role = isHost ? 'host' : 'participant';
-                        const meetingId = meeting?.id || '';
-                        
-                        console.log(`[Transcription] POSTing chunk (lang=${speakingLanguage}, role=${role})...`);
-                        const formData = new FormData();
-                        formData.append('audio', event.data, 'segment.webm');
-                        formData.append('meetingId', meetingId);
-                        formData.append('participantId', user?.id || 'guest');
-                        formData.append('participantName', user?.name || 'Guest');
-                        formData.append('language', speakingLanguage);
-                        formData.append('role', role);
+    const hasData = event.data.size > 0;
+    const forceSend = (window as any)._forceTranscription === true;
+    const muteState = useMeetingStore.getState().isAudioMuted;
 
-                        try {
-                            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
-                                method: 'POST',
-                                body: formData
-                            });
+    console.log(`[Transcription] chunk ready: ${event.data.size}b, spoke: ${isSpeakingInSegment} (force=${forceSend}, mute=${muteState})`);
 
-                            if (response.ok) {
-                                if (response.status === 204) return;
-                                const data = await response.json();
-                                if (data.text) console.log(`[Transcription] Result: "${data.text}"`);
-                            } else {
-                                const errText = await response.text();
-                                console.error(`[Transcription] API error ${response.status}:`, errText);
-                            }
-                        } catch (err) {
-                            console.error('[Transcription] Request failed:', err);
-                        }
-                    } else if (muteState) {
-                        console.log('[Transcription] Suppressing chunk: Microphone is muted.');
-                    } else {
-                        console.log('[Transcription] Suppressing chunk: No speech detected.');
+    if (hasData) {
+        // Only send if NOT muted and speech detected
+        if (!muteState && (isSpeakingInSegment || forceSend)) {
+
+            const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
+            const isHost = useMeetingStore.getState().isJoinedAsHost;
+            const role = isHost ? 'host' : 'participant';
+            const meetingId = meeting?.id || '';
+
+            console.log(`[Transcription] POSTing chunk (lang=${speakingLanguage}, role=${role})...`);
+
+            const formData = new FormData();
+            formData.append('audio', event.data, 'segment.webm');
+            formData.append('meetingId', meetingId);
+            formData.append('participantId', user?.id || 'guest');
+            formData.append('participantName', user?.name || 'Guest');
+            formData.append('language', speakingLanguage);
+            formData.append('role', role);
+
+            try {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    if (response.status === 204) return;
+
+                    const data = await response.json();
+                    if (data.text) {
+                        console.log(`[Transcription] Result: "${data.text}"`);
                     }
-                    
-                    // Always reset speaking flag for next segment
-                    isSpeakingInSegment = false;
+                } else {
+                    const errText = await response.text();
+                    console.error(`[Transcription] API error ${response.status}:`, errText);
                 }
-            };
+
+            } catch (err) {
+                console.error('[Transcription] Request failed:', err);
+            }
+
+        } else if (muteState) {
+            console.log('[Transcription] Suppressing chunk: Microphone is muted.');
+        } else {
+            console.log('[Transcription] Suppressing chunk: No speech detected.');
+        }
+
+        // Reset speaking flag
+        isSpeakingInSegment = false;
+    }
+};
 
             recorder.onstop = () => {
                 // Restart immediately if still enabled - ignore mute so we keep signal monitoring alive

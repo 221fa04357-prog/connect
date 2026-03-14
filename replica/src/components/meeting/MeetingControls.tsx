@@ -9,7 +9,7 @@ import {
     MicOff, VideoOff, MessageSquare, Users, MoreVertical,
     Grid3x3, User, Settings, ChevronUp, Share2, Circle, Smile,
     Hand, Sparkles, Clock, Maximize2, Minimize2, StopCircle, MousePointer2,
-    Undo, Redo, Download, BarChart3, AlertCircle, Languages, FileText, Activity
+    Undo, Redo, Download, BarChart3, AlertCircle, Languages, FileText, Activity, Plus, ListTodo
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
@@ -57,6 +57,8 @@ import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
 import SummaryModal from './SummaryModal';
+import { useResourceStore } from '@/stores/useResourceStore';
+import { usePollStore } from '@/stores/usePollStore';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -73,7 +75,11 @@ function TopBar() {
         isChatOpen,
         toggleParticipants,
         toggleChat,
-        setShowUpgradeModal
+        setShowUpgradeModal,
+        isAICompanionOpen,
+        toggleAICompanion,
+        isStatsOpen,
+        toggleStats
     } = useMeetingStore();
     const isMobile = useIsMobile();
     const { participants } = useParticipantsStore();
@@ -81,11 +87,17 @@ function TopBar() {
     // Removed controlled state usage to fix closing issue
 
     const { isTranscriptOpen, setTranscriptOpen } = useTranscriptionStore();
-    const isPanelOpen = isParticipantsOpen || isChatOpen || isTranscriptOpen;
+    const { isHubOpen, setHubOpen } = useResourceStore();
+    const { isPollPanelOpen, setPollPanelOpen } = usePollStore();
+    const isPanelOpen = isParticipantsOpen || isChatOpen || isTranscriptOpen || isHubOpen || isPollPanelOpen || isAICompanionOpen || isStatsOpen;
     const handleClosePanel = () => {
         if (isParticipantsOpen) toggleParticipants();
         if (isChatOpen) toggleChat();
         if (isTranscriptOpen) setTranscriptOpen(false);
+        if (isHubOpen) setHubOpen(false);
+        if (isPollPanelOpen) setPollPanelOpen(false);
+        if (isAICompanionOpen) toggleAICompanion();
+        if (isStatsOpen) toggleStats();
     };
 
     const getConnectionColor = () => {
@@ -434,7 +446,7 @@ function TopBar() {
             </div>
 
             <div
-                className="absolute top-4 right-4 pointer-events-auto flex items-center gap-5"
+                className="absolute top-3 right-4 pointer-events-auto flex items-center gap-6"
             >
                 {/* Connection Status */}
                 {(connectionQuality === 'poor' || connectionQuality === 'offline') && (
@@ -470,16 +482,16 @@ function TopBar() {
                 )}
 
                 {/* Timer and Panel Controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
 
 
                     {/* Timer */}
                     {!isWhiteboardOpen && timeLeft && (
                         <div className={cn(
-                            "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg -translate-y-2.5",
+                            "backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg",
                             (timeLeft === "00:00" || (timeLeft.length < 5 && timeLeft.startsWith("0:") && parseInt(timeLeft.split(":")[1]) < 30))
                                 ? "bg-red-500/80 text-white animate-pulse"
-                                : "bg-black/40 text-gray-200"
+                                : "bg-black/60 text-white"
                         )}>
                             <Clock className="w-3 h-3" />
                             <span className="text-xs font-mono font-medium">{timeLeft}</span>
@@ -492,7 +504,7 @@ function TopBar() {
                             size="icon"
                             variant="ghost"
                             onClick={handleClosePanel}
-                            className="w-8 h-8 rounded-full bg-black/40 hover:bg-white/20 text-white border border-white/10 shadow-lg -translate-y-2.5"
+                            className="w-8 h-8 rounded-full bg-black/60 hover:bg-white/20 text-white border border-white/10 shadow-lg"
                         >
                             <X className="w-4 h-4" />
                         </Button>
@@ -695,7 +707,7 @@ function SettingsModal() {
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="relative w-full max-w-2xl max-h-[90vh] bg-[#232323] border border-[#404040] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                    className="relative w-full max-w-2xl max-h-[90vh] h-[80vh] sm:h-auto bg-[#232323] border border-[#404040] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
                 >
                     <div className="p-4 border-b border-[#404040] flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
@@ -712,7 +724,7 @@ function SettingsModal() {
                         </Button>
                     </div>
 
-                    <Tabs defaultValue="audio" className="flex flex-1 min-h-0 overflow-hidden">
+                    <Tabs defaultValue="audio" className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-hidden">
                         <div className="w-48 border-r border-[#404040] p-2 bg-[#1C1C1C] overflow-y-auto hidden sm:block">
                             <TabsList className="flex flex-col h-auto bg-transparent w-full gap-1">
                                 <TabsTrigger
@@ -747,16 +759,16 @@ function SettingsModal() {
                         </div>
 
                         <div className="sm:hidden border-b border-[#404040] bg-[#1C1C1C] shrink-0 overflow-x-auto no-scrollbar">
-                            <TabsList className="flex h-auto bg-transparent p-1 gap-1">
-                                <TabsTrigger value="audio" className="flex-1 whitespace-nowrap">Audio</TabsTrigger>
-                                <TabsTrigger value="video" className="flex-1 whitespace-nowrap">Video</TabsTrigger>
-                                <TabsTrigger value="general" className="flex-1 whitespace-nowrap">General</TabsTrigger>
-                                <TabsTrigger value="shortcuts" className="flex-1 whitespace-nowrap">Shortcuts</TabsTrigger>
+                            <TabsList className="flex h-11 bg-transparent p-1 gap-1 w-full">
+                                <TabsTrigger value="audio" className="flex-1 whitespace-nowrap data-[state=active]:bg-[#0B5CFF] data-[state=active]:text-white rounded-md text-xs">Audio</TabsTrigger>
+                                <TabsTrigger value="video" className="flex-1 whitespace-nowrap data-[state=active]:bg-[#0B5CFF] data-[state=active]:text-white rounded-md text-xs">Video</TabsTrigger>
+                                <TabsTrigger value="general" className="flex-1 whitespace-nowrap data-[state=active]:bg-[#0B5CFF] data-[state=active]:text-white rounded-md text-xs">General</TabsTrigger>
+                                <TabsTrigger value="shortcuts" className="flex-1 whitespace-nowrap data-[state=active]:bg-[#0B5CFF] data-[state=active]:text-white rounded-md text-xs">Shortcuts</TabsTrigger>
                             </TabsList>
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            <TabsContent value="audio" className="p-6 m-0 space-y-6">
+                            <TabsContent value="audio" className="p-4 sm:p-6 m-0 space-y-6">
                                 <div className="space-y-2">
                                     <Label>Microphone</Label>
                                     <Select
@@ -809,7 +821,7 @@ function SettingsModal() {
                                 </div>
                             </TabsContent>
 
-                            <TabsContent value="video" className="p-6 m-0 space-y-6">
+                            <TabsContent value="video" className="p-4 sm:p-6 m-0 space-y-6">
                                 <div className="space-y-2">
                                     <Label>Camera</Label>
                                     <Select
@@ -867,7 +879,7 @@ function SettingsModal() {
                                 </div>
                             </TabsContent>
 
-                            <TabsContent value="general" className="p-6 m-0 space-y-6">
+                            <TabsContent value="general" className="p-4 sm:p-6 m-0 space-y-6">
                                 <div className="space-y-4">
                                     <h3 className="font-semibold text-lg text-white">Meeting Preferences</h3>
                                     <div className="space-y-4">
@@ -1091,7 +1103,7 @@ function SettingsModal() {
                                 </div>
                             </TabsContent>
 
-                            <TabsContent value="shortcuts" className="p-6 m-0 space-y-4">
+                            <TabsContent value="shortcuts" className="p-4 sm:p-6 m-0 space-y-4">
                                 <h3 className="font-semibold text-lg text-white mb-2">Shortcuts</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {[
@@ -2724,6 +2736,14 @@ function ControlBar() {
                                 <DropdownMenuItem onClick={toggleAICompanion} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <MessageSquare className="w-4 h-4 mr-2" />
                                     AI Companion
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => useResourceStore.getState().setHubOpen(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Resource Hub
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => usePollStore.getState().setPollPanelOpen(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
+                                    <ListTodo className="w-4 h-4 mr-2" />
+                                    Polls & Quizzes
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={handleToggleHand} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <Hand className={cn("w-4 h-4 mr-2", isHandRaised ? 'text-yellow-400' : '')} />

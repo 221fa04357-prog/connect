@@ -30,7 +30,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,7 @@ import { useAIStore } from '@/stores/useAIStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { ChatMessage, Participant } from '@/types';
+import { useResourceStore } from '@/stores/useResourceStore';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -67,7 +68,10 @@ export function ChatPanel() {
         activeTab,
         setActiveTab,
         selectedRecipientId,
-        setSelectedRecipientId
+        setSelectedRecipientId,
+        smartReplies,
+        fetchSmartReplies,
+        isFetchingSmartReplies
     } = useChatStore();
     const { meeting, isJoinedAsHost } = useMeetingStore();
 
@@ -79,6 +83,8 @@ export function ChatPanel() {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef<any>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +124,82 @@ export function ChatPanel() {
             markAsRead();
         }
     }, [isChatOpen, markAsRead]);
+
+    // Fetch smart replies when messages change
+    useEffect(() => {
+        if (!isChatOpen || messages.length === 0) return;
+
+        const lastMessages = messages
+            .filter(m => m.type === 'public')
+            .slice(-5)
+            .map(m => `${m.senderName}: ${m.content}`)
+            .join('\n');
+
+        if (lastMessages) {
+            const timeoutId = setTimeout(() => {
+                fetchSmartReplies(lastMessages);
+            }, 1000);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [messages.length, isChatOpen]);
+
+    /* ---------------- VOICE DICTATION LOGIC ---------------- */
+
+    useEffect(() => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+
+            recognitionRef.current.onresult = (event: any) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if (finalTranscript) {
+                    setInput(prev => prev + ' ' + finalTranscript);
+                }
+            };
+
+            recognitionRef.current.onerror = (event: any) => {
+                console.error('Speech recognition error:', event.error);
+                setIsListening(false);
+                toast.error(`Voice input error: ${event.error}`);
+            };
+
+            recognitionRef.current.onend = () => {
+                setIsListening(false);
+            };
+        }
+    }, []);
+
+    const toggleListening = () => {
+        if (!recognitionRef.current) {
+            toast.error("Speech recognition is not supported in this browser.");
+            return;
+        }
+
+        if (isListening) {
+            recognitionRef.current.stop();
+            setIsListening(false);
+        } else {
+            try {
+                recognitionRef.current.start();
+                setIsListening(true);
+                toast.success("Listening...");
+            } catch (err) {
+                console.error("Failed to start recognition:", err);
+            }
+        }
+    };
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -335,8 +417,23 @@ export function ChatPanel() {
                         </TabsContent>
                     </Tabs>
 
+                    {/* SMART REPLIES */}
+                    {!isFetchingSmartReplies && smartReplies.length > 0 && chatAllowed && (
+                        <div className="px-4 pb-2 flex flex-wrap gap-2">
+                            {smartReplies.map((reply, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => setInput(reply)}
+                                    className="bg-[#2A2A2A] hover:bg-[#333] border border-[#444] text-xs text-blue-300 px-3 py-1.5 rounded-full transition-all active:scale-95"
+                                >
+                                    {reply}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {/* INPUT BAR */}
-                    <div className="shrink-0 bg-[#1C1C1C] p-4">
+                    <div className="shrink-0 bg-[#1C1C1C] p-4 pt-2">
                         {/* Reply Indicator */}
                         {replyingTo && (
                             <div className="flex items-center justify-between bg-[#232323] border-l-2 border-blue-500 p-2 mb-2 rounded-r-md">
@@ -371,6 +468,19 @@ export function ChatPanel() {
                         )}
 
                         <div className="flex items-center gap-2 bg-[#232323] border border-[#404040] rounded-xl px-3 py-2">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={toggleListening}
+                                disabled={!chatAllowed}
+                                className={cn(
+                                    "transition-all",
+                                    isListening ? "text-red-500 animate-pulse" : "text-gray-400 hover:text-white"
+                                )}
+                            >
+                                <Mic className="w-5 h-5" />
+                            </Button>
+
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -664,7 +774,12 @@ export function ParticipantsPanel() {
     const isCoHost = currentRole === 'co-host';
     const canControl = isHost || isCoHost;
     const canChangeRoles = isHost;
-    const isOriginalHost = meeting?.originalHostId === user?.id;
+    // isOriginalHost: true if this user created the meeting.
+    // Fallback: if originalHostId isn't set (old session), use isJoinedAsHost + hostId match.
+    const isOriginalHost =
+        (meeting?.originalHostId != null && meeting.originalHostId === user?.id) ||
+        (isJoinedAsHost && meeting?.hostId === user?.id && !meeting?.originalHostId);
+
     const { setLocalStream, toggleAudio, toggleVideo } = useMeetingStore();
 
     const handleHandRaise = () => {
@@ -965,7 +1080,7 @@ export function ParticipantsPanel() {
                                                     </Button>
                                                     <button
                                                         onClick={() => useChatStore.getState().denyParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
-                                                        className="text-white hover:text-gray-300 text-sm font-medium transition-colors"
+                                                        className="text-red-500 hover:text-red-400 text-sm font-bold transition-colors"
                                                     >
                                                         Deny
                                                     </button>
@@ -995,8 +1110,11 @@ export function ParticipantsPanel() {
                                     isCurrentUser={isCurrentUser}
                                     canControl={canControl}
                                     canChangeRoles={canChangeRoles}
-                                    isOriginalHost={isOriginalHost}
-                                    onToggleHand={handleHandRaise}
+                                    isViewerOriginalHost={isOriginalHost}
+                                    isViewerHost={isHost}
+                                    isViewerCoHost={isCoHost}
+                                    isTargetOriginalHost={meeting?.originalHostId === participant.id}
+                                    onToggleHand={() => toggleHandRaise(participant.id)}
                                     onToggleMute={isCurrentUser ? handleAudioToggle : () => {
                                         if (!participant.isAudioMuted) {
                                             muteParticipant(participant.id);
@@ -1005,6 +1123,10 @@ export function ParticipantsPanel() {
                                     onMakeHost={() => makeHost(participant.id)}
                                     onMakeCoHost={() => makeCoHost(participant.id)}
                                     onRemove={() => removeParticipant(participant.id)}
+                                    onBan={() => {
+                                        const mId = meeting?.id;
+                                        if (mId) useChatStore.getState().banParticipant(mId, participant.id);
+                                    }}
                                     onRevokeHost={() => revokeHost(participant.id)}
                                     onRevokeCoHost={() => revokeCoHost(participant.id)}
                                     onToggleVideoAllowed={() => {
@@ -1063,12 +1185,16 @@ interface ParticipantItemProps {
     isCurrentUser: boolean;
     canControl: boolean;
     canChangeRoles?: boolean;
-    isOriginalHost?: boolean;
+    isViewerOriginalHost?: boolean;
+    isViewerHost?: boolean;
+    isViewerCoHost?: boolean;
+    isTargetOriginalHost?: boolean;
     onToggleHand: () => void;
     onToggleMute: () => void;
     onMakeHost: () => void;
     onMakeCoHost: () => void;
     onRemove: () => void;
+    onBan: () => void;
     onRevokeHost: () => void;
     onRevokeCoHost: () => void;
     onToggleVideoAllowed: () => void;
@@ -1090,13 +1216,17 @@ function ParticipantItem({
     onMakeHost,
     onMakeCoHost,
     onRemove,
+    onBan,
     onRevokeHost,
     onRevokeCoHost,
     onToggleVideoAllowed,
     onRequestMedia,
     onToggleVideo,
     onRename,
-    isOriginalHost = false,
+    isViewerOriginalHost = false,
+    isViewerHost = false,
+    isViewerCoHost = false,
+    isTargetOriginalHost = false,
     displayedRole = participant.role,
     coHostCount,
     hostCount,
@@ -1129,8 +1259,14 @@ function ParticipantItem({
                             </div>
                         )}
                         {effectiveRole === 'co-host' && (
-                            <Shield className="w-4 h-4 text-purple-500" />
+                            <div className="flex items-center gap-1.5">
+                                <span className="bg-purple-600 text-white text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide">
+                                    Co-Host
+                                </span>
+                                <Shield className="w-4 h-4 text-purple-500" />
+                            </div>
                         )}
+
                     </div>
 
                     <div className="flex items-center gap-2 mt-1">
@@ -1198,7 +1334,11 @@ function ParticipantItem({
                     </Button>
                 )}
 
-                {((canControl && !isCurrentUser) || (isCurrentUser && !!onRename)) && (
+                {!isCurrentUser && !isTargetOriginalHost && (
+                    (isViewerOriginalHost && isViewerHost && !isViewerCoHost) ||
+                    (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') ||
+                    (isViewerCoHost && effectiveRole === 'participant')
+                ) && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button size="sm" variant="ghost" className="hover:bg-[#2D2D2D]">
@@ -1209,51 +1349,56 @@ function ParticipantItem({
                             align="end"
                             className="bg-[#232323] border-[#404040]"
                         >
-                            {isCurrentUser && onRename && (
+                            {(isCurrentUser || isViewerHost || isViewerCoHost) && onRename && (
                                 <DropdownMenuItem onClick={onRename}>
                                     <Edit2 className="w-4 h-4 mr-2" />
                                     Rename
                                 </DropdownMenuItem>
                             )}
 
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isAudioMuted && !isCurrentUser && (
+                            {participant.isHandRaised && (canControl || isCurrentUser) && (
+                                <DropdownMenuItem onClick={onToggleHand}>
+                                    <Hand className="w-4 h-4 mr-2 text-yellow-500" />
+                                    Lower Hand
+                                </DropdownMenuItem>
+                            )}
+
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isAudioMuted && !isCurrentUser && (
                                 <DropdownMenuItem onClick={onToggleMute}>
                                     <MicOff className="w-4 h-4 mr-2" />
                                     Mute
                                 </DropdownMenuItem>
                             )}
 
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isAudioMuted && !isCurrentUser && (
+                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isAudioMuted && !isCurrentUser && (
                                 <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'audio')}>
                                     <Mic className="w-4 h-4 mr-2" />
                                     Ask to Unmute
                                 </DropdownMenuItem>
                             )}
 
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && !participant.isVideoOff && !isCurrentUser && (
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isVideoOff && !isCurrentUser && (
                                 <DropdownMenuItem onClick={onToggleVideoAllowed}>
                                     <VideoOff className="w-4 h-4 mr-2 text-red-500" />
                                     Turn Off Camera
                                 </DropdownMenuItem>
                             )}
 
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && canChangeRoles)) && participant.isVideoOff && !isCurrentUser && (
+                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isVideoOff && !isCurrentUser && (
                                 <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'video')}>
                                     <Video className="w-4 h-4 mr-2" />
                                     Ask to Start Video
                                 </DropdownMenuItem>
                             )}
 
-                            {canChangeRoles && (
+                            {isViewerHost && !isViewerCoHost && (
                                 <>
                                     {effectiveRole !== 'host' && (
                                         <DropdownMenuItem
                                             onClick={() => {
-                                                if (hostCount >= 2) {
-                                                    alert('Cannot add host: Maximum 1 additional host allowed.');
-                                                    return;
+                                                if (confirm('Promote this participant as a Host?')) {
+                                                    onMakeHost();
                                                 }
-                                                onMakeHost();
                                             }}
                                         >
                                             <Crown className="w-4 h-4 mr-2" />
@@ -1261,13 +1406,22 @@ function ParticipantItem({
                                         </DropdownMenuItem>
                                     )}
 
-
+                                    {/* Remove Host - only Main Host can demote promoted hosts */}
+                                    {isViewerOriginalHost && isViewerHost && !isViewerCoHost && effectiveRole === 'host' && !isTargetOriginalHost && (
+                                        <DropdownMenuItem
+                                            onClick={onRevokeHost}
+                                            className="text-yellow-400"
+                                        >
+                                            <Crown className="w-4 h-4 mr-2" />
+                                            Remove Host
+                                        </DropdownMenuItem>
+                                    )}
 
                                     {effectiveRole !== 'co-host' && effectiveRole !== 'host' && (
                                         <DropdownMenuItem
                                             onClick={() => {
-                                                if (coHostCount >= 2) {
-                                                    alert('Cannot add co-host: Maximum 2 co-hosts allowed.');
+                                                if (coHostCount >= 4) {
+                                                    alert('Maximum co-hosts reached.');
                                                     return;
                                                 }
                                                 onMakeCoHost();
@@ -1290,15 +1444,18 @@ function ParticipantItem({
                                 </>
                             )}
 
-                            {canChangeRoles && !isCurrentUser && effectiveRole !== 'host' && !isOriginalHost && participant.role !== 'host' && (
-                                <DropdownMenuItem
-                                    onClick={onRemove}
-                                    className="text-red-500"
-                                >
-                                    <X className="w-4 h-4 mr-2" />
-                                    Remove
-                                </DropdownMenuItem>
+                            {((isViewerOriginalHost && isViewerHost && !isViewerCoHost) || (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') || (isViewerCoHost && effectiveRole === 'participant')) && !isCurrentUser && !isTargetOriginalHost && (
+                                <>
+                                    <DropdownMenuItem
+                                        onClick={onRemove}
+                                        className="text-red-500"
+                                    >
+                                        <X className="w-4 h-4 mr-2" />
+                                        Remove
+                                    </DropdownMenuItem>
+                                </>
                             )}
+
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -1723,9 +1880,6 @@ export function AICompanionPanel() {
                             <Sparkles className="w-5 h-5 text-blue-400 fill-blue-400/20" />
                             <h3 className="text-lg font-semibold text-white">AI Companion</h3>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={toggleAICompanion} className="hover:bg-[#333] text-gray-400 hover:text-white">
-                            <X className="w-5 h-5" />
-                        </Button>
                     </div>
 
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
@@ -2151,6 +2305,186 @@ export function TranscriptPanel() {
                             </div>
                         )}
                         <div ref={transcriptEndRef} />
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * RESOURCE HUB PANEL
+ * ------------------------------------------------------------------------------------------------- */
+
+export function ResourceHubPanel() {
+    const { isHubOpen, setHubOpen, resources, shareResource, fetchResources } = useResourceStore();
+    const { meeting } = useMeetingStore();
+    const currentUser = useAuthStore.getState().user;
+
+    const [activeTab, setActiveTab] = useState<'all' | 'files' | 'links'>('all');
+    const [isSharing, setIsSharing] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [newContent, setNewContent] = useState('');
+    const [shareType, setShareType] = useState<'link' | 'file'>('link');
+
+    useEffect(() => {
+        if (isHubOpen && meeting?.id) {
+            fetchResources(meeting.id);
+        }
+    }, [isHubOpen, meeting?.id, fetchResources]);
+
+    const handleShare = () => {
+        if (!newTitle.trim() || !newContent.trim()) {
+            toast.error("Please fill in all fields");
+            return;
+        }
+
+        if (meeting?.id && currentUser) {
+            shareResource(
+                meeting.id,
+                currentUser.id,
+                currentUser.name,
+                shareType,
+                newTitle.trim(),
+                newContent.trim()
+            );
+            setNewTitle('');
+            setNewContent('');
+            setIsSharing(false);
+            toast.success("Resource shared!");
+        }
+    };
+
+    const filteredResources = resources.filter(r => {
+        if (activeTab === 'all') return true;
+        if (activeTab === 'files') return r.type === 'file';
+        if (activeTab === 'links') return r.type === 'link';
+        return true;
+    });
+
+    return (
+        <AnimatePresence>
+            {isHubOpen && (
+                <motion.div
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="
+            fixed right-0 top-0 bottom-20
+            w-full md:w-80 lg:w-96
+            bg-[#1C1C1C]
+            border-l border-[#404040]
+            z-50 flex flex-col shadow-2xl
+          "
+                >
+                    <div className="shrink-0 flex items-center justify-between p-4 border-b border-[#404040]">
+                        <div className="flex items-center gap-2">
+                            <Plus className="w-5 h-5 text-blue-400" />
+                            <h3 className="text-lg font-semibold">Resource Hub</h3>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-[#232323] border-b border-[#404040] space-y-4">
+                        {!isSharing ? (
+                            <Button 
+                                onClick={() => setIsSharing(true)}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                            >
+                                <Plus className="w-4 h-4" /> Share Resource
+                            </Button>
+                        ) : (
+                            <div className="space-y-3 bg-[#1A1A1A] p-3 rounded-lg border border-[#333]">
+                                <div className="flex gap-2">
+                                    <Button 
+                                        size="sm" 
+                                        variant={shareType === 'link' ? 'default' : 'outline'}
+                                        onClick={() => setShareType('link')}
+                                        className="flex-1 text-xs"
+                                    >
+                                        Link
+                                    </Button>
+                                    <Button 
+                                        size="sm" 
+                                        variant={shareType === 'file' ? 'default' : 'outline'}
+                                        onClick={() => setShareType('file')}
+                                        className="flex-1 text-xs"
+                                    >
+                                        File
+                                    </Button>
+                                </div>
+                                <Input 
+                                    placeholder="Title" 
+                                    value={newTitle}
+                                    onChange={(e) => setNewTitle(e.target.value)}
+                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                />
+                                <Input 
+                                    placeholder={shareType === 'link' ? "URL" : "File Description"} 
+                                    value={newContent}
+                                    onChange={(e) => setNewContent(e.target.value)}
+                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                />
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="ghost" className="flex-1 text-xs text-white" onClick={() => setIsSharing(false)}>Cancel</Button>
+                                    <Button size="sm" className="flex-1 text-xs bg-blue-600" onClick={handleShare}>Share</Button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex gap-2">
+                            {['all', 'files', 'links'].map((tab) => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab as any)}
+                                    className={cn(
+                                        "px-3 py-1 rounded-full text-xs capitalize transition-colors",
+                                        activeTab === tab ? "bg-blue-600 text-white" : "bg-[#2A2A2A] text-gray-400 hover:text-white"
+                                    )}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        {filteredResources.length > 0 ? (
+                            filteredResources.map((res) => (
+                                <div key={res.id} className="bg-[#232323] border border-[#333] p-3 rounded-xl hover:border-blue-500/30 transition-all group">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            {res.type === 'link' ? <Bot className="w-4 h-4 text-blue-400" /> : <Paperclip className="w-4 h-4 text-purple-400" />}
+                                            <span className="text-sm font-medium text-white group-hover:text-blue-400 transition-colors truncate max-w-[180px]">{res.title}</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-500">{new Date(res.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                    <div className="mt-2 text-xs text-gray-400 truncate opacity-80">{res.content}</div>
+                                    <div className="mt-3 flex items-center justify-between">
+                                        <span className="text-[10px] text-gray-500">Shared by {res.sender_name}</span>
+                                        <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            className="h-7 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2"
+                                            onClick={() => {
+                                                if (res.content.startsWith('http')) {
+                                                    window.open(res.content, '_blank');
+                                                } else {
+                                                    toast.info("Viewing details...");
+                                                }
+                                            }}
+                                        >
+                                            View
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center opacity-30 text-center px-8">
+                                <Plus className="w-12 h-12 mb-4" />
+                                <p className="text-sm">No resources shared yet.</p>
+                            </div>
+                        )}
                     </div>
                 </motion.div>
             )}

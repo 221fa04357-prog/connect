@@ -164,12 +164,6 @@ export function MeetingStats({ isOpen, onClose, peerConnections }: MeetingStatsP
                             <Activity className="w-4 h-4 text-blue-400" />
                             <h3 className="text-lg font-semibold">Meeting Statistics</h3>
                         </div>
-                        <button
-                            onClick={onClose}
-                            className="p-1.5 rounded-lg hover:bg-[#2D2D2D] text-gray-400 hover:text-white transition-colors"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
                     </div>
 
                     {/* Content */}

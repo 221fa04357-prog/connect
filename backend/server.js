@@ -166,6 +166,9 @@ app.use(cookieParser());
 
 // Transcription store (moved up for visibility)
 const meetingTranscripts = new Map();
+// meeting_id -> [{ id: string, name: string, participants: string[] }]
+const breakoutRooms = new Map();
+const bannedUsers = new Map(); // meetingId -> Set of banned userIds
 
 // ================= TRANSCRIPTION CONFIG =================
 const multer = require('multer');
@@ -184,8 +187,9 @@ const upload = multer({ storage: transcriptionStorage });
 // Add a POST endpoint for transcription (better for Vercel than WebSockets)
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+
     const { meetingId, participantId, participantName, language, role } = req.body;
-    
+
     console.log(`[Transcription] received /api/transcribe: meeting=${meetingId}, user=${participantName}, role=${role || 'none'}, file=${req.file.filename} (${req.file.size} bytes)`);
 
     try {
@@ -193,45 +197,86 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
             console.error('[Transcription] Error: GROQ_API_KEY is missing');
             return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
         }
-        // Pass to Groq for cloud-based transcription
-        const text = await groqService.transcribeAudio(req.file.path, language);
-        
-        // Clean up temp file
-        try { fs.unlinkSync(req.file.path); } catch (e) { }
+
+        // Send audio to Groq for transcription
+        let text = await groqService.transcribeAudio(req.file.path, language);
+
+        // Remove temp file
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
 
         if (text && text.trim().length > 0) {
-            // Broadcast to the meeting room via existing socket logic
+
+            const targetLanguage = req.body.targetLanguage;
+            let translatedText = text;
+
+            // Translation (optional)
+            if (targetLanguage && targetLanguage.toLowerCase() !== 'original' && targetLanguage.toLowerCase() !== language) {
+                console.log(`[Translation] Translating "${text}" to ${targetLanguage}`);
+                translatedText = await groqService.translateText(text, targetLanguage);
+            }
+
+            // Broadcast transcription to meeting room
             if (meetingId) {
+
                 const segment = {
                     participantId: participantId || 'guest',
                     participantName: participantName || 'Guest',
                     role: role || 'participant',
-                    text: text.trim(),
+                    text: translatedText.trim(),
+                    originalText: text.trim(),
                     timestamp: new Date().toISOString()
                 };
-                
-                // Add to transcripts store
+
+                // Store transcript
                 if (!meetingTranscripts.has(meetingId)) {
                     meetingTranscripts.set(meetingId, []);
                 }
+
                 meetingTranscripts.get(meetingId).push(segment);
 
-                // Emit to all socket clients in that room
-                console.log(`[Transcription] Broadcasting segment to room ${meetingId}: "${text.trim().substring(0, 30)}..."`);
+                // Send to all users in meeting
+                console.log(`[Transcription] Broadcasting segment to room ${meetingId}: "${translatedText.trim().substring(0, 30)}..."`);
+
                 io.to(meetingId).emit('transcription_received', segment);
+
             } else {
                 console.warn('[Transcription] Cannot broadcast: meetingId is missing in request body');
             }
 
-            return res.json({ text: text.trim() });
+            return res.json({ text: translatedText.trim() });
         }
+
         return res.status(204).send();
+
     } catch (err) {
         console.error('API Transcribe error:', err);
         return res.status(500).json({ error: 'Transcription failed' });
     }
 });
 
+
+app.get('/api/resources/:meetingId', async (req, res) => {
+    try {
+        const result = await db.query('SELECT * FROM resources WHERE meeting_id = $1 ORDER BY timestamp DESC', [req.params.meetingId]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching resources:', err);
+        res.status(500).json({ error: 'Failed to fetch resources' });
+    }
+});
+
+app.post('/api/ai/smart-replies', async (req, res) => {
+    const { chatContext } = req.body;
+    if (!chatContext) return res.status(400).json({ error: 'Chat context is required' });
+
+    try {
+        const replies = await groqService.generateSmartReplies(chatContext);
+        res.json({ replies });
+    } catch (err) {
+        console.error('Smart replies error:', err);
+        res.status(500).json({ error: 'Failed to generate smart replies' });
+    }
+});
 
 // Database Initialization Logic
 async function initializeDatabase() {
@@ -366,6 +411,18 @@ async function initializeDatabase() {
                     ALTER TABLE meeting_participants ADD COLUMN camera_on BOOLEAN DEFAULT true;
                 END IF;
             END $$;
+            CREATE TABLE IF NOT EXISTS resources (
+                id SERIAL PRIMARY KEY,
+                meeting_id VARCHAR(255) NOT NULL,
+                sender_id VARCHAR(255) NOT NULL,
+                sender_name VARCHAR(255) NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                metadata JSONB DEFAULT '{}',
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+
             CREATE TABLE IF NOT EXISTS meeting_analytics (
                 meeting_id VARCHAR(255) PRIMARY KEY,
                 total_joined INTEGER DEFAULT 0,
@@ -375,6 +432,28 @@ async function initializeDatabase() {
                 calculated_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS polls (
+                id SERIAL PRIMARY KEY,
+                meeting_id VARCHAR(255) NOT NULL,
+                creator_id VARCHAR(255) NOT NULL,
+                question TEXT NOT NULL,
+                options JSONB NOT NULL,
+                is_anonymous BOOLEAN DEFAULT false,
+                is_quiz BOOLEAN DEFAULT false,
+                correct_option_index INTEGER,
+                status VARCHAR(20) DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS poll_votes (
+                id SERIAL PRIMARY KEY,
+                poll_id INTEGER REFERENCES polls(id),
+                user_id VARCHAR(255) NOT NULL,
+                option_index INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(poll_id, user_id)
             );
         `);
         console.log('Database initialization successful: all tables ready.');
@@ -462,6 +541,7 @@ app.get("/", (req, res) => {
 
 // Socket.io Logic
 const rooms = new Map(); // meetingId -> Map of socketId -> participantData
+const roomMeta = new Map(); // meetingId -> { ownerId }
 const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantData
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
@@ -474,6 +554,17 @@ io.on('connection', (socket) => {
     socket.on('join_meeting', async (data) => {
         const { meetingId, user, initialState } = typeof data === 'string' ? { meetingId: data, user: null, initialState: {} } : data;
 
+        if (!meetingId) return;
+
+        // Check if banned
+        if (bannedUsers.has(meetingId)) {
+            const userId = user?.id || `guest-${socket.id}`;
+            if (bannedUsers.get(meetingId).has(userId)) {
+                socket.emit('meeting_join_error', { error: 'You have been banned from this meeting.' });
+                return;
+            }
+        }
+
         let meeting;
         try {
             // Check meeting start time enforcement
@@ -485,6 +576,10 @@ io.on('connection', (socket) => {
             meeting = meetingResult.rows[0];
 
             if (meeting) {
+                // Store/update room meta (original host)
+                if (!roomMeta.has(meetingId)) {
+                    roomMeta.set(meetingId, { ownerId: meeting.host_id });
+                }
                 const meetingSettings = typeof meeting.settings === 'string' ? JSON.parse(meeting.settings) : (meeting.settings || {});
                 const isHost = user?.id && (user.id === meeting.host_id || user.id === 'host'); // Basic check, ideally verify auth
                 const now = Date.now();
@@ -823,6 +918,125 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('share_resource', async (data) => {
+        const { meeting_id, sender_id, sender_name, type, title, content, metadata } = data;
+        try {
+            const query = `
+                INSERT INTO resources (meeting_id, sender_id, sender_name, type, title, content, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING *;
+            `;
+            const result = await db.query(query, [meeting_id, sender_id, sender_name, type, title, content, JSON.stringify(metadata || {})]);
+            const resource = result.rows[0];
+            io.to(meeting_id).emit('resource_shared', resource);
+        } catch (err) {
+            console.error('Error sharing resource:', err);
+        }
+    });
+
+    socket.on('fetch_resources', async (data) => {
+        const { meeting_id } = data;
+        try {
+            const result = await db.query('SELECT * FROM resources WHERE meeting_id = $1 ORDER BY timestamp DESC', [meeting_id]);
+            socket.emit('resources_list', result.rows);
+        } catch (err) {
+            console.error('Error fetching resources:', err);
+        }
+    });
+
+    socket.on('create_breakout_rooms', (data) => {
+        const { meeting_id, rooms } = data;
+        // rooms is [{ id, name, participants: [userIds] }]
+        breakoutRooms.set(meeting_id, rooms);
+        
+        rooms.forEach(room => {
+            room.participants.forEach(userId => {
+                // We need to find the socket associated with this userId
+                // This is a bit complex as we don't have a direct userId -> socketId map easily accessible here
+                // We'll broadcast the assignment and let clients join the sub-rooms
+            });
+        });
+        
+        io.to(meeting_id).emit('breakout_rooms_created', { rooms });
+    });
+
+    socket.on('join_breakout_room', (data) => {
+        const { meeting_id, room_id } = data;
+        const subRoom = `${meeting_id}_breakout_${room_id}`;
+        socket.join(subRoom);
+        console.log(`Socket ${socket.id} joined breakout room ${subRoom}`);
+    });
+
+    socket.on('leave_breakout_room', (data) => {
+        const { meeting_id, room_id } = data;
+        const subRoom = `${meeting_id}_breakout_${room_id}`;
+        socket.leave(subRoom);
+    });
+
+    socket.on('close_breakout_rooms', (data) => {
+        const { meeting_id } = data;
+        breakoutRooms.delete(meeting_id);
+        io.to(meeting_id).emit('breakout_rooms_closed');
+    });
+
+    socket.on('create_poll', async (data) => {
+        const { meeting_id, question, options, is_anonymous, is_quiz, correct_option_index, creator_id } = data;
+        try {
+            const result = await db.query(
+                'INSERT INTO polls (meeting_id, creator_id, question, options, is_anonymous, is_quiz, correct_option_index) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                [meeting_id, creator_id, question, JSON.stringify(options), is_anonymous || false, is_quiz || false, correct_option_index]
+            );
+            const poll = result.rows[0];
+            poll.votes = [];
+            io.to(meeting_id).emit('poll_created', poll);
+        } catch (err) {
+            console.error('Error creating poll:', err);
+        }
+    });
+
+    socket.on('vote_poll', async (data) => {
+        const { meeting_id, poll_id, user_id, option_index } = data;
+        try {
+            await db.query(
+                'INSERT INTO poll_votes (poll_id, user_id, option_index) VALUES ($1, $2, $3) ON CONFLICT (poll_id, user_id) DO UPDATE SET option_index = $3',
+                [poll_id, user_id, option_index]
+            );
+            
+            // Fetch all votes for this poll
+            const votesResult = await db.query('SELECT user_id, option_index FROM poll_votes WHERE poll_id = $1', [poll_id]);
+            io.to(meeting_id).emit('poll_voted', { poll_id, votes: votesResult.rows });
+        } catch (err) {
+            console.error('Error voting in poll:', err);
+        }
+    });
+
+    socket.on('close_poll', async (data) => {
+        const { meeting_id, poll_id } = data;
+        try {
+            await db.query('UPDATE polls SET status = \'closed\' WHERE id = $1', [poll_id]);
+            io.to(meeting_id).emit('poll_closed', { poll_id });
+        } catch (err) {
+            console.error('Error closing poll:', err);
+        }
+    });
+
+    socket.on('fetch_polls', async (data) => {
+        const { meeting_id } = data;
+        try {
+            const pollsResult = await db.query('SELECT * FROM polls WHERE meeting_id = $1', [meeting_id]);
+            const polls = pollsResult.rows;
+            
+            for (const poll of polls) {
+                const votesResult = await db.query('SELECT user_id, option_index FROM poll_votes WHERE poll_id = $1', [poll.id]);
+                poll.votes = votesResult.rows;
+            }
+            
+            socket.emit('polls_fetched', polls);
+        } catch (err) {
+            console.error('Error fetching polls:', err);
+        }
+    });
+
     socket.on('react_to_message', async (data) => {
         const { meeting_id, messageId, emoji, userId } = data;
         try {
@@ -909,32 +1123,132 @@ io.on('connection', (socket) => {
                 if (camera_on !== undefined) {
                     query += `, camera_on = $${paramCount++}`;
                     params.push(camera_on);
-                }
-
-                query += ' WHERE meeting_id = $1 AND user_id = $2';
+                }                query += ' WHERE meeting_id = $1 AND user_id = $2';
                 await db.query(query, params);
             } catch (err) {
-                console.error('Error persisting participant media state:', err);
+                console.error('Error updating media state in DB:', err);
             }
         }
 
-        // Update in-memory room state
         const room = rooms.get(meeting_id);
+        const meta = roomMeta.get(meeting_id);
         if (room) {
+            const sender = room.get(socket.id);
+            if (!sender) return;
+
+            // Security: Only hosts can change roles
+            if (updates.role && sender.role !== 'host') {
+                delete updates.role;
+            }
+
             for (const [sId, p] of room.entries()) {
                 if (p.id === userId) {
+                    // Security: Original host role cannot be changed
+                    if (updates.role && meta && p.id === meta.ownerId) {
+                        delete updates.role;
+                    }
+
                     room.set(sId, { ...p, ...updates });
                     break;
                 }
             }
+            io.to(meeting_id).emit('participants_update', Array.from(room.values()));
         }
 
         // Broadcast the update to everyone else
         socket.to(meeting_id).emit('participant_updated', { userId, updates });
     });
 
+    // Ban participant
+    socket.on('ban_participant', ({ meetingId, participantId }) => {
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        // Verify sender is host
+        const sender = room.get(socket.id);
+        if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+
+        if (!bannedUsers.has(meetingId)) {
+            bannedUsers.set(meetingId, new Set());
+        }
+        bannedUsers.get(meetingId).add(participantId);
+
+        // Find and kick all sockets for this participant
+        for (const [sId, p] of room.entries()) {
+            if (p.id === participantId) {
+                io.to(sId).emit('participant_banned', { meetingId });
+                const s = io.sockets.sockets.get(sId);
+                if (s) s.leave(meetingId);
+                room.delete(sId);
+            }
+        }
+
+        // Also check waiting room
+        if (waitingRooms.has(meetingId)) {
+            const wr = waitingRooms.get(meetingId);
+            const index = wr.findIndex(p => p.id === participantId);
+            if (index !== -1) {
+                const person = wr[index];
+                io.to(person.socketId).emit('waiting_room_denied', { reason: 'banned' });
+                wr.splice(index, 1);
+            }
+        }
+
+        // Broadcast update
+        io.to(meetingId).emit('participants_update', Array.from(room.values()));
+        if (waitingRooms.has(meetingId)) {
+            io.to(meetingId).emit('waiting_room_update', Array.from(waitingRooms.get(meetingId)));
+        }
+    });
+
+    // Force Mute/Unmute
+    socket.on('force_media_state', ({ meetingId, participantId, type, state }) => {
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        const sender = room.get(socket.id);
+        if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+
+        // Target all sockets for this participant
+        for (const [sId, p] of room.entries()) {
+            if (p.id === participantId) {
+                io.to(sId).emit('media_state_forced', { type, state });
+            }
+        }
+    });
+    socket.on('kick_participant', ({ meetingId, participantId }) => {
+        const room = rooms.get(meetingId);
+        const meta = roomMeta.get(meetingId);
+        if (!room) return;
+        const sender = room.get(socket.id);
+        if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+
+        // Security: Cannot kick the original host (owner)
+        if (meta && participantId === meta.ownerId) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === participantId) {
+                // Security: Co-hosts can only kick regular participants
+                if (sender.role === 'co-host' && p.role !== 'participant') {
+                    continue;
+                }
+
+                io.to(sId).emit('participant_kicked', { meetingId });
+                const s = io.sockets.sockets.get(sId);
+                if (s) s.leave(meetingId);
+                room.delete(sId);
+            }
+        }
+        io.to(meetingId).emit('participants_update', Array.from(room.values()));
+    });
+
     socket.on('update_meeting_settings', async (data) => {
         const { meetingId, settings } = data;
+        const room = rooms.get(meetingId);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         try {
             // Update meeting settings in DB
             const currentRes = await db.query('SELECT settings FROM meetings WHERE id = $1', [meetingId]);
@@ -966,23 +1280,43 @@ io.on('connection', (socket) => {
 
     socket.on('mute_all', (data) => {
         const { meeting_id } = data;
+        const room = rooms.get(meeting_id);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         // Broadcast to everyone in the meeting
         io.to(meeting_id).emit('mute_all');
     });
 
     socket.on('unmute_all', (data) => {
         const { meeting_id } = data;
+        const room = rooms.get(meeting_id);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         // Broadcast to everyone in the meeting
         io.to(meeting_id).emit('unmute_all');
     });
 
     socket.on('stop_video_all', (data) => {
         const { meeting_id } = data;
+        const room = rooms.get(meeting_id);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         io.to(meeting_id).emit('stop_video_all');
     });
 
     socket.on('allow_video_all', (data) => {
         const { meeting_id } = data;
+        const room = rooms.get(meeting_id);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         io.to(meeting_id).emit('allow_video_all');
     });
 
@@ -1004,6 +1338,11 @@ io.on('connection', (socket) => {
     // --- Waiting Room Controls ---
     socket.on('admit_participant', (data) => {
         const { meetingId, socketId } = data;
+        const room = rooms.get(meetingId);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         const waitingRoom = waitingRooms.get(meetingId);
 
         if (waitingRoom && waitingRoom.has(socketId)) {
@@ -1042,6 +1381,11 @@ io.on('connection', (socket) => {
 
     socket.on('deny_participant', (data) => {
         const { meetingId, socketId } = data;
+        const room = rooms.get(meetingId);
+        if (room) {
+            const sender = room.get(socket.id);
+            if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+        }
         const waitingRoom = waitingRooms.get(meetingId);
 
         if (waitingRoom && waitingRoom.has(socketId)) {
@@ -1169,6 +1513,14 @@ io.on('connection', (socket) => {
             fs.unlinkSync(filePath);
 
             if (text && text.trim().length > 0) {
+                const targetLanguage = data.targetLanguage;
+                let finalDisplayText = text.trim();
+
+                if (targetLanguage && targetLanguage.toLowerCase() !== 'original' && targetLanguage.toLowerCase() !== (language || 'english').toLowerCase()) {
+                    console.log(`[Translation] Translating "${text}" to ${targetLanguage}`);
+                    finalDisplayText = await groqService.translateText(text.trim(), targetLanguage);
+                }
+
                 // Determine speaker's role
                 let role = 'participant';
                 const room = rooms.get(meetingId);
@@ -1183,7 +1535,8 @@ io.on('connection', (socket) => {
                     participantId,
                     participantName,
                     role,
-                    text: text.trim(),
+                    text: finalDisplayText.trim(),
+                    originalText: text.trim(),
                     timestamp: new Date().toISOString()
                 };
 
@@ -1441,6 +1794,41 @@ app.get('/api/auth/microsoft', passport.authenticate('microsoft'));
 app.get('/api/auth/microsoft/callback', passport.authenticate('microsoft', { failureRedirect: `${process.env.FRONTEND_URL}/#/login?error=auth_failed` }), (req, res) => {
     const userData = encodeURIComponent(JSON.stringify(req.user));
     res.redirect(`${process.env.FRONTEND_URL}/#/login?auth_data=${userData}`);
+});
+
+// OAuth verify endpoint for frontend-driven popups
+app.post('/api/auth/social', async (req, res) => {
+    const { email, name, avatar, provider, id } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    try {
+        let result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        let user;
+
+        if (result.rows.length === 0) {
+            const newId = `user-${provider}-${id || Date.now()}`;
+            const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
+            
+            const insertResult = await db.query(
+                'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan',
+                [newId, name, normalizedEmail, passwordHash, avatar]
+            );
+            user = insertResult.rows[0];
+            console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
+        } else {
+            user = result.rows[0];
+            if (avatar && !user.avatar) {
+                await db.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, user.id]);
+                user.avatar = avatar;
+            }
+            console.log(`OAuth (${provider}) Login successful: ${normalizedEmail}`);
+            delete user.password_hash;
+        }
+
+        res.json(user);
+    } catch (err) {
+        console.error('Social Auth Error:', err);
+        res.status(500).json({ error: 'Failed to authenticate with social provider' });
+    }
 });
 app.post('/api/auth/register', async (req, res) => {
     const { name, email, password } = req.body;
