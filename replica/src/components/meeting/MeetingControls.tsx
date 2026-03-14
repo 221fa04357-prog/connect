@@ -2229,13 +2229,31 @@ function ControlBar() {
 
             try {
                 const { summaryPoints, actionItems } = useAIStore.getState();
-                const { messages: transcript } = useChatStore.getState();
+                const { messages: chatMessages } = useChatStore.getState();
+                const { transcripts: spokenTranscripts } = useTranscriptionStore.getState();
 
                 const formatTime = (date: Date) => {
                     const h = String(date.getHours()).padStart(2, '0');
                     const m = String(date.getMinutes()).padStart(2, '0');
                     return `${h}:${m}`;
                 };
+
+                // Merge and sort chat and speech chronologically
+                const unifiedTranscript = [
+                    ...chatMessages.map(m => ({
+                        speaker: m.senderName,
+                        text: m.content,
+                        timestamp: m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime(),
+                        time: formatTime(m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp))
+                    })),
+                    ...spokenTranscripts.map(t => ({
+                        speaker: t.participantName,
+                        text: t.text,
+                        timestamp: new Date(t.timestamp).getTime(),
+                        time: formatTime(new Date(t.timestamp))
+                    }))
+                ].sort((a, b) => a.timestamp - b.timestamp)
+                .map(({ speaker, text, time }) => ({ speaker, text, time }));
 
                 const recapData = {
                     id: meeting.id,
@@ -2260,11 +2278,7 @@ function ControlBar() {
                     participants: participants.map(p => p.name),
                     summary: summaryPoints,
                     actionItems: actionItems,
-                    transcript: transcript.map(m => ({
-                        speaker: m.senderName,
-                        text: m.content,
-                        time: formatTime(new Date(m.timestamp))
-                    }))
+                    transcript: unifiedTranscript
                 };
 
                 console.log('Saving meeting recap...', recapData);

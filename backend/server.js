@@ -265,12 +265,29 @@ app.get('/api/resources/:meetingId', async (req, res) => {
     }
 });
 
+// Update smart replies API implementation
 app.post('/api/ai/smart-replies', async (req, res) => {
-    const { chatContext } = req.body;
-    if (!chatContext) return res.status(400).json({ error: 'Chat context is required' });
+    const { chatContext, meetingId } = req.body;
 
     try {
-        const replies = await groqService.generateSmartReplies(chatContext);
+        let finalContext = chatContext || [];
+        
+        // If we have a meetingId, fetch transcripts to give context to smart replies
+        if (meetingId && meetingTranscripts.has(meetingId)) {
+            const transcripts = meetingTranscripts.get(meetingId) || [];
+            // Take last 10 transcripts for recent speech context
+            const recentSpeech = transcripts.slice(-10).map(t => ({ role: t.participantName + ' (Speech)', content: t.text }));
+            
+            if (Array.isArray(finalContext)) {
+                 finalContext = [...recentSpeech, ...finalContext];
+            }
+        }
+        
+        if (!finalContext || (Array.isArray(finalContext) && finalContext.length === 0)) {
+            return res.status(400).json({ error: 'Chat context is required' });
+        }
+
+        const replies = await groqService.generateSmartReplies(finalContext);
         res.json({ replies });
     } catch (err) {
         console.error('Smart replies error:', err);
@@ -2020,8 +2037,9 @@ app.post('/api/recaps', async (req, res) => {
             // Fire and forget (don't await)
             (async () => {
                 try {
-                    const fullTranscriptText = transcript.map(m => `${m.speaker}: ${m.text}`).join('\n');
-                    const aiRecap = await groqService.generateRecapContent(fullTranscriptText);
+                    const fullTranscriptLog = transcript.map(m => `${m.speaker}: ${m.text}`).join('\n');
+                    
+                    const aiRecap = await groqService.generateRecapContent(fullTranscriptLog);
 
                     if (aiRecap && (aiRecap.summary?.length > 0 || aiRecap.actionItems?.length > 0)) {
                         console.log(`Auto-recap generated for ${id}. Updating database...`);
@@ -2309,14 +2327,14 @@ app.put('/api/user/settings', async (req, res) => {
 
 // Chat with AI Companion
 app.post('/api/ai/chat', async (req, res) => {
-    const { messages, meetingId } = req.body;
+    const { messages, meetingId, userName } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'Messages array is required' });
     }
 
     try {
-        const response = await groqService.getChatCompletion(messages);
+        const response = await groqService.getChatCompletion(messages, "llama-3.3-70b-versatile", userName);
         res.json({ content: response });
     } catch (err) {
         console.error('AI Chat Error:', err);
@@ -2324,16 +2342,25 @@ app.post('/api/ai/chat', async (req, res) => {
     }
 });
 
-// Summarize Meeting
+// Summarize Meeting (Live AI Companion)
 app.post('/api/ai/summarize', async (req, res) => {
-    const { transcript, meetingId } = req.body;
+    const { transcript, meetingId, userName } = req.body;
 
-    if (!transcript) {
-        return res.status(400).json({ error: 'Transcript text is required' });
+    if (!transcript && !meetingId) {
+        return res.status(400).json({ error: 'Transcript text or meetingId is required' });
     }
 
     try {
-        const summary = await groqService.summarizeMeeting(transcript);
+        let combinedContext = `Spoken Transcription:\n${transcript || 'None'}`;
+        
+        // Also fetch recent chat history if meetingId is provided
+        if (meetingId) {
+            const chatResult = await db.query('SELECT * FROM messages WHERE meeting_id = $1 ORDER BY timestamp ASC', [meetingId]);
+            const chatLog = chatResult.rows.map(m => `${m.sender_name} (Chat): ${m.content}`).join('\n');
+            combinedContext = `Chat Messages:\n${chatLog || 'None'}\n\n${combinedContext}`;
+        }
+
+        const summary = await groqService.summarizeMeeting(combinedContext);
         res.json({ summary });
     } catch (err) {
         console.error('AI Summarization Error:', err);

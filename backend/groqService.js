@@ -10,7 +10,7 @@ const groq = process.env.GROQ_API_KEY
  * @param {Array} messages - List of message objects {role, content}
  * @param {string} model - Groq model to use (current: llama-3.3-70b-versatile)
  */
-async function getChatCompletion(messages, model = "llama-3.3-70b-versatile") {
+async function getChatCompletion(messages, model = "llama-3.3-70b-versatile", userName = "Participant") {
     if (!groq) {
         console.warn("GROQ_API_KEY is missing. AI features are disabled.");
         return "AI features are currently unavailable due to missing API configuration.";
@@ -21,7 +21,15 @@ async function getChatCompletion(messages, model = "llama-3.3-70b-versatile") {
             messages: [
                 {
                     role: "system",
-                    content: "You are an intelligent AI Companion for NeuralChat, a video conferencing platform. Your goal is to help users during meetings by summarizing discussions, tracking action items, and answering questions based on the meeting context. Be concise, professional, and helpful."
+                    content: `You are an intelligent AI Companion for NeuralChat, a video conferencing platform. Your goal is to help users during meetings by summarizing discussions, tracking action items, and answering questions based on the meeting context. Be concise, professional, and helpful. 
+
+IMPORTANT RULES for your responses:
+1. NEVER mention or complain if chat messages, transcriptions, or audio data are missing or empty. 
+2. NEVER use phrases like 'There are no chat messages to incorporate', 'No chat messages in the provided data', or 'Based on the missing data'.
+3. Simply provide the requested summary, email, or answer based ONLY on whatever text data you do receive. 
+4. If NO data is provided at all, simply say 'No significant discussion or chat activity has been recorded for this period yet.' 
+5. Do not provide any meta-commentary about the quality or quantity of the input data.
+6. If you are asked to draft an email, ALWAYS sign off with "Best Regards, ${userName}". NEVER use placeholders like [Your Name].`
                 },
                 ...messages
             ],
@@ -36,20 +44,22 @@ async function getChatCompletion(messages, model = "llama-3.3-70b-versatile") {
 }
 
 /**
- * Generate structured recap from transcript
- * @param {string} transcript - The full transcript text
+ * Generate structured recap from transcript and chat logs
+ * @param {string} transcript - The combined transcript text and chat messages
  */
 async function generateRecapContent(transcript) {
     const prompt = `
-        Based on the following meeting transcript, generate two things:
-        1. A concise list of key summary points.
-        2. A list of specific, actionable tasks or next steps.
+        Based on the following meeting data (which may include both Spoken Transcription and Chat Messages), generate two things:
+        1. A concise list of key summary points from the discussion.
+        2. A list of specific, actionable tasks, next steps, or decisions made.
+
+        IMPORTANT: If chat messages or spoken transcripts are empty, do not mention it. Just extract the summary and tasks from whatever text is present.
 
         Format your response as a JSON object with exactly these two keys:
         - "summary": an array of strings (the summary points).
         - "actionItems": an array of strings (the task descriptions).
 
-        Transcript:
+        Meeting Data:
         ${transcript}
     `;
 
@@ -113,14 +123,14 @@ async function translateText(text, targetLanguage) {
 }
 
 /**
- * Summarize meeting transcript
- * @param {string} transcript - The full transcript text
+ * Summarize meeting transcript and chat logs
+ * @param {string} transcript - The combined transcript text and chat logs
  */
 async function summarizeMeeting(transcript) {
     const messages = [
         {
             role: "user",
-            content: `Please provide a concise summary of the following meeting transcript. Identify key topics, decisions made, and follow-up action items: \n\n${transcript}`
+            content: `Please provide a concise summary of the following meeting data (which includes Spoken Transcription and Chat Messages). Identify key topics, decisions made, and follow-up action items. Do not mention if either the chat or spoken transcripts are missing; just summarize what is there: \n\n${transcript}`
         }
     ];
 
