@@ -49,17 +49,22 @@ export function TranscriptionManager() {
         });
 
         const roleToUse = speakerRole || 'participant';
-        setCurrentCaption(text.trim(), speakerName, roleToUse);
+        
+        // Only show live captions on screen if transcription UI is enabled
+        const isTranscriptionEnabled = useTranscriptionStore.getState().isTranscriptionEnabled;
+        if (isTranscriptionEnabled) {
+            setCurrentCaption(text.trim(), speakerName, roleToUse);
 
-        if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
-        captionTimerRef.current = setTimeout(() => {
-            clearCurrentCaption();
-        }, 3000); // Hide after 3s of silence (snappier responsive feeling)
+            if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
+            captionTimerRef.current = setTimeout(() => {
+                clearCurrentCaption();
+            }, 3000); // Hide after 3s of silence
+        }
     };
 
     const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
 
-    // React to captions being disabled globally
+    // React to captions being disabled globally (only affects UI toggle now)
     useEffect(() => {
         if (!isCaptionsAllowed && isTranscriptionEnabled) {
             setTranscriptionEnabled(false);
@@ -139,7 +144,7 @@ export function TranscriptionManager() {
                 const muteState = useMeetingStore.getState().isAudioMuted;
                 const captionsOn = useTranscriptionStore.getState().isTranscriptionEnabled;
                 const lang = useTranscriptionStore.getState().speakingLanguage;
-                console.log(`[Transcription] VAD: rms=${currentAverageVolume.toFixed(2)}, frames=${speakingFramesCount}, speaking=${isSpeakingInSegment}, mute=${muteState}, uiEnabled=${captionsOn}, lang=${lang}`);
+                console.log(`[Transcription] VAD: rms=${currentAverageVolume.toFixed(2)}, frames=${speakingFramesCount}, speaking=${isSpeakingInSegment}, mute=${muteState}, uiEnabled=${captionsOn}, lang=${lang} (Recording active for AI)`);
             }, 3000);
 
             // 2. Setup MediaRecorder
@@ -209,8 +214,8 @@ export function TranscriptionManager() {
 };
 
             recorder.onstop = () => {
-                // Restart immediately if still enabled - ignore mute so we keep signal monitoring alive
-                if (mediaRecorderRef.current === recorder && isTranscriptionEnabled && isCaptionsAllowed) {
+                // Restart immediately to keep capturing audio for AI, regardless of UI toggle
+                if (mediaRecorderRef.current === recorder && !useMeetingStore.getState().isAudioMuted) {
                     try { recorder.start(); } catch(e) {}
                 }
             };
@@ -245,10 +250,10 @@ export function TranscriptionManager() {
         }
     };
 
-    // We only START the recorder if local transcription is enabled AND allowed globally!
-    // Requirement #8: Only capture when mic is ON and captions are enabled.
+    // We only START the recorder if local stream exists and mic is NOT muted.
+    // Requirement #8: Capture when mic is ON, even if captions are disabled (for AI Companion).
     useEffect(() => {
-        if (!isTranscriptionEnabled || !isCaptionsAllowed || !localStream || isAudioMuted) {
+        if (!localStream || isAudioMuted) {
             stopRecording();
             return;
         }
@@ -257,9 +262,10 @@ export function TranscriptionManager() {
             stopRecording();
             if (typeof cleanup === 'function') cleanup();
         };
-    }, [isTranscriptionEnabled, isCaptionsAllowed, localStream, isAudioMuted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [localStream, isAudioMuted]);
 
-    if (!isCaptionsAllowed && !isTranscriptionEnabled) return null;
-
+    // We no longer return null early based on isCaptionsAllowed to ensure the component stays mounted
+    // and continues handling the startRecording lifecycle via useEffect.
     return null;
 }

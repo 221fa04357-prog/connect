@@ -1567,7 +1567,8 @@ export function AICompanionPanel() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: contextMessages,
-                    meetingId: meeting?.id
+                    meetingId: meeting?.id,
+                    userName: useAuthStore.getState().user?.name || 'Participant'
                 }),
             });
 
@@ -1601,23 +1602,44 @@ export function AICompanionPanel() {
         try {
             let prompt = "";
             let contextTranscript = "";
+            
+            const spokenTranscriptsList = useTranscriptionStore.getState().transcripts;
 
             if (action === "Summarize last 5 minutes") {
-                contextTranscript = chatMessages
+                const recentChat = chatMessages
                     .slice(-15) // Last 15 messages ~5 mins
                     .map(m => `${m.senderName}: ${m.content}`)
                     .join('\n');
-                prompt = `Provide a detailed summary of the conversation that happened in the last 5 minutes. Focus on the specific details of this recent segment. Transcript: \n\n${contextTranscript}`;
+                // Approx last 5 mins of speech
+                const recentSpeech = spokenTranscriptsList
+                    .slice(-30)
+                    .map(t => `${t.participantName}: ${t.text}`)
+                    .join('\n');
+                    
+                contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${recentSpeech}\n\n--- CHAT TRANSCRIPT ---\n${recentChat}`;
+                prompt = `Provide a detailed summary of the conversation that happened in the last 5 minutes. Focus on the specific details of this recent segment. Use both spoken transcription and chat messages. \n\nIMPORTANT INSTRUCTIONS:\n1. Start your response EXACTLY with: \"Here is a summary of the conversation that occurred in the last 5 minutes:\"\n2. NEVER mention if chat messages or spoken transcripts are missing or empty. \n3. DO NOT use phrases like \"There are no chat messages to incorporate\" or \"No chat messages in the provided data\".\n4. Simply provide the summary based ONLY on whatever text data is provided without any metacommentary.\n\nData: \n\n${contextTranscript}`;
             } else if (action === "Create meeting recap") {
-                contextTranscript = chatMessages
+                const allChat = chatMessages
                     .map(m => `${m.senderName}: ${m.content}`)
                     .join('\n');
-                prompt = `Provide a high-level executive recap of the entire meeting so far. Highlight the main objectives, key outcomes, and overall progress. Transcript: \n\n${contextTranscript}`;
+                const allSpeech = spokenTranscriptsList
+                    .map(t => `${t.participantName}: ${t.text}`)
+                    .join('\n');
+                    
+                contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${allSpeech}\n\n--- CHAT TRANSCRIPT ---\n${allChat}`;
+                prompt = `Provide a high-level executive recap of the entire meeting so far based on spoken transcription and chat messages. Highlight the main objectives, key outcomes, and overall progress. \n\nIMPORTANT INSTRUCTIONS:\n1. NEVER mention if chat messages or spoken transcripts are missing or empty.\n2. DO NOT use phrases like \"There are no chat messages to incorporate\" or \"No chat messages in the provided data\".\n3. Simply generate the recap using whatever data is provided without any metacommentary about the data sources.\n\nData: \n\n${contextTranscript}`;
             } else if (action === "Draft follow-up email") {
-                contextTranscript = chatMessages
+                const allChat = chatMessages
                     .map(m => `${m.senderName}: ${m.content}`)
                     .join('\n');
-                prompt = `Based on the meeting transcript, draft a professional follow-up email. Include a thank you note, a summary of what was discussed, and a clear list of next steps. Transcript: \n\n${contextTranscript}`;
+                const allSpeech = spokenTranscriptsList
+                    .map(t => `${t.participantName}: ${t.text}`)
+                    .join('\n');
+                
+                const userName = useAuthStore.getState().user?.name || "Participant";
+                    
+                contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${allSpeech}\n\n--- CHAT TRANSCRIPT ---\n${allChat}`;
+                prompt = `Based on the meeting data (spoken transcription and chat messages), draft a professional follow-up email. Include a thank you note, a summary of what was discussed, and a clear list of next steps. \n\nIMPORTANT: \n1. DO NOT mention if chat messages or spoken transcripts are missing or empty. Just draft the email using whatever data is provided without any metacommentary about the data sources.\n2. SIGN OFF the email with "Best Regards, ${userName}". DO NOT use [Your Name] or any other placeholder.\n\nData: \n\n${contextTranscript}`;
             } else {
                 // Default fallback
                 setInput(action);
@@ -1630,7 +1652,8 @@ export function AICompanionPanel() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: [{ role: 'user', content: prompt }],
-                    meetingId: meeting?.id
+                    meetingId: meeting?.id,
+                    userName: useAuthStore.getState().user?.name || 'Participant'
                 }),
             });
 
