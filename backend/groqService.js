@@ -68,6 +68,51 @@ async function generateRecapContent(transcript) {
 }
 
 /**
+ * Generate smart replies based on the current conversation context.
+ * @param {Array} messages - The conversation history.
+ * @returns {Array<string>} An array of suggested smart replies.
+ */
+async function generateSmartReplies(messages) {
+    const prompt = `
+        Based on the following conversation, suggest 3-5 short, concise, and relevant smart replies.
+        Each reply should be a short phrase or sentence, suitable for a quick response.
+        Return the replies as a JSON array of strings.
+
+        Conversation:
+        ${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+    `;
+
+    try {
+        const response = await getChatCompletion([{ role: "user", content: prompt }]);
+        const jsonMatch = response.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        return ["Got it!", "Understood.", "Looking into it."];
+    } catch (error) {
+        console.error("Error generating smart replies:", error);
+        return ["Got it!", "Understood.", "Looking into it."];
+    }
+}
+
+/**
+ * Translate text into a target language
+ * @param {string} text - The text to translate.
+ * @param {string} targetLanguage - The target language (e.g., "French", "es", "German").
+ * @returns {string} The translated text.
+ */
+async function translateText(text, targetLanguage) {
+    const prompt = `Translate the following text into ${targetLanguage}: "${text}"`;
+    try {
+        const response = await getChatCompletion([{ role: "user", content: prompt }]);
+        return response.trim();
+    } catch (error) {
+        console.error("Error translating text:", error);
+        return text; // Return original text on error
+    }
+}
+
+/**
  * Summarize meeting transcript
  * @param {string} transcript - The full transcript text
  */
@@ -126,7 +171,7 @@ async function transcribeAudio(audioPath, language = "en") {
             console.warn(`[Transcription] Warning: Audio file is empty: ${audioPath}`);
             return "";
         }
-        
+
         console.log(`[Transcription] Processing audio: ${path.basename(audioPath)} (${stats.size} bytes)`);
 
         // Map language name to ISO code if necessary
@@ -162,7 +207,7 @@ async function transcribeAudio(audioPath, language = "en") {
         // Whisper metadata keys:
         // no_speech_prob: Higher means likely silence.
         // avg_logprob: Lower (more negative) means lower confidence in text.
-        
+
         const segments = transcription.segments || [];
         if (segments.length === 0) {
             console.log(`[Transcription] No segments returned for chunk.`);
@@ -174,7 +219,7 @@ async function transcribeAudio(audioPath, language = "en") {
             const noSpeech = seg.no_speech_prob || 0;
             const logProb = seg.avg_logprob || 0;
             const rawText = (seg.text || "").trim();
-            const text = rawText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+            const text = rawText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
             // Logging for all segments to help tune thresholds
             console.log(`[Transcription] Segment: "${rawText}" (no_speech=${noSpeech.toFixed(2)}, logprob=${logProb.toFixed(2)})`);
@@ -196,7 +241,7 @@ async function transcribeAudio(audioPath, language = "en") {
             // we reject it even if the confidence markers are mostly okay.
             const commonHallucinations = ["thank you", "thanks for watching", "thanks", "bye", "you"];
             const isHallucination = commonHallucinations.includes(text);
-            
+
             // Rejection criteria for solitary common phrases:
             // - If it's a known hallucination AND no_speech_prob is > 0.1 (any sign of silence)
             // - OR if it's the ONLY segment in the chunk (solitary) and confidence is borderline
@@ -211,7 +256,7 @@ async function transcribeAudio(audioPath, language = "en") {
         });
 
         const finalText = clearSegments.map(s => s.text).join(" ").trim();
-        
+
         if (finalText.length > 0) {
             console.log(`[Transcription] Final Result: "${finalText}"`);
         } else if (transcription.text && transcription.text.trim().length > 0) {
