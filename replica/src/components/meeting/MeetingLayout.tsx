@@ -873,10 +873,22 @@ export function ParticipantsPanel() {
         }
     };
 
-    /** SEARCH */
-    const filteredParticipants = participants.filter(p =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    /** SEARCH & SORT */
+    const filteredParticipants = participants
+        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        .sort((a, b) => {
+            // Put hand raised participants at the top
+            if (a.isHandRaised && !b.isHandRaised) return -1;
+            if (!a.isHandRaised && b.isHandRaised) return 1;
+            
+            // If both have hands raised, sort by number
+            if (a.isHandRaised && b.isHandRaised) {
+                return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+            }
+            
+            // Otherwise maintain original order or sort by name/role if desired
+            return 0;
+        });
 
     /** 🔑 MUTE-ALL STATE */
     const manageableParticipants = participants.filter(p => {
@@ -1089,6 +1101,23 @@ export function ParticipantsPanel() {
                                         ))}
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* RAISED HANDS SUMMARY */}
+                        {participants.filter(p => p.isHandRaised).length > 0 && (
+                            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
+                                <div className="flex items-center gap-2">
+                                    <Hand className="w-4 h-4 text-yellow-500" />
+                                    <span className="text-sm font-bold text-yellow-500">
+                                        Raised Hands ({participants.filter(p => p.isHandRaised).length})
+                                    </span>
+                                </div>
+                                {participants.filter(p => p.isHandRaised).length >= 20 && (
+                                    <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
+                                        Priority List
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -1311,7 +1340,14 @@ function ParticipantItem({
                             )}
                         </button>
                         {participant.isHandRaised && (
-                            <Hand className="w-3 h-3 text-yellow-500" />
+                            <div className="flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
+                                <Hand className="w-3.5 h-3.5 text-yellow-500" />
+                                {participant.handRaiseNumber && (
+                                    <span className="text-[11px] font-bold text-yellow-500">
+                                        #{participant.handRaiseNumber}
+                                    </span>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>

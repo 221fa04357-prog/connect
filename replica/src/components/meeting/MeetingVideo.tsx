@@ -249,11 +249,39 @@ export function VideoTile({
                 )}
 
                 {/* Hand Raised Indicator - top right, next to pin */}
-                {participant.isHandRaised && (
-                    <div className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow">
-                        <Hand className="w-4 h-4 text-white" />
-                    </div>
-                )}
+                <AnimatePresence>
+                    {participant.isHandRaised && (
+                        <motion.div 
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ 
+                                scale: 1, 
+                                opacity: 1,
+                                transition: { type: 'spring', stiffness: 300, damping: 20 }
+                            }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow gap-1.5"
+                        >
+                            <motion.div
+                                animate={{ 
+                                    scale: [1, 1.2, 1],
+                                    rotate: [0, 10, -10, 0]
+                                }}
+                                transition={{ 
+                                    duration: 2, 
+                                    repeat: Infinity,
+                                    repeatType: 'loop'
+                                }}
+                            >
+                                <Hand className="w-4 h-4 text-white" />
+                            </motion.div>
+                            {participant.handRaiseNumber && (
+                                <span className="text-xs font-bold text-white leading-none">
+                                    {participant.handRaiseNumber}
+                                </span>
+                            )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Bottom Info Bar anchored to bottom */}
@@ -433,14 +461,27 @@ export function VideoGrid() {
         }
     }
 
-    // Apply Host Video Order sorting if setting is enabled
-    if (meeting?.settings?.followHostVideoOrder) {
-        visibleParticipants = [...visibleParticipants].sort((a, b) => {
+    // Sort participants: Pinned first, then Hand Raised (in order), then others
+    visibleParticipants = [...visibleParticipants].sort((a, b) => {
+        // 1. Pinned
+        if (a.id === pinnedParticipantId) return -1;
+        if (b.id === pinnedParticipantId) return 1;
+
+        // 2. Hand Raised
+        if (a.isHandRaised && !b.isHandRaised) return -1;
+        if (!a.isHandRaised && b.isHandRaised) return 1;
+        if (a.isHandRaised && b.isHandRaised) {
+            return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+        }
+
+        // 3. Role (Host first)
+        if (meeting?.settings?.followHostVideoOrder) {
             if (a.role === 'host') return -1;
             if (b.role === 'host') return 1;
-            return 0;
-        });
-    }
+        }
+
+        return 0;
+    });
 
     // Identify who is sharing screen
     const remoteSharingParticipant = participants.find(p => p.isScreenSharing && !p.id.includes(user?.id || ''));

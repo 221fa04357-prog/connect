@@ -9,6 +9,8 @@ export interface User {
   subscriptionPlan?: 'free' | 'pro' | 'enterprise';
   subscription_plan?: 'free' | 'pro' | 'enterprise';
   role?: UserRole;
+  isLoggedOut?: boolean;
+  avatar?: string;
 }
 
 export type ViewMode = 'gallery' | 'speaker' | 'multi-speaker' | 'immersive';
@@ -22,6 +24,8 @@ export interface Participant {
   isAudioMuted: boolean;
   isVideoOff: boolean;
   isHandRaised: boolean;
+  handRaiseNumber?: number;
+  handRaiseTimestamp?: number;
   isScreenSharing?: boolean;
   screenShareStreamId?: string;
   isSpeaking: boolean;

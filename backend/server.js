@@ -563,6 +563,7 @@ const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantDa
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
+const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -1140,7 +1141,8 @@ io.on('connection', (socket) => {
                 if (camera_on !== undefined) {
                     query += `, camera_on = $${paramCount++}`;
                     params.push(camera_on);
-                }                query += ' WHERE meeting_id = $1 AND user_id = $2';
+                }
+                query += ' WHERE meeting_id = $1 AND user_id = $2';
                 await db.query(query, params);
             } catch (err) {
                 console.error('Error updating media state in DB:', err);
@@ -1158,6 +1160,22 @@ io.on('connection', (socket) => {
                 delete updates.role;
             }
 
+            // Hand Raise Logic
+            if (updates.isHandRaised !== undefined) {
+                if (updates.isHandRaised) {
+                    // Raising hand
+                    let currentCounter = handRaiseCounters.get(meeting_id) || 0;
+                    currentCounter++;
+                    handRaiseCounters.set(meeting_id, currentCounter);
+                    updates.handRaiseNumber = currentCounter;
+                    updates.handRaiseTimestamp = Date.now();
+                } else {
+                    // Lowering hand - need to recalculate others
+                    updates.handRaiseNumber = null;
+                    updates.handRaiseTimestamp = null;
+                }
+            }
+
             for (const [sId, p] of room.entries()) {
                 if (p.id === userId) {
                     // Security: Original host role cannot be changed
@@ -1169,6 +1187,26 @@ io.on('connection', (socket) => {
                     break;
                 }
             }
+
+            // If a hand was lowered, recalculate all handRaiseNumbers to keep them sequential
+            if (updates.isHandRaised === false) {
+                const participantsWithHands = Array.from(room.values())
+                    .filter(p => p.isHandRaised)
+                    .sort((a, b) => (a.handRaiseTimestamp || 0) - (b.handRaiseTimestamp || 0));
+                
+                participantsWithHands.forEach((p, index) => {
+                    const newNumber = index + 1;
+                    // Update all sockets for this participant
+                    for (const [sId, pData] of room.entries()) {
+                        if (pData.id === p.id) {
+                            room.set(sId, { ...pData, handRaiseNumber: newNumber });
+                        }
+                    }
+                });
+                // Update counter to the new max
+                handRaiseCounters.set(meeting_id, participantsWithHands.length);
+            }
+
             io.to(meeting_id).emit('participants_update', Array.from(room.values()));
         }
 
