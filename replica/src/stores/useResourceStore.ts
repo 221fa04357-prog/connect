@@ -49,7 +49,8 @@ export const useResourceStore = create<ResourceState>((set, get) => ({
                 type,
                 title,
                 content,
-                metadata
+                metadata,
+                timestamp: new Date().toISOString()
             });
         }
     },
