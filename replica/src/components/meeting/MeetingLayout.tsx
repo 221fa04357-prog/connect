@@ -2349,6 +2349,17 @@ export function ResourceHubPanel() {
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
     const [shareType, setShareType] = useState<'link' | 'file'>('link');
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setSelectedFile(file);
+            setNewTitle(file.name);
+            setNewContent(`File: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+        }
+    };
 
     useEffect(() => {
         if (isHubOpen && meeting?.id) {
@@ -2356,23 +2367,50 @@ export function ResourceHubPanel() {
         }
     }, [isHubOpen, meeting?.id, fetchResources]);
 
-    const handleShare = () => {
+    const handleShare = async () => {
         if (!newTitle.trim() || !newContent.trim()) {
             toast.error("Please fill in all fields");
             return;
         }
 
         if (meeting?.id && currentUser) {
+            let metadata: any = {};
+            
+            if (shareType === 'file' && selectedFile) {
+                try {
+                    const reader = new FileReader();
+                    const fileData = await new Promise<string>((resolve, reject) => {
+                        reader.onload = (e) => resolve(e.target?.result as string);
+                        reader.onerror = (e) => reject(e);
+                        reader.readAsDataURL(selectedFile);
+                    });
+                    
+                    metadata = {
+                        fileName: selectedFile.name,
+                        fileSize: selectedFile.size,
+                        fileType: selectedFile.type,
+                        lastModified: selectedFile.lastModified,
+                        fileData: fileData
+                    };
+                } catch (err) {
+                    console.error("Error reading file:", err);
+                    toast.error("Failed to read file");
+                    return;
+                }
+            }
+
             shareResource(
                 meeting.id,
                 currentUser.id,
                 currentUser.name,
                 shareType,
                 newTitle.trim(),
-                newContent.trim()
+                newContent.trim(),
+                metadata
             );
             setNewTitle('');
             setNewContent('');
+            setSelectedFile(null);
             setIsSharing(false);
             toast.success("Resource shared!");
         }
@@ -2417,42 +2455,64 @@ export function ResourceHubPanel() {
                                 <Plus className="w-4 h-4" /> Share Resource
                             </Button>
                         ) : (
-                            <div className="space-y-3 bg-[#1A1A1A] p-3 rounded-lg border border-[#333]">
-                                <div className="flex gap-2">
-                                    <Button 
-                                        size="sm" 
-                                        variant={shareType === 'link' ? 'default' : 'outline'}
-                                        onClick={() => setShareType('link')}
-                                        className="flex-1 text-xs"
-                                    >
-                                        Link
-                                    </Button>
-                                    <Button 
-                                        size="sm" 
-                                        variant={shareType === 'file' ? 'default' : 'outline'}
-                                        onClick={() => setShareType('file')}
-                                        className="flex-1 text-xs"
-                                    >
-                                        File
-                                    </Button>
+                                <div className="space-y-3 bg-[#1A1A1A] p-3 rounded-lg border border-[#333]">
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        onChange={handleFileChange} 
+                                        className="hidden" 
+                                    />
+                                    <div className="flex gap-2">
+                                        <Button 
+                                            size="sm" 
+                                            variant={shareType === 'link' ? 'default' : 'outline'}
+                                            onClick={() => setShareType('link')}
+                                            className="flex-1 text-xs"
+                                        >
+                                            Link
+                                        </Button>
+                                        <Button 
+                                            size="sm" 
+                                            variant={shareType === 'file' ? 'default' : 'outline'}
+                                            onClick={() => setShareType('file')}
+                                            className="flex-1 text-xs"
+                                        >
+                                            File
+                                        </Button>
+                                    </div>
+                                    <Input 
+                                        placeholder="Title" 
+                                        value={newTitle}
+                                        onChange={(e) => setNewTitle(e.target.value)}
+                                        className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                    />
+                                    <Input 
+                                        placeholder={shareType === 'link' ? "URL" : "File Description"} 
+                                        value={newContent}
+                                        onChange={(e) => setNewContent(e.target.value)}
+                                        className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                    />
+                                    
+                                    {shareType === 'file' && (
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="w-full text-xs border-dashed border-[#444] hover:border-blue-500/50 hover:bg-blue-500/5 text-gray-300 gap-2"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            <Paperclip className="w-3 h-3" />
+                                            {selectedFile ? `Change File (${selectedFile.name})` : "Upload File from Device"}
+                                        </Button>
+                                    )}
+
+                                    <div className="flex gap-2 pt-1">
+                                        <Button size="sm" variant="ghost" className="flex-1 text-xs text-white" onClick={() => {
+                                            setIsSharing(false);
+                                            setSelectedFile(null);
+                                        }}>Cancel</Button>
+                                        <Button size="sm" className="flex-1 text-xs bg-blue-600" onClick={handleShare}>Share</Button>
+                                    </div>
                                 </div>
-                                <Input 
-                                    placeholder="Title" 
-                                    value={newTitle}
-                                    onChange={(e) => setNewTitle(e.target.value)}
-                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
-                                />
-                                <Input 
-                                    placeholder={shareType === 'link' ? "URL" : "File Description"} 
-                                    value={newContent}
-                                    onChange={(e) => setNewContent(e.target.value)}
-                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
-                                />
-                                <div className="flex gap-2">
-                                    <Button size="sm" variant="ghost" className="flex-1 text-xs text-white" onClick={() => setIsSharing(false)}>Cancel</Button>
-                                    <Button size="sm" className="flex-1 text-xs bg-blue-600" onClick={handleShare}>Share</Button>
-                                </div>
-                            </div>
                         )}
 
                         <div className="flex gap-2">
@@ -2473,35 +2533,157 @@ export function ResourceHubPanel() {
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                         {filteredResources.length > 0 ? (
-                            filteredResources.map((res) => (
-                                <div key={res.id} className="bg-[#232323] border border-[#333] p-3 rounded-xl hover:border-blue-500/30 transition-all group">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            {res.type === 'link' ? <Bot className="w-4 h-4 text-blue-400" /> : <Paperclip className="w-4 h-4 text-purple-400" />}
-                                            <span className="text-sm font-medium text-white group-hover:text-blue-400 transition-colors truncate max-w-[180px]">{res.title}</span>
+                            filteredResources.map((res) => {
+                                const isLink = res.type === 'link';
+                                const fileName = res.metadata?.fileName || '';
+                                const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
+                                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(fileExt);
+                                const isPdf = fileExt === 'pdf';
+                                const isDoc = ['doc', 'docx', 'txt'].includes(fileExt);
+                                const isPpt = ['ppt', 'pptx'].includes(fileExt);
+                                
+                                // Absolute IST correction (Manual +5.5h)
+                                const date = (() => {
+                                    if (!res.timestamp) return new Date();
+                                    
+                                    // Handle string normalization
+                                    let ts = res.timestamp.replace(' ', 'T');
+                                    if (!ts.includes('Z') && !ts.includes('+') && !(/[-+]\d{2}:?\d{2}$/.test(ts))) {
+                                        ts += 'Z';
+                                    }
+                                    
+                                    const d = new Date(ts);
+                                    
+                                    // Absolute IST Offset Correction:
+                                    // If the app is locking to UTC incorrectly (as seen in screenshots),
+                                    // we manually add 5 hours and 30 minutes (330 minutes) 
+                                    // to ensure the internal pointer matches the user's IST clock.
+                                    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+                                    return new Date(d.getTime() + IST_OFFSET_MS);
+                                })();
+
+                                const formatTime = (d: Date) => {
+                                    return d.toLocaleTimeString('en-US', { 
+                                        timeZone: 'Asia/Kolkata', 
+                                        hour: '2-digit', 
+                                        minute: '2-digit', 
+                                        hour12: true 
+                                    }).toUpperCase();
+                                };
+
+                                const formatDate = (d: Date) => {
+                                    return d.toLocaleDateString('en-US', { 
+                                        timeZone: 'Asia/Kolkata', 
+                                        day: 'numeric', 
+                                        month: 'short' 
+                                    });
+                                };
+                                
+                                return (
+                                    <div key={res.id} className="bg-[#232323] border border-[#333] p-4 rounded-xl hover:border-blue-500/30 transition-all group relative overflow-hidden">
+                                        {/* Content type accent */}
+                                        <div className={cn(
+                                            "absolute top-0 left-0 w-1 h-full",
+                                            isLink ? "bg-blue-500" : "bg-purple-500"
+                                        )} />
+
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                    "p-2 rounded-lg",
+                                                    isLink ? "bg-blue-500/10" : "bg-purple-500/10"
+                                                )}>
+                                                    {isLink ? (
+                                                        <Bot className="w-5 h-5 text-blue-400" />
+                                                    ) : isImage ? (
+                                                        <Video className="w-5 h-5 text-purple-400" />
+                                                    ) : isPdf ? (
+                                                        <FileText className="w-5 h-5 text-red-400" />
+                                                    ) : isDoc ? (
+                                                        <FileText className="w-5 h-5 text-blue-300" />
+                                                    ) : (
+                                                        <Paperclip className="w-5 h-5 text-purple-400" />
+                                                    )}
+                                                </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors truncate block">{res.title}</span>
+                                                <span className="text-[10px] text-gray-500 mt-0.5 block italic truncate">
+                                                    by {res.sender_name}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className="text-[10px] text-gray-500">{new Date(res.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        <span className="text-[10px] text-gray-500 shrink-0 font-medium">
+                                            {formatDate(date)} • {formatTime(date)}
+                                        </span>
                                     </div>
-                                    <div className="mt-2 text-xs text-gray-400 truncate opacity-80">{res.content}</div>
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <span className="text-[10px] text-gray-500">Shared by {res.sender_name}</span>
-                                        <Button 
-                                            size="sm" 
-                                            variant="ghost" 
-                                            className="h-7 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2"
-                                            onClick={() => {
-                                                if (res.content.startsWith('http')) {
-                                                    window.open(res.content, '_blank');
-                                                } else {
-                                                    toast.info("Viewing details...");
-                                                }
-                                            }}
-                                        >
-                                            View
-                                        </Button>
+                                        
+                                        <div className="mt-3 text-xs text-gray-400 line-clamp-2 leading-relaxed opacity-80 italic">
+                                            {res.content}
+                                        </div>
+
+                                        <div className="mt-4 flex items-center justify-between border-t border-[#333] pt-3">
+                                            <div className="flex items-center gap-2">
+                                                {!isLink && res.metadata?.fileSize && (
+                                                    <span className="text-[10px] text-gray-500 bg-[#2A2A2A] px-2 py-0.5 rounded">
+                                                        {(res.metadata.fileSize / 1024).toFixed(1)} KB
+                                                    </span>
+                                                )}
+                                                {isLink && (
+                                                    <span className="text-[10px] text-blue-400/70 bg-blue-500/5 px-2 py-0.5 rounded border border-blue-500/10">
+                                                        Link
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Button 
+                                                size="sm" 
+                                                variant="ghost" 
+                                                className="h-8 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 gap-2 font-medium px-3"
+                                                onClick={async () => {
+                                                    if (isLink) {
+                                                        const url = res.content.match(/https?:\/\/[^\s]+/)?.[0] || (res.content.startsWith('http') ? res.content : `https://${res.content}`);
+                                                        window.open(url, '_blank');
+                                                    } else {
+                                                        // Direct File Download Logic
+                                                        const fileName = res.metadata?.fileName || res.title;
+                                                        try {
+                                                            let blob;
+                                                            if (res.metadata?.fileData) {
+                                                                // Convert Base64/DataURL back to Blob using fetch on data URL
+                                                                const response = await fetch(res.metadata.fileData);
+                                                                blob = await response.blob();
+                                                            } else {
+                                                                // Fallback for older shares
+                                                                blob = new Blob([res.content], { type: res.metadata?.fileType || 'text/plain' });
+                                                            }
+                                                            
+                                                            const url = window.URL.createObjectURL(blob);
+                                                            const a = document.createElement('a');
+                                                            a.style.display = 'none';
+                                                            a.href = url;
+                                                            a.download = fileName;
+                                                            document.body.appendChild(a);
+                                                            a.click();
+                                                            window.URL.revokeObjectURL(url);
+                                                            document.body.removeChild(a);
+                                                            toast.success(`Downloading ${fileName}...`);
+                                                        } catch (err) {
+                                                            console.error("Download error:", err);
+                                                            toast.error("Failed to download file");
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                {isLink ? "Open Link" : (
+                                                    <>
+                                                        Download
+                                                        <Download className="w-3.5 h-3.5" />
+                                                    </>
+                                                )}
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         ) : (
                             <div className="h-full flex flex-col items-center justify-center opacity-30 text-center px-8">
                                 <Plus className="w-12 h-12 mb-4" />
