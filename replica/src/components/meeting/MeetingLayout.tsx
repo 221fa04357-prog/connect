@@ -958,7 +958,7 @@ export function ParticipantsPanel() {
                                                 e.preventDefault();
                                                 const settings = useMeetingStore.getState().meeting?.settings || {};
                                                 const isCameraAllowed = settings.cameraAllowed !== false;
-                                                
+
                                                 if (isCameraAllowed) {
                                                     if (confirm('Stop all participant videos and restrict them?')) {
                                                         const meetingId = useMeetingStore.getState().meeting?.id || '';
@@ -1339,126 +1339,126 @@ function ParticipantItem({
                     (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') ||
                     (isViewerCoHost && effectiveRole === 'participant')
                 ) && (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button size="sm" variant="ghost" className="hover:bg-[#2D2D2D]">
-                                <MoreVertical className="w-4 h-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                            align="end"
-                            className="bg-[#232323] border-[#404040]"
-                        >
-                            {(isCurrentUser || isViewerHost || isViewerCoHost) && onRename && (
-                                <DropdownMenuItem onClick={onRename}>
-                                    <Edit2 className="w-4 h-4 mr-2" />
-                                    Rename
-                                </DropdownMenuItem>
-                            )}
-
-                            {participant.isHandRaised && (canControl || isCurrentUser) && (
-                                <DropdownMenuItem onClick={onToggleHand}>
-                                    <Hand className="w-4 h-4 mr-2 text-yellow-500" />
-                                    Lower Hand
-                                </DropdownMenuItem>
-                            )}
-
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isAudioMuted && !isCurrentUser && (
-                                <DropdownMenuItem onClick={onToggleMute}>
-                                    <MicOff className="w-4 h-4 mr-2" />
-                                    Mute
-                                </DropdownMenuItem>
-                            )}
-
-                            {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isAudioMuted && !isCurrentUser && (
-                                <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'audio')}>
-                                    <Mic className="w-4 h-4 mr-2" />
-                                    Ask to Unmute
-                                </DropdownMenuItem>
-                            )}
-
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isVideoOff && !isCurrentUser && (
-                                <DropdownMenuItem onClick={onToggleVideoAllowed}>
-                                    <VideoOff className="w-4 h-4 mr-2 text-red-500" />
-                                    Turn Off Camera
-                                </DropdownMenuItem>
-                            )}
-
-                            {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isVideoOff && !isCurrentUser && (
-                                <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'video')}>
-                                    <Video className="w-4 h-4 mr-2" />
-                                    Ask to Start Video
-                                </DropdownMenuItem>
-                            )}
-
-                            {isViewerHost && !isViewerCoHost && (
-                                <>
-                                    {effectiveRole !== 'host' && (
-                                        <DropdownMenuItem
-                                            onClick={() => {
-                                                if (confirm('Promote this participant as a Host?')) {
-                                                    onMakeHost();
-                                                }
-                                            }}
-                                        >
-                                            <Crown className="w-4 h-4 mr-2" />
-                                            Make Host
-                                        </DropdownMenuItem>
-                                    )}
-
-                                    {/* Remove Host - only Main Host can demote promoted hosts */}
-                                    {isViewerOriginalHost && isViewerHost && !isViewerCoHost && effectiveRole === 'host' && !isTargetOriginalHost && (
-                                        <DropdownMenuItem
-                                            onClick={onRevokeHost}
-                                            className="text-yellow-400"
-                                        >
-                                            <Crown className="w-4 h-4 mr-2" />
-                                            Remove Host
-                                        </DropdownMenuItem>
-                                    )}
-
-                                    {effectiveRole !== 'co-host' && effectiveRole !== 'host' && (
-                                        <DropdownMenuItem
-                                            onClick={() => {
-                                                if (coHostCount >= 4) {
-                                                    alert('Maximum co-hosts reached.');
-                                                    return;
-                                                }
-                                                onMakeCoHost();
-                                            }}
-                                        >
-                                            <Shield className="w-4 h-4 mr-2" />
-                                            Make Co-Host
-                                        </DropdownMenuItem>
-                                    )}
-
-                                    {effectiveRole === 'co-host' && !isCurrentUser && (
-                                        <DropdownMenuItem
-                                            onClick={onRevokeCoHost}
-                                            className="text-yellow-400"
-                                        >
-                                            <Shield className="w-4 h-4 mr-2" />
-                                            Remove Co-Host
-                                        </DropdownMenuItem>
-                                    )}
-                                </>
-                            )}
-
-                            {((isViewerOriginalHost && isViewerHost && !isViewerCoHost) || (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') || (isViewerCoHost && effectiveRole === 'participant')) && !isCurrentUser && !isTargetOriginalHost && (
-                                <>
-                                    <DropdownMenuItem
-                                        onClick={onRemove}
-                                        className="text-red-500"
-                                    >
-                                        <X className="w-4 h-4 mr-2" />
-                                        Remove
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="ghost" className="hover:bg-[#2D2D2D]">
+                                    <MoreVertical className="w-4 h-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="end"
+                                className="bg-[#232323] border-[#404040]"
+                            >
+                                {(isCurrentUser || isViewerHost || isViewerCoHost) && onRename && (
+                                    <DropdownMenuItem onClick={onRename}>
+                                        <Edit2 className="w-4 h-4 mr-2" />
+                                        Rename
                                     </DropdownMenuItem>
-                                </>
-                            )}
+                                )}
 
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                )}
+                                {participant.isHandRaised && (canControl || isCurrentUser) && (
+                                    <DropdownMenuItem onClick={onToggleHand}>
+                                        <Hand className="w-4 h-4 mr-2 text-yellow-500" />
+                                        Lower Hand
+                                    </DropdownMenuItem>
+                                )}
+
+                                {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isAudioMuted && !isCurrentUser && (
+                                    <DropdownMenuItem onClick={onToggleMute}>
+                                        <MicOff className="w-4 h-4 mr-2" />
+                                        Mute
+                                    </DropdownMenuItem>
+                                )}
+
+                                {(effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isAudioMuted && !isCurrentUser && (
+                                    <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'audio')}>
+                                        <Mic className="w-4 h-4 mr-2" />
+                                        Ask to Unmute
+                                    </DropdownMenuItem>
+                                )}
+
+                                {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !participant.isVideoOff && !isCurrentUser && (
+                                    <DropdownMenuItem onClick={onToggleVideoAllowed}>
+                                        <VideoOff className="w-4 h-4 mr-2 text-red-500" />
+                                        Turn Off Camera
+                                    </DropdownMenuItem>
+                                )}
+
+                                {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && participant.isVideoOff && !isCurrentUser && (
+                                    <DropdownMenuItem onClick={() => onRequestMedia(participant.id, 'video')}>
+                                        <Video className="w-4 h-4 mr-2" />
+                                        Ask to Start Video
+                                    </DropdownMenuItem>
+                                )}
+
+                                {isViewerHost && !isViewerCoHost && (
+                                    <>
+                                        {effectiveRole !== 'host' && (
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    if (confirm('Promote this participant as a Host?')) {
+                                                        onMakeHost();
+                                                    }
+                                                }}
+                                            >
+                                                <Crown className="w-4 h-4 mr-2" />
+                                                Make Host
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {/* Remove Host - only Main Host can demote promoted hosts */}
+                                        {isViewerOriginalHost && isViewerHost && !isViewerCoHost && effectiveRole === 'host' && !isTargetOriginalHost && (
+                                            <DropdownMenuItem
+                                                onClick={onRevokeHost}
+                                                className="text-yellow-400"
+                                            >
+                                                <Crown className="w-4 h-4 mr-2" />
+                                                Remove Host
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {effectiveRole !== 'co-host' && effectiveRole !== 'host' && (
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    if (coHostCount >= 4) {
+                                                        alert('Maximum co-hosts reached.');
+                                                        return;
+                                                    }
+                                                    onMakeCoHost();
+                                                }}
+                                            >
+                                                <Shield className="w-4 h-4 mr-2" />
+                                                Make Co-Host
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {effectiveRole === 'co-host' && !isCurrentUser && (
+                                            <DropdownMenuItem
+                                                onClick={onRevokeCoHost}
+                                                className="text-yellow-400"
+                                            >
+                                                <Shield className="w-4 h-4 mr-2" />
+                                                Remove Co-Host
+                                            </DropdownMenuItem>
+                                        )}
+                                    </>
+                                )}
+
+                                {((isViewerOriginalHost && isViewerHost && !isViewerCoHost) || (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') || (isViewerCoHost && effectiveRole === 'participant')) && !isCurrentUser && !isTargetOriginalHost && (
+                                    <>
+                                        <DropdownMenuItem
+                                            onClick={onRemove}
+                                            className="text-red-500"
+                                        >
+                                            <X className="w-4 h-4 mr-2" />
+                                            Remove
+                                        </DropdownMenuItem>
+                                    </>
+                                )}
+
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
             </div>
         </div>
     );
@@ -1602,7 +1602,7 @@ export function AICompanionPanel() {
         try {
             let prompt = "";
             let contextTranscript = "";
-            
+
             const spokenTranscriptsList = useTranscriptionStore.getState().transcripts;
 
             if (action === "Summarize last 5 minutes") {
@@ -1615,7 +1615,7 @@ export function AICompanionPanel() {
                     .slice(-30)
                     .map(t => `${t.participantName}: ${t.text}`)
                     .join('\n');
-                    
+
                 contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${recentSpeech}\n\n--- CHAT TRANSCRIPT ---\n${recentChat}`;
                 prompt = `Provide a detailed summary of the conversation that happened in the last 5 minutes. Focus on the specific details of this recent segment. Use both spoken transcription and chat messages. \n\nIMPORTANT INSTRUCTIONS:\n1. Start your response EXACTLY with: \"Here is a summary of the conversation that occurred in the last 5 minutes:\"\n2. NEVER mention if chat messages or spoken transcripts are missing or empty. \n3. DO NOT use phrases like \"There are no chat messages to incorporate\" or \"No chat messages in the provided data\".\n4. Simply provide the summary based ONLY on whatever text data is provided without any metacommentary.\n\nData: \n\n${contextTranscript}`;
             } else if (action === "Create meeting recap") {
@@ -1625,7 +1625,7 @@ export function AICompanionPanel() {
                 const allSpeech = spokenTranscriptsList
                     .map(t => `${t.participantName}: ${t.text}`)
                     .join('\n');
-                    
+
                 contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${allSpeech}\n\n--- CHAT TRANSCRIPT ---\n${allChat}`;
                 prompt = `Provide a high-level executive recap of the entire meeting so far based on spoken transcription and chat messages. Highlight the main objectives, key outcomes, and overall progress. \n\nIMPORTANT INSTRUCTIONS:\n1. NEVER mention if chat messages or spoken transcripts are missing or empty.\n2. DO NOT use phrases like \"There are no chat messages to incorporate\" or \"No chat messages in the provided data\".\n3. Simply generate the recap using whatever data is provided without any metacommentary about the data sources.\n\nData: \n\n${contextTranscript}`;
             } else if (action === "Draft follow-up email") {
@@ -1635,9 +1635,9 @@ export function AICompanionPanel() {
                 const allSpeech = spokenTranscriptsList
                     .map(t => `${t.participantName}: ${t.text}`)
                     .join('\n');
-                
+
                 const userName = useAuthStore.getState().user?.name || "Participant";
-                    
+
                 contextTranscript = `--- SPOKEN TRANSCRIPT ---\n${allSpeech}\n\n--- CHAT TRANSCRIPT ---\n${allChat}`;
                 prompt = `Based on the meeting data (spoken transcription and chat messages), draft a professional follow-up email. Include a thank you note, a summary of what was discussed, and a clear list of next steps. \n\nIMPORTANT: \n1. DO NOT mention if chat messages or spoken transcripts are missing or empty. Just draft the email using whatever data is provided without any metacommentary about the data sources.\n2. SIGN OFF the email with "Best Regards, ${userName}". DO NOT use [Your Name] or any other placeholder.\n\nData: \n\n${contextTranscript}`;
             } else {
@@ -2375,7 +2375,7 @@ export function ResourceHubPanel() {
 
         if (meeting?.id && currentUser) {
             let metadata: any = {};
-            
+
             if (shareType === 'file' && selectedFile) {
                 try {
                     const reader = new FileReader();
@@ -2384,7 +2384,7 @@ export function ResourceHubPanel() {
                         reader.onerror = (e) => reject(e);
                         reader.readAsDataURL(selectedFile);
                     });
-                    
+
                     metadata = {
                         fileName: selectedFile.name,
                         fileSize: selectedFile.size,
@@ -2448,71 +2448,71 @@ export function ResourceHubPanel() {
 
                     <div className="p-4 bg-[#232323] border-b border-[#404040] space-y-4">
                         {!isSharing ? (
-                            <Button 
+                            <Button
                                 onClick={() => setIsSharing(true)}
                                 className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2"
                             >
                                 <Plus className="w-4 h-4" /> Share Resource
                             </Button>
                         ) : (
-                                <div className="space-y-3 bg-[#1A1A1A] p-3 rounded-lg border border-[#333]">
-                                    <input 
-                                        type="file" 
-                                        ref={fileInputRef} 
-                                        onChange={handleFileChange} 
-                                        className="hidden" 
-                                    />
-                                    <div className="flex gap-2">
-                                        <Button 
-                                            size="sm" 
-                                            variant={shareType === 'link' ? 'default' : 'outline'}
-                                            onClick={() => setShareType('link')}
-                                            className="flex-1 text-xs"
-                                        >
-                                            Link
-                                        </Button>
-                                        <Button 
-                                            size="sm" 
-                                            variant={shareType === 'file' ? 'default' : 'outline'}
-                                            onClick={() => setShareType('file')}
-                                            className="flex-1 text-xs"
-                                        >
-                                            File
-                                        </Button>
-                                    </div>
-                                    <Input 
-                                        placeholder="Title" 
-                                        value={newTitle}
-                                        onChange={(e) => setNewTitle(e.target.value)}
-                                        className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
-                                    />
-                                    <Input 
-                                        placeholder={shareType === 'link' ? "URL" : "File Description"} 
-                                        value={newContent}
-                                        onChange={(e) => setNewContent(e.target.value)}
-                                        className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
-                                    />
-                                    
-                                    {shareType === 'file' && (
-                                        <Button 
-                                            size="sm" 
-                                            variant="outline" 
-                                            className="w-full text-xs border-dashed border-[#444] hover:border-blue-500/50 hover:bg-blue-500/5 text-gray-300 gap-2"
-                                            onClick={() => fileInputRef.current?.click()}
-                                        >
-                                            <Paperclip className="w-3 h-3" />
-                                            {selectedFile ? `Change File (${selectedFile.name})` : "Upload File from Device"}
-                                        </Button>
-                                    )}
-
-                                    <div className="flex gap-2 pt-1">
-                                        <Button size="sm" variant="ghost" className="flex-1 text-xs text-white" onClick={() => {
-                                            setIsSharing(false);
-                                            setSelectedFile(null);
-                                        }}>Cancel</Button>
-                                        <Button size="sm" className="flex-1 text-xs bg-blue-600" onClick={handleShare}>Share</Button>
-                                    </div>
+                            <div className="space-y-3 bg-[#1A1A1A] p-3 rounded-lg border border-[#333]">
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                />
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant={shareType === 'link' ? 'default' : 'outline'}
+                                        onClick={() => setShareType('link')}
+                                        className="flex-1 text-xs"
+                                    >
+                                        Link
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant={shareType === 'file' ? 'default' : 'outline'}
+                                        onClick={() => setShareType('file')}
+                                        className="flex-1 text-xs"
+                                    >
+                                        File
+                                    </Button>
                                 </div>
+                                <Input
+                                    placeholder="Title"
+                                    value={newTitle}
+                                    onChange={(e) => setNewTitle(e.target.value)}
+                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                />
+                                <Input
+                                    placeholder={shareType === 'link' ? "URL" : "File Description"}
+                                    value={newContent}
+                                    onChange={(e) => setNewContent(e.target.value)}
+                                    className="bg-[#2A2A2A] border-[#444] h-8 text-xs text-white"
+                                />
+
+                                {shareType === 'file' && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="w-full text-xs border-dashed border-[#444] hover:border-blue-500/50 hover:bg-blue-500/5 text-gray-300 gap-2"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <Paperclip className="w-3 h-3" />
+                                        {selectedFile ? `Change File (${selectedFile.name})` : "Upload File from Device"}
+                                    </Button>
+                                )}
+
+                                <div className="flex gap-2 pt-1">
+                                    <Button size="sm" variant="ghost" className="flex-1 text-xs text-white" onClick={() => {
+                                        setIsSharing(false);
+                                        setSelectedFile(null);
+                                    }}>Cancel</Button>
+                                    <Button size="sm" className="flex-1 text-xs bg-blue-600" onClick={handleShare}>Share</Button>
+                                </div>
+                            </div>
                         )}
 
                         <div className="flex gap-2">
@@ -2541,8 +2541,8 @@ export function ResourceHubPanel() {
                                 const isPdf = fileExt === 'pdf';
                                 const isDoc = ['doc', 'docx', 'txt'].includes(fileExt);
                                 const isPpt = ['ppt', 'pptx'].includes(fileExt);
-                                
-                                // Absolute IST correction (Manual +5.5h)
+
+                                // Standardized UTC-to-IST parsing
                                 const date = (() => {
                                     if (!res.timestamp) return new Date();
                                     
@@ -2551,34 +2551,26 @@ export function ResourceHubPanel() {
                                     if (!ts.includes('Z') && !ts.includes('+') && !(/[-+]\d{2}:?\d{2}$/.test(ts))) {
                                         ts += 'Z';
                                     }
-                                    
-                                    const d = new Date(ts);
-                                    
-                                    // Absolute IST Offset Correction:
-                                    // If the app is locking to UTC incorrectly (as seen in screenshots),
-                                    // we manually add 5 hours and 30 minutes (330 minutes) 
-                                    // to ensure the internal pointer matches the user's IST clock.
-                                    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                                    return new Date(d.getTime() + IST_OFFSET_MS);
+                                    return new Date(ts);
                                 })();
 
                                 const formatTime = (d: Date) => {
-                                    return d.toLocaleTimeString('en-US', { 
-                                        timeZone: 'Asia/Kolkata', 
-                                        hour: '2-digit', 
-                                        minute: '2-digit', 
-                                        hour12: true 
+                                    return d.toLocaleTimeString('en-US', {
+                                        timeZone: 'Asia/Kolkata',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: true
                                     }).toUpperCase();
                                 };
 
                                 const formatDate = (d: Date) => {
-                                    return d.toLocaleDateString('en-US', { 
-                                        timeZone: 'Asia/Kolkata', 
-                                        day: 'numeric', 
-                                        month: 'short' 
+                                    return d.toLocaleDateString('en-GB', {
+                                        timeZone: 'Asia/Kolkata',
+                                        day: '2-digit',
+                                        month: 'short'
                                     });
                                 };
-                                
+
                                 return (
                                     <div key={res.id} className="bg-[#232323] border border-[#333] p-4 rounded-xl hover:border-blue-500/30 transition-all group relative overflow-hidden">
                                         {/* Content type accent */}
@@ -2605,18 +2597,18 @@ export function ResourceHubPanel() {
                                                         <Paperclip className="w-5 h-5 text-purple-400" />
                                                     )}
                                                 </div>
-                                            <div className="min-w-0 flex-1">
-                                                <span className="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors truncate block">{res.title}</span>
-                                                <span className="text-[10px] text-gray-500 mt-0.5 block italic truncate">
-                                                    by {res.sender_name}
-                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors truncate block">{res.title}</span>
+                                                    <span className="text-[10px] text-gray-500 mt-0.5 block italic truncate">
+                                                        by {res.sender_name}
+                                                    </span>
+                                                </div>
                                             </div>
+                                            <span className="text-[10px] text-gray-500 shrink-0 font-medium">
+                                                {formatDate(date)} • {formatTime(date)}
+                                            </span>
                                         </div>
-                                        <span className="text-[10px] text-gray-500 shrink-0 font-medium">
-                                            {formatDate(date)} • {formatTime(date)}
-                                        </span>
-                                    </div>
-                                        
+
                                         <div className="mt-3 text-xs text-gray-400 line-clamp-2 leading-relaxed opacity-80 italic">
                                             {res.content}
                                         </div>
@@ -2634,9 +2626,9 @@ export function ResourceHubPanel() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <Button 
-                                                size="sm" 
-                                                variant="ghost" 
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
                                                 className="h-8 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 gap-2 font-medium px-3"
                                                 onClick={async () => {
                                                     if (isLink) {
@@ -2655,7 +2647,7 @@ export function ResourceHubPanel() {
                                                                 // Fallback for older shares
                                                                 blob = new Blob([res.content], { type: res.metadata?.fileType || 'text/plain' });
                                                             }
-                                                            
+
                                                             const url = window.URL.createObjectURL(blob);
                                                             const a = document.createElement('a');
                                                             a.style.display = 'none';
