@@ -2340,9 +2340,9 @@ export function TranscriptPanel() {
  * ------------------------------------------------------------------------------------------------- */
 
 export function ResourceHubPanel() {
-    const { isHubOpen, setHubOpen, resources, shareResource, fetchResources } = useResourceStore();
+    const { isHubOpen, setHubOpen, resources, shareResource, deleteResource, fetchResources } = useResourceStore();
     const { meeting } = useMeetingStore();
-    const currentUser = useAuthStore.getState().user;
+    const { user: currentUser } = useAuthStore();
 
     const [activeTab, setActiveTab] = useState<'all' | 'files' | 'links'>('all');
     const [isSharing, setIsSharing] = useState(false);
@@ -2351,6 +2351,8 @@ export function ResourceHubPanel() {
     const [shareType, setShareType] = useState<'link' | 'file'>('link');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [resourceToDelete, setResourceToDelete] = useState<{ id: number; meetingId: string } | null>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -2574,27 +2576,21 @@ export function ResourceHubPanel() {
                                 return (
                                     <div key={res.id} className="bg-[#232323] border border-[#333] p-4 rounded-xl hover:border-blue-500/30 transition-all group relative overflow-hidden">
                                         {/* Content type accent */}
-                                        <div className={cn(
-                                            "absolute top-0 left-0 w-1 h-full",
-                                            isLink ? "bg-blue-500" : "bg-purple-500"
-                                        )} />
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
 
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-center gap-3">
-                                                <div className={cn(
-                                                    "p-2 rounded-lg",
-                                                    isLink ? "bg-blue-500/10" : "bg-purple-500/10"
-                                                )}>
+                                                <div className="p-2 rounded-lg bg-blue-500/10">
                                                     {isLink ? (
                                                         <Bot className="w-5 h-5 text-blue-400" />
                                                     ) : isImage ? (
-                                                        <Video className="w-5 h-5 text-purple-400" />
+                                                        <Video className="w-5 h-5 text-blue-400" />
                                                     ) : isPdf ? (
                                                         <FileText className="w-5 h-5 text-red-400" />
                                                     ) : isDoc ? (
                                                         <FileText className="w-5 h-5 text-blue-300" />
                                                     ) : (
-                                                        <Paperclip className="w-5 h-5 text-purple-400" />
+                                                        <Paperclip className="w-5 h-5 text-blue-400" />
                                                     )}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
@@ -2604,9 +2600,24 @@ export function ResourceHubPanel() {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <span className="text-[10px] text-gray-500 shrink-0 font-medium">
-                                                {formatDate(date)} • {formatTime(date)}
-                                            </span>
+                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                <span className="text-[10px] text-gray-500 font-medium">
+                                                    {formatDate(date)} • {formatTime(date)}
+                                                </span>
+                                                {currentUser?.id === res.sender_id && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setResourceToDelete({ id: res.id, meetingId: meeting?.id! });
+                                                            setShowDeleteConfirm(true);
+                                                        }}
+                                                        className="p-1 hover:bg-red-500/10 text-gray-500 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                                        title="Delete resource"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="mt-3 text-xs text-gray-400 line-clamp-2 leading-relaxed opacity-80 italic">
@@ -2685,6 +2696,64 @@ export function ResourceHubPanel() {
                     </div>
                 </motion.div>
             )}
+
+            {/* ── Delete Confirmation Modal ── */}
+            <AnimatePresence>
+                {showDeleteConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+                        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                        onClick={() => setShowDeleteConfirm(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.92, opacity: 0, y: 12 }}
+                            transition={{ type: 'spring', damping: 22, stiffness: 260 }}
+                            className="bg-[#1C1C1C] border border-[#333] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Icon + Title */}
+                            <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                                    <Trash2 className="w-5 h-5 text-red-400" />
+                                </div>
+                                <h3 className="text-base font-semibold text-white">Delete Resource</h3>
+                            </div>
+
+                            {/* Message */}
+                            <p className="text-sm text-gray-400 leading-relaxed">
+                                Are you sure you want to delete this shared resource? This action cannot be undone.
+                            </p>
+
+                            {/* Buttons */}
+                            <div className="flex gap-3 pt-1">
+                                <button
+                                    onClick={() => setShowDeleteConfirm(false)}
+                                    className="flex-1 h-9 rounded-lg border border-[#404040] bg-transparent text-sm text-gray-300 hover:bg-[#2A2A2A] hover:text-white transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (resourceToDelete) {
+                                            deleteResource(resourceToDelete.id, resourceToDelete.meetingId);
+                                        }
+                                        setShowDeleteConfirm(false);
+                                        setResourceToDelete(null);
+                                    }}
+                                    className="flex-1 h-9 rounded-lg bg-red-600 hover:bg-red-700 text-sm text-white font-medium transition-colors"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </AnimatePresence>
     );
 }

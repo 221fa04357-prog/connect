@@ -951,6 +951,16 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('delete_resource', async (data) => {
+        const { id, meeting_id } = data;
+        try {
+            await db.query('DELETE FROM resources WHERE id = $1', [id]);
+            io.to(meeting_id).emit('resource_deleted', id);
+        } catch (err) {
+            console.error('Error deleting resource:', err);
+        }
+    });
+
     socket.on('fetch_resources', async (data) => {
         const { meeting_id } = data;
         try {
