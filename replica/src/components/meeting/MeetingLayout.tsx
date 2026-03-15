@@ -149,27 +149,32 @@ export function ChatPanel() {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
             recognitionRef.current = new SpeechRecognition();
-            recognitionRef.current.continuous = true;
+            recognitionRef.current.continuous = false; // Stop automatically after speech ends
             recognitionRef.current.interimResults = true;
 
             recognitionRef.current.onresult = (event: any) => {
-                let interimTranscript = '';
                 let finalTranscript = '';
+                let interimTranscript = '';
 
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
+                        finalTranscript += transcript;
                     } else {
-                        interimTranscript += event.results[i][0].transcript;
+                        interimTranscript += transcript;
                     }
                 }
 
                 if (finalTranscript) {
-                    setInput(prev => prev + ' ' + finalTranscript);
+                    setInput(prev => {
+                        const trimmed = prev.trim();
+                        return trimmed ? trimmed + ' ' + finalTranscript : finalTranscript;
+                    });
                 }
             };
 
             recognitionRef.current.onerror = (event: any) => {
+                if (event.error === 'no-speech') return; // Ignore silent periods
                 console.error('Speech recognition error:', event.error);
                 setIsListening(false);
                 toast.error(`Voice input error: ${event.error}`);
@@ -479,21 +484,6 @@ export function ChatPanel() {
                                 )}
                             >
                                 <Mic className="w-5 h-5" />
-                            </Button>
-
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                disabled={!chatAllowed || !documentShareAllowed}
-                                onClick={() => {
-                                    if (!documentShareAllowed) {
-                                        toast.error("Host disabled document sharing");
-                                        return;
-                                    }
-                                    toast.info("Document sharing coming soon in next update.");
-                                }}
-                            >
-                                <Paperclip className="w-5 h-5 text-gray-400 hover:text-white transition-colors" />
                             </Button>
 
                             <Input
@@ -2547,7 +2537,7 @@ export function ResourceHubPanel() {
                                 // Standardized UTC-to-IST parsing
                                 const date = (() => {
                                     if (!res.timestamp) return new Date();
-                                    
+
                                     // Handle string normalization
                                     let ts = res.timestamp.replace(' ', 'T');
                                     if (!ts.includes('Z') && !ts.includes('+') && !(/[-+]\d{2}:?\d{2}$/.test(ts))) {
