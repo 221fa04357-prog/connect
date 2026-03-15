@@ -102,15 +102,18 @@ export function PollPanel() {
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-                        {isJoinedAsHost && !isCreating && (
+                    {isJoinedAsHost && !isCreating && (
+                        <div className="p-4 border-b border-[#404040] shrink-0">
                             <Button 
                                 onClick={() => setIsCreating(true)}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2 h-9 text-sm"
                             >
                                 <Plus className="w-4 h-4" /> Create Poll
                             </Button>
-                        )}
+                        </div>
+                    )}
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
 
                         {isCreating && (
                             <div className="bg-[#232323] p-4 rounded-xl border border-blue-500/30 space-y-4">

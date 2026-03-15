@@ -1423,6 +1423,8 @@ function ControlBar() {
         setPendingMediaRequest
     } = useMeetingStore();
 
+    const { isPollPanelOpen, setPollPanelOpen } = usePollStore();
+
     // Enumerate devices on mount for the control bar dropdowns
     useEffect(() => {
         enumerateDevices();
@@ -2405,9 +2407,24 @@ function ControlBar() {
         <>
             {/* Bottom Control Bar */}
             <div className="fixed bottom-0 left-0 right-0 bg-[#0A0A0A] border-t border-[#333] z-40 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] px-4 shadow-2xl">
-                <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
+                <div className="flex items-center justify-between max-w-screen-2xl mx-auto relative">
+                    {/* Floating Polls Icon - Repositioned higher */}
+                    <div className="absolute bottom-[120px] right-2 md:right-0 z-[50]">
+                        <button
+                            onClick={() => setPollPanelOpen(!isPollPanelOpen)}
+                            className={cn(
+                                "p-2 rounded-full transition-all duration-300 shadow-lg flex items-center justify-center",
+                                isPollPanelOpen 
+                                    ? "bg-[#0948c7] text-white" 
+                                    : "bg-[#0B5CFF] text-white hover:bg-[#0948c7] hover:scale-105"
+                            )}
+                            aria-label="Polls & Quizzes"
+                        >
+                            <ListTodo className="w-4 h-4" strokeWidth={2.5} />
+                        </button>
+                    </div>
 
-                    {/* Main Controls - Center Aligned */}
+                    {/* Left & Middle Controls... */}
                     <div className="flex items-center gap-4 md:gap-3 lg:gap-4 flex-1 justify-start md:justify-center overflow-x-auto no-scrollbar pb-1 px-2">
 
                         {/* Audio */}
@@ -2755,10 +2772,6 @@ function ControlBar() {
                                     <Plus className="w-4 h-4 mr-2" />
                                     Resource Hub
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => usePollStore.getState().setPollPanelOpen(true)} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                                    <ListTodo className="w-4 h-4 mr-2" />
-                                    Polls & Quizzes
-                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={handleToggleHand} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     <Hand className={cn("w-4 h-4 mr-2", isHandRaised ? 'text-yellow-400' : '')} />
                                     {isHandRaised ? 'Lower Hand' : 'Raise Hand'}
@@ -3074,7 +3087,7 @@ function ControlBar() {
                     <div className="flex-none ml-4">
                         <Button
                             onClick={() => setShowLeaveConfirm(true)}
-                            className="bg-[#E53935] hover:bg-[#D32F2F] text-white font-semibold rounded-lg px-4 py-1.5 h-auto text-sm"
+                            className="bg-[#E53935] hover:bg-[#D32F2F] text-white font-semibold rounded-lg px-4 py-1.5 h-auto text-sm w-full"
                         >
                             End
                         </Button>

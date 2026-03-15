@@ -164,7 +164,7 @@ export function VideoTile({
             animate={{ opacity: 1, scale: fullscreen ? 1 : 0.95 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className={cn(
-                'relative aspect-video bg-[#232323] rounded-lg overflow-hidden group min-h-[180px] cursor-pointer',
+                'relative aspect-square bg-[#232323] rounded-lg overflow-hidden group min-h-[200px] md:min-h-[280px] cursor-pointer shadow-lg border border-[#333]',
                 isPinned && 'ring-2 ring-blue-500',
                 fullscreen && 'w-full h-full',
                 className
@@ -634,26 +634,24 @@ export function VideoGrid() {
     const participantCount = visibleParticipants.length;
 
     return (
-        <div className="flex-1 min-h-0 overflow-y-auto pb-[110px] no-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar relative">
             <div className={cn(
-                'p-2 md:p-4 w-full h-full',
-                participantCount === 1 ? 'flex items-center justify-center' : ''
+                'p-4 w-full min-h-full flex flex-col items-center justify-center pb-[120px]',
             )}>
                 <div
                     className={cn(
-                        'grid gap-2 md:gap-4',
-                        participantCount === 1 ? 'max-w-2xl w-full' : 'w-full'
+                        'grid gap-4 w-full',
+                        participantCount === 1 ? 'max-w-2xl' : 'max-w-7xl'
                     )}
                     style={{
                         gridTemplateColumns: participantCount === 1
                             ? '1fr'
                             : typeof window !== 'undefined' && window.innerWidth >= 768
-                                ? `repeat(auto-fit, minmax(${participantCount === 2 ? '300px' : '200px'}, 1fr))`
-                                : 'repeat(auto-fit, minmax(140px, 1fr))',
-                        gridAutoRows: participantCount === 1 ? 'auto' : '1fr',
-                        aspectRatio: participantCount === 1 ? '16/9' : undefined,
-                        alignItems: 'stretch',
-                        justifyItems: 'stretch',
+                                ? `repeat(auto-fit, minmax(${participantCount <= 2 ? '320px' : '260px'}, 1fr))`
+                                : 'repeat(auto-fit, minmax(160px, 1fr))',
+                        gridAutoRows: 'auto',
+                        alignItems: 'center',
+                        justifyItems: 'center',
                     }}
                 >
                     {visibleParticipants.map((participant) => (
@@ -664,6 +662,7 @@ export function VideoGrid() {
                             isPinned={pinnedParticipantId === participant.id}
                             onPin={() => handlePin(participant.id)}
                             onClick={() => setFocusedParticipant(participant.id)}
+                            className="w-full"
                         />
                     ))}
                 </div>
