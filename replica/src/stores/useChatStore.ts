@@ -472,6 +472,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('resource_deleted', (id: number) => {
+      import('./useResourceStore').then((store) => {
+        store.useResourceStore.getState().removeResource(id);
+      });
+    });
+
     socket.on('breakout_rooms_created', (data: { rooms: any[] }) => {
       import('./useBreakoutStore').then((store) => {
         const bs = store.useBreakoutStore.getState();

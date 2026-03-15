@@ -23,6 +23,8 @@ interface ResourceState {
     setHubOpen: (open: boolean) => void;
     
     shareResource: (meetingId: string, senderId: string, senderName: string, type: 'file' | 'link', title: string, content: string, metadata?: any) => void;
+    deleteResource: (id: number, meetingId: string) => void;
+    removeResource: (id: number) => void;
     fetchResources: (meetingId: string) => Promise<void>;
 }
 
@@ -54,6 +56,17 @@ export const useResourceStore = create<ResourceState>((set, get) => ({
             });
         }
     },
+
+    deleteResource: (id, meetingId) => {
+        const socket = useChatStore.getState().socket;
+        if (socket) {
+            socket.emit('delete_resource', { id, meeting_id: meetingId });
+        }
+    },
+
+    removeResource: (id) => set((state) => ({
+        resources: state.resources.filter(r => r.id !== id)
+    })),
 
     fetchResources: async (meetingId) => {
         try {

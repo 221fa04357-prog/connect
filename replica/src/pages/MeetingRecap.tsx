@@ -14,7 +14,12 @@ import {
     Sparkles,
     Download,
     Share2,
-    ArrowRight
+    ArrowRight,
+    Paperclip,
+    ExternalLink,
+    Video,
+    Bot,
+    Minus
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { Badge } from '@/components/ui';
@@ -32,6 +37,21 @@ interface RecapData {
     transcript: { speaker: string; text: string; time: string }[];
 }
 
+interface SharedResource {
+    id: number;
+    type: 'file' | 'link';
+    title: string;
+    content: string;
+    sender_name: string;
+    timestamp: string;
+    metadata?: {
+        fileName?: string;
+        fileType?: string;
+        fileSize?: number;
+        fileData?: string;
+    };
+}
+
 const API = import.meta.env.VITE_API_URL || '';
 
 export default function MeetingRecap() {
@@ -40,7 +60,9 @@ export default function MeetingRecap() {
     const [recap, setRecap] = useState<RecapData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'summary' | 'transcript'>('summary');
+    const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'files'>('summary');
+    const [resources, setResources] = useState<SharedResource[]>([]);
+    const [isResourcesLoading, setIsResourcesLoading] = useState(false);
     const [copiedSummary, setCopiedSummary] = useState(false);
     const [copiedLink, setCopiedLink] = useState(false);
     const [copiedTranscript, setCopiedTranscript] = useState(false);
@@ -64,6 +86,19 @@ export default function MeetingRecap() {
                 console.error('Error fetching recap:', err);
                 setError(err.message);
                 setIsLoading(false);
+            });
+
+        // Fetch shared resources
+        setIsResourcesLoading(true);
+        fetch(`${API}/api/resources/${meetingId}`)
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
+                setResources(data);
+                setIsResourcesLoading(false);
+            })
+            .catch(err => {
+                console.error('Error fetching resources:', err);
+                setIsResourcesLoading(false);
             });
     }, [meetingId]);
 
@@ -322,6 +357,20 @@ export default function MeetingRecap() {
                                 Transcript
                             </div>
                         </button>
+                        <button
+                            onClick={() => setActiveTab('files')}
+                            className={cn(
+                                "px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                                activeTab === 'files'
+                                    ? "bg-blue-600 text-white shadow-[0_0_15px_rgba(11,92,255,0.4)]"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Paperclip className="w-4 h-4" />
+                                Files Shared
+                            </div>
+                        </button>
                     </div>
 
                     {/* Content Area */}
@@ -430,7 +479,7 @@ export default function MeetingRecap() {
                                             </Button>
                                         </div>
                                     </div>
-                                ) : (
+                                ) : activeTab === 'transcript' ? (
                                     <div className="bg-[#161616] border border-[#333] rounded-2xl p-6 md:p-8 shadow-xl min-h-[500px]">
                                         <div className="flex items-center justify-between mb-8">
                                             <h3 className="text-xl font-semibold flex items-center gap-2">
@@ -465,6 +514,111 @@ export default function MeetingRecap() {
                                                 </div>
                                             ))}
                                         </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {resources.length > 0 ? (
+                                            resources.map((res) => {
+                                                const isLink = res.type === 'link';
+                                                const fileName = res.metadata?.fileName || '';
+                                                const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
+                                                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(fileExt);
+
+                                                const date = (() => {
+                                                    let ts = res.timestamp.replace(' ', 'T');
+                                                    if (!ts.includes('Z') && !ts.includes('+') && !(/[-+]\d{2}:?\d{2}$/.test(ts))) {
+                                                        ts += 'Z';
+                                                    }
+                                                    return new Date(ts);
+                                                })();
+
+                                                const formatTime = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+                                                const formatDate = (d: Date) => d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' });
+
+                                                return (
+                                                    <div key={res.id} className="bg-[#1C1C1C] border border-[#333] p-5 rounded-2xl hover:border-blue-500/30 transition-all group relative overflow-hidden flex flex-col justify-between shadow-lg">
+                                                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+                                                        
+                                                        <div className="space-y-4">
+                                                            <div className="flex justify-between items-start gap-2">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="p-2.5 rounded-xl bg-blue-500/10">
+                                                                        {isLink ? (
+                                                                            <Bot className="w-5 h-5 text-blue-400" />
+                                                                        ) : isImage ? (
+                                                                            <Video className="w-5 h-5 text-blue-400" />
+                                                                        ) : (
+                                                                            <Paperclip className="w-5 h-5 text-blue-400" />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <h4 className="font-semibold text-white group-hover:text-blue-400 transition-colors truncate">{res.title}</h4>
+                                                                        <p className="text-[10px] text-gray-500 mt-0.5 italic">by {res.sender_name}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-[10px] text-gray-500 font-medium shrink-0">
+                                                                    {formatDate(date)} • {formatTime(date)}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            <p className="text-xs text-gray-400 line-clamp-2 italic opacity-80 min-h-[2.5rem]">
+                                                                {res.content}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="mt-4 flex items-center justify-between pt-4 border-t border-[#333]">
+                                                            {res.metadata?.fileSize && (
+                                                                <span className="text-[10px] text-gray-500 bg-[#252525] px-2 py-1 rounded">
+                                                                    {(res.metadata.fileSize / 1024).toFixed(1)} KB
+                                                                </span>
+                                                            )}
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 gap-2 font-medium"
+                                                                onClick={async () => {
+                                                                    if (isLink) {
+                                                                        const url = res.content.match(/https?:\/\/[^\s]+/)?.[0] || (res.content.startsWith('http') ? res.content : `https://${res.content}`);
+                                                                        window.open(url, '_blank');
+                                                                    } else {
+                                                                        try {
+                                                                            const fileName = res.metadata?.fileName || res.title;
+                                                                            let blob;
+                                                                            if (res.metadata?.fileData) {
+                                                                                const response = await fetch(res.metadata.fileData);
+                                                                                blob = await response.blob();
+                                                                            } else {
+                                                                                blob = new Blob([res.content], { type: res.metadata?.fileType || 'text/plain' });
+                                                                            }
+                                                                            const url = window.URL.createObjectURL(blob);
+                                                                            const a = document.createElement('a');
+                                                                            a.style.display = 'none'; a.href = url; a.download = fileName;
+                                                                            document.body.appendChild(a); a.click();
+                                                                            window.URL.revokeObjectURL(url); document.body.removeChild(a);
+                                                                        } catch (err) {
+                                                                            console.error("Download error:", err);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {isLink ? "Open Link" : "Download"}
+                                                                {isLink ? <ExternalLink className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : isResourcesLoading ? (
+                                            <div className="col-span-full py-20 flex flex-col items-center justify-center space-y-4 opacity-50">
+                                                <Sparkles className="w-10 h-10 animate-pulse text-blue-500" />
+                                                <p className="text-sm">Loading resources...</p>
+                                            </div>
+                                        ) : (
+                                            <div className="col-span-full py-20 flex flex-col items-center justify-center space-y-4 opacity-30">
+                                                <Paperclip className="w-12 h-12" />
+                                                <p className="text-sm">No files or links were shared during this meeting.</p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </motion.div>
