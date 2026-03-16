@@ -60,6 +60,13 @@ interface ChatState {
   banParticipant: (meetingId: string, participantId: string) => void;
   kickParticipant: (meetingId: string, participantId: string) => void;
   forceMediaState: (meetingId: string, participantId: string, type: 'audio' | 'video', state: boolean) => void;
+
+  // Remote Control Methods
+  requestControl: (meetingId: string, userId: string) => void;
+  respondToControl: (meetingId: string, hostId: string, accepted: boolean) => void;
+  stopControl: (meetingId: string, targetId: string) => void;
+  sendControlEvent: (meetingId: string, targetId: string, event: any) => void;
+
   setFrequentQuestionUsers: (users: any[]) => void;
   clearFrequentQuestionUsers: () => void;
   emitCaptionLanguage: (meetingId: string, language: string) => void;
@@ -686,6 +693,54 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('control_requested', (data: { fromName: string, fromId: string }) => {
+      console.log('useChatStore: Received control_requested', data);
+      import('./useMeetingStore').then((store) => {
+        console.log('useChatStore: Setting remote control state to pending');
+        store.useMeetingStore.getState().setRemoteControlState({
+          status: 'pending',
+          role: 'controlled',
+          targetId: data.fromId,
+          targetName: data.fromName
+        });
+      });
+    });
+
+    socket.on('control_response_received', (data: { participantId: string, accepted: boolean }) => {
+      import('./useMeetingStore').then((store) => {
+        const ms = store.useMeetingStore.getState();
+        if (data.accepted) {
+          ms.setRemoteControlState({
+            status: 'active',
+            role: 'controller',
+            targetId: data.participantId
+          });
+          import('sonner').then(({ toast }) => toast.success('Remote control request accepted!'));
+        } else {
+          ms.setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+          import('sonner').then(({ toast }) => toast.error('Remote control request rejected.'));
+        }
+      });
+    });
+
+    socket.on('control_stopped', () => {
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setRemoteControlState({
+          status: 'idle',
+          role: null,
+          targetId: null,
+          targetName: null
+        });
+        import('sonner').then(({ toast }) => toast.info('Remote control session ended.'));
+      });
+    });
+
+    socket.on('receive_control_event', (data: { event: any }) => {
+      // Dispatch custom event for MeetingVideo or other components to handle
+      const controlEvent = new CustomEvent('remote_control_event', { detail: data.event });
+      window.dispatchEvent(controlEvent);
+    });
+
     socket.on('meeting_controls_updated', (settings: any) => {
       import('./useMeetingStore').then((store) => {
         const ms = store.useMeetingStore.getState();
@@ -948,6 +1003,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   forceMediaState: (meetingId, participantId, type, state) => {
     get().socket?.emit('force_media_state', { meetingId, participantId, type, state });
+  },
+
+  requestControl: (meetingId, userId) => {
+    get().socket?.emit('request_control', { meetingId, userId });
+  },
+
+  respondToControl: (meetingId, hostId, accepted) => {
+    get().socket?.emit('respond_to_control', { meetingId, hostId, accepted });
+  },
+
+  stopControl: (meetingId, targetId) => {
+    get().socket?.emit('stop_control', { meetingId, targetId });
+  },
+
+  sendControlEvent: (meetingId, targetId, event) => {
+    get().socket?.emit('send_control_event', { meetingId, targetId, event });
   },
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),

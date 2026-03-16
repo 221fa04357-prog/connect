@@ -1684,10 +1684,85 @@ io.on('connection', (socket) => {
         if (targetSocketId) {
             // Find the sender's name
             const sender = room.get(socket.id);
-            const fromName = 'Host';
+            const fromName = sender?.name || 'Host';
 
             console.log(`Forwarding ${type} request from ${fromName} to participant ${userId} (Socket: ${targetSocketId})`);
             io.to(targetSocketId).emit('media_request', { type, fromName });
+        }
+    });
+
+    socket.on('request_control', (data) => {
+        const { meetingId, userId } = data;
+        console.log(`Received request_control for meeting ${meetingId}, target userId: ${userId}`);
+        const room = rooms.get(meetingId);
+        if (!room) {
+            console.log(`Room ${meetingId} not found`);
+            return;
+        }
+
+        let targetSocketId = null;
+        for (const [sId, p] of room.entries()) {
+            if (p.id === userId) {
+                targetSocketId = sId;
+                break;
+            }
+        }
+
+        if (targetSocketId) {
+            const sender = room.get(socket.id);
+            const fromName = sender?.name || 'Host';
+            const fromId = sender?.id || 'host';
+
+            console.log(`Forwarding control request from ${fromName} (${fromId}) to participant ${userId} (Socket: ${targetSocketId})`);
+            io.to(targetSocketId).emit('control_requested', { fromName, fromId });
+        } else {
+            console.log(`Target participant ${userId} not found in room ${meetingId}. Available IDs:`, Array.from(room.values()).map(p => p.id));
+        }
+    });
+
+    socket.on('respond_to_control', (data) => {
+        const { meetingId, hostId, accepted } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        const participant = room.get(socket.id);
+        const participantId = participant?.id;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === hostId) {
+                io.to(sId).emit('control_response_received', { participantId, accepted });
+                console.log(`User ${participantId} responded to control request: ${accepted ? 'Accepted' : 'Denied'}`);
+                break;
+            }
+        }
+    });
+
+    socket.on('stop_control', (data) => {
+        const { meetingId, targetId } = data;
+        // Broadcast to everyone in the room that control has stopped for a specific relationship
+        // or just broadcast to the room and let clients decide.
+        // Usually, we just relay it to the other party.
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('control_stopped');
+                break;
+            }
+        }
+    });
+
+    socket.on('send_control_event', (data) => {
+        const { meetingId, targetId, event } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('receive_control_event', { event });
+                break;
+            }
         }
     });
 
