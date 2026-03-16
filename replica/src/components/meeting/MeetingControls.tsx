@@ -2554,7 +2554,10 @@ function ControlBar() {
                             label="Participants"
                             onClick={toggleParticipants}
                             isActiveState={isParticipantsOpen}
-                            badge={participants.length}
+                            badge={participants.filter(p => p.isHandRaised).length > 0 
+                                ? participants.filter(p => p.isHandRaised).length 
+                                : participants.length}
+                            className={participants.filter(p => p.isHandRaised).length > 0 ? "text-yellow-500" : ""}
                         />
 
                         {/* Chat */}
@@ -2571,6 +2574,15 @@ function ControlBar() {
                             icon={Smile}
                             label="Reactions"
                             onClick={toggleReactions}
+                        />
+
+                        {/* Raise Hand Button */}
+                        <ControlButton
+                            icon={isHandRaised ? Hand : Plus}
+                            label={isHandRaised ? "Lower Hand" : "Raise Hand"}
+                            onClick={handleToggleHand}
+                            className={isHandRaised ? "text-yellow-500" : ""}
+                            badge={isHandRaised && currentParticipant?.handRaiseNumber ? currentParticipant.handRaiseNumber : undefined}
                         />
 
                         {/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
