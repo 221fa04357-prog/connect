@@ -60,8 +60,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_googl
                 // Random default password hash for OAuth users
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [id, name, email, passwordHash, avatar]
+                    'INSERT INTO users (id, name, email, password_hash, password_set, avatar) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                    [id, name, email, passwordHash, false, avatar]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -100,8 +100,8 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
                 const id = `user-ms-${profile.id}`;
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [id, name, email, passwordHash]
+                    'INSERT INTO users (id, name, email, password_hash, password_set) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+                    [id, name, email, passwordHash, false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -401,6 +401,7 @@ async function initializeDatabase() {
                 name VARCHAR(255) NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+                password_set BOOLEAN DEFAULT true,
                 avatar TEXT,
                 subscription_plan VARCHAR(50) DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT NOW(),
@@ -426,6 +427,9 @@ async function initializeDatabase() {
                 END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_participants' AND column_name='camera_on') THEN
                     ALTER TABLE meeting_participants ADD COLUMN camera_on BOOLEAN DEFAULT true;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password_set') THEN
+                    ALTER TABLE users ADD COLUMN password_set BOOLEAN DEFAULT true;
                 END IF;
             END $$;
             CREATE TABLE IF NOT EXISTS resources (
@@ -1836,8 +1840,8 @@ app.post('/api/auth/social', async (req, res) => {
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
             
             const insertResult = await db.query(
-                'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan',
-                [newId, name, normalizedEmail, passwordHash, avatar]
+                'INSERT INTO users (id, name, email, password_hash, password_set, avatar) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, avatar, subscription_plan, password_set',
+                [newId, name, normalizedEmail, passwordHash, false, avatar]
             );
             user = insertResult.rows[0];
             console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
@@ -1870,8 +1874,8 @@ app.post('/api/auth/register', async (req, res) => {
         const passwordHash = await bcrypt.hash(password, 10);
 
         const result = await db.query(
-            'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar, subscription_plan',
-            [id, name, normalizedEmail, passwordHash]
+            'INSERT INTO users (id, name, email, password_hash, password_set) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, password_set',
+            [id, name, normalizedEmail, passwordHash, true]
         );
 
         console.log(`User registered: ${normalizedEmail}`);
@@ -1895,6 +1899,13 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const user = result.rows[0];
+
+        // Check if password is set (Google users might not have one)
+        if (!user.password_set) {
+            console.log(`Login failed: Password not set for ${normalizedEmail} (Google sign-in user)`);
+            return res.status(401).json({ error: 'PASSWORD_NOT_SET' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             console.log(`Login failed: Incorrect password for ${normalizedEmail}`);
@@ -1907,6 +1918,28 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (err) {
         console.error('Login error:', err);
         res.status(500).json({ error: 'Failed to login' });
+    }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const passwordHash = await bcrypt.hash(password, 10);
+        const result = await db.query(
+            'UPDATE users SET password_hash = $1, password_set = TRUE, updated_at = NOW() WHERE LOWER(email) = LOWER($2) RETURNING id, name, email',
+            [passwordHash, normalizedEmail]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        console.log(`Password reset/set for: ${normalizedEmail}`);
+        res.json({ message: 'Password updated successfully' });
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ error: 'Failed to update password' });
     }
 });
 

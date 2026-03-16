@@ -1430,6 +1430,7 @@ function ControlBar() {
         enumerateDevices();
     }, [enumerateDevices]);
 
+
     const {
         unreadCount,
         localUserId,
@@ -1446,12 +1447,24 @@ function ControlBar() {
     const { user, isSubscribed } = useAuthStore();
     const {
         participants,
+        waitingRoom,
+        knownWaitingRoomIds,
+        resetWaitingRoomBadge,
         transientRoles,
         updateParticipant,
         toggleHandRaise,
         toggleParticipantAudio,
         toggleParticipantVideo
     } = useParticipantsStore();
+
+    // Reset badge when participants panel is opened
+    useEffect(() => {
+        if (isParticipantsOpen) {
+            resetWaitingRoomBadge();
+        }
+    }, [isParticipantsOpen, resetWaitingRoomBadge]);
+
+    const unreadWaitingCount = waitingRoom.filter(p => !knownWaitingRoomIds.includes(p.id)).length;
 
     // Find current user participant
     const currentUserId = localUserId || user?.id;
@@ -2554,7 +2567,7 @@ function ControlBar() {
                             label="Participants"
                             onClick={toggleParticipants}
                             isActiveState={isParticipantsOpen}
-                            badge={participants.length}
+                            badge={unreadWaitingCount}
                         />
 
                         {/* Chat */}

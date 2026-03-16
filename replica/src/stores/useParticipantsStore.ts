@@ -20,6 +20,7 @@ interface ParticipantsState {
   pinnedParticipantId: string | null;
   spotlightedParticipantId: string | null;
   videoRestricted: boolean;
+  knownWaitingRoomIds: string[];
 
   // Actions
   setParticipants: (participants: Participant[]) => void;
@@ -47,6 +48,7 @@ interface ParticipantsState {
   admitFromWaitingRoom: (id: string) => void;
   removeFromWaitingRoom: (id: string) => void;
   syncWaitingRoom: (participants: WaitingRoomParticipant[]) => void;
+  resetWaitingRoomBadge: () => void;
 
   // Video Controls
   setVideoRestriction: (restricted: boolean) => void;
@@ -72,6 +74,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
       transientRoles: {},
       waitingRoomEnabled: true,
       videoRestricted: false,
+      knownWaitingRoomIds: [],
       activeSpeakerId: null,
       pinnedParticipantId: null,
       spotlightedParticipantId: null,
@@ -343,6 +346,10 @@ export const useParticipantsStore = create<ParticipantsState>()(
       }),
       syncWaitingRoom: (waitingParticipants) => set({ waitingRoom: waitingParticipants }),
 
+      resetWaitingRoomBadge: () => set((state) => ({
+        knownWaitingRoomIds: state.waitingRoom.map(p => p.id)
+      })),
+
       setVideoRestriction: (restricted) => set((state) => {
         const res = { videoRestricted: restricted };
         setTimeout(() => eventBus.publish('participants:update', {
@@ -461,6 +468,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
         participants: [],
         waitingRoom: [],
         transientRoles: {},
+        knownWaitingRoomIds: [],
         activeSpeakerId: null,
         pinnedParticipantId: null,
         spotlightedParticipantId: null,

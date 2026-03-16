@@ -125,7 +125,11 @@ export function Login() {
                     navigate('/');
                 }
             } catch (err: any) {
-                setAuthError(err.message || 'Login failed. Please check your credentials.');
+                if (err.message === 'PASSWORD_NOT_SET') {
+                    setAuthError('This account was created via Google. Please set a password below or sign in with Google to continue.');
+                } else {
+                    setAuthError(err.message || 'Login failed. Please check your credentials.');
+                }
             }
         }
     }
@@ -172,6 +176,16 @@ export function Login() {
                             {authError === 'Account not found'
                                 ? 'Account not found. Please sign up to continue.'
                                 : authError}
+                            {authError.includes('set a password') && (
+                                <div className="mt-2 text-center">
+                                    <button
+                                        onClick={() => navigate('/reset-password')}
+                                        className="text-[#0B5CFF] hover:underline font-semibold"
+                                    >
+                                        Set Password Now
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -268,6 +282,10 @@ export function Login() {
 // Export both components as named exports. Import them as { Login } and { ResetPassword } in your router.
 export function ResetPassword() {
     const navigate = useNavigate();
+    const resetPassword = useAuthStore(state => state.resetPassword);
+    const isLoading = useAuthStore(state => state.isLoading);
+    const [success, setSuccess] = useState(false);
+    const [authError, setAuthError] = useState('');
     const [form, setForm] = useState({
         email: '',
         password: '',
@@ -316,8 +334,10 @@ export function ResetPassword() {
         setErrors(errs => ({ ...errs, [name]: validate(name, form[name as keyof typeof form]) }));
     }
 
-    function handleSubmit(e: React.FormEvent) {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
+        setAuthError('');
+        setSuccess(false);
         // Validate all fields
         const newErrors = {
             email: validate('email', form.email),
@@ -327,9 +347,13 @@ export function ResetPassword() {
         setErrors(newErrors);
         setTouched({ email: true, password: true, confirmPassword: true });
         if (!newErrors.email && !newErrors.password && !newErrors.confirmPassword) {
-            // Submit to backend here later
-            // For now, just navigate to login
-            navigate('/login');
+            try {
+                await resetPassword(form.email, form.password);
+                setSuccess(true);
+                setTimeout(() => navigate('/login'), 3000);
+            } catch (err: any) {
+                setAuthError(err.message || 'Failed to update password');
+            }
         }
     }
 
@@ -349,6 +373,19 @@ export function ResetPassword() {
                     </div>
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Reset Password</h2>
                     <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
+
+                    {success && (
+                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            Password updated successfully! Redirecting to login...
+                        </div>
+                    )}
+
+                    {authError && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {authError}
+                        </div>
+                    )}
+
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
                             <Label htmlFor="reset-email" className="text-white">Email Address</Label>
@@ -416,9 +453,9 @@ export function ResetPassword() {
                         <Button
                             type="submit"
                             className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            disabled={!isValid}
+                            disabled={!isValid || isLoading || success}
                         >
-                            Reset Password
+                            {isLoading ? 'Updating...' : (success ? 'Updated!' : 'Reset Password')}
                         </Button>
                         <div className="mt-4 text-center">
                             <button type="button" className="text-[#0B5CFF] hover:underline font-semibold" onClick={() => navigate('/login')}>

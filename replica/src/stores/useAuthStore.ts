@@ -10,6 +10,7 @@ interface AuthState {
     register: (data: { name: string; email: string; password?: string }) => Promise<void>;
     logout: () => Promise<void>;
     fetchCurrentUser: () => Promise<void>;
+    resetPassword: (email: string, password: string) => Promise<void>;
     setSubscription: (plan: User['subscriptionPlan']) => void;
     setAuth: (user: User) => void;
 }
@@ -139,6 +140,26 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
             saveAuth(null, false);
             set({ user: null, isAuthenticated: false, isSubscribed: false });
+        },
+        resetPassword: async (email, password) => {
+            set({ isLoading: true });
+            try {
+                const response = await fetch(`${API}/api/auth/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to update password');
+                }
+
+                set({ isLoading: false });
+            } catch (err: any) {
+                set({ isLoading: false });
+                throw err;
+            }
         },
 
         setSubscription: (plan) => {
