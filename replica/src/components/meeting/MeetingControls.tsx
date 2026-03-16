@@ -1420,7 +1420,11 @@ function ControlBar() {
         isStatsOpen,
         toggleStats,
         pendingMediaRequest,
-        setPendingMediaRequest
+        setPendingMediaRequest,
+        setAudioMuted,
+        setVideoOff,
+        remoteControlState,
+        setRemoteControlState
     } = useMeetingStore();
 
     const { isPollPanelOpen, setPollPanelOpen } = usePollStore();
@@ -1974,6 +1978,15 @@ function ControlBar() {
         // 4. Broadcast update to others
         if (meeting?.id && user?.id) {
             emitParticipantUpdate(meeting.id, user.id, { isScreenSharing: false });
+        }
+
+        // 5. If remote control is active and we are the controlled ones, stop it too
+        const { remoteControlState, setRemoteControlState } = useMeetingStore.getState();
+        if (remoteControlState.status === 'active' && remoteControlState.role === 'controlled') {
+            if (meeting?.id) {
+                useChatStore.getState().stopControl(meeting.id, remoteControlState.targetId || '');
+                setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+            }
         }
     };
 
@@ -3312,6 +3325,98 @@ function ControlBar() {
                                 </Button>
                             </div>
                         </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Remote Control Request Modal */}
+            <AnimatePresence>
+                {remoteControlState.status === 'pending' && remoteControlState.role === 'controlled' && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-[#1C1C1C] border border-[#333] rounded-xl p-5 max-w-[320px] w-full shadow-2xl"
+                        >
+                            <h3 className="text-lg font-bold text-white mb-2">Remote Control Request</h3>
+                            <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
+                                <MousePointer2 className="w-6 h-6 text-blue-500" />
+                            </div>
+                            <p className="text-gray-400 text-sm mb-6">
+                                {remoteControlState.targetName} has requested permission to control your screen.
+                            </p>
+                            <div className="flex gap-3 justify-end">
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        if (meeting?.id) {
+                                            useChatStore.getState().respondToControl(meeting.id, remoteControlState.targetId || '', false);
+                                        }
+                                        setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+                                    }}
+                                    className="text-gray-300 hover:text-white hover:bg-[#333]"
+                                >
+                                    Reject
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        if (meeting?.id) {
+                                            useChatStore.getState().respondToControl(meeting.id, remoteControlState.targetId || '', true);
+                                            // Step 5: Start screen capture automatically on accept
+                                            handleStartScreenShare();
+                                            setRemoteControlState({ status: 'active' });
+                                        }
+                                    }}
+                                    className="bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white px-6"
+                                >
+                                    Accept
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Active Control Overlay/Indicator */}
+            <AnimatePresence>
+                {remoteControlState.status === 'active' && (
+                    <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 20, opacity: 0 }}
+                        className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[150] flex items-center gap-4 bg-[#1C1C1C] border border-blue-500/50 rounded-full px-6 py-3 shadow-2xl"
+                    >
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                            <span className="text-white text-sm font-medium">
+                                {remoteControlState.role === 'controller' 
+                                    ? `Controlling ${remoteControlState.targetName || 'Participant'}` 
+                                    : `${remoteControlState.targetName || 'Host'} is controlling your screen`}
+                            </span>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="destructive"
+                            className="rounded-full h-8"
+                            onClick={() => {
+                                if (meeting?.id) {
+                                    if (remoteControlState.role !== 'controller') {
+                                        handleStopScreenShare();
+                                    } else {
+                                        useChatStore.getState().stopControl(meeting.id, remoteControlState.targetId || '');
+                                        setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+                                    }
+                                }
+                            }}
+                        >
+                            Stop Control
+                        </Button>
                     </motion.div>
                 )}
             </AnimatePresence>
