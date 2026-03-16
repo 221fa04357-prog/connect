@@ -5,6 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
+const emailService = require('./emailService');
 
 const { spawn } = require("child_process");
 
@@ -484,6 +485,16 @@ async function initializeDatabase() {
                 option_index INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(poll_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS temp_registrations (
+                email VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                password_hash TEXT NOT NULL,
+                otp VARCHAR(6) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                resend_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
             );
         `);
         console.log('Database initialization successful: all tables ready.');
@@ -1917,19 +1928,128 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(409).json({ error: 'Email already registered' });
         }
 
-        const id = `user-${Date.now()}`;
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+
         const passwordHash = await bcrypt.hash(password, 10);
 
-        const result = await db.query(
+        // Store registration attempt
+        await db.query(`
+            INSERT INTO temp_registrations (email, name, password_hash, otp, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (email) DO UPDATE SET
+                name = EXCLUDED.name,
+                password_hash = EXCLUDED.password_hash,
+                otp = EXCLUDED.otp,
+                expires_at = EXCLUDED.expires_at,
+                resend_count = 0,
+                created_at = NOW()
+        `, [normalizedEmail, name, passwordHash, otp, expiresAt]);
+
+        // Send OTP via email
+        const emailResult = await emailService.sendOTPEmail(normalizedEmail, otp);
+        if (!emailResult.success) {
+            return res.status(500).json({ 
+                error: 'Failed to send verification email. Please check your email address or try again later.',
+                details: emailResult.error 
+            });
+        }
+
+        console.log(`OTP sent to: ${normalizedEmail}`);
+        res.status(200).json({ message: 'OTP sent to your email. Please verify to complete registration.' });
+    } catch (err) {
+        console.error('Registration/OTP error:', err);
+        res.status(500).json({ error: 'Failed to process registration' });
+    }
+});
+
+app.post('/api/auth/verify-otp', async (req, res) => {
+    const { email, otp } = req.body;
+    const normalizedEmail = email.toLowerCase();
+
+    try {
+        const result = await db.query('SELECT * FROM temp_registrations WHERE email = $1', [normalizedEmail]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Verification session not found. Please register again.' });
+        }
+
+        const registration = result.rows[0];
+
+        if (registration.otp !== otp) {
+            return res.status(400).json({ error: 'Invalid OTP' });
+        }
+
+        if (new Date() > new Date(registration.expires_at)) {
+            return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+        }
+
+        // Success - create the actual user account
+        const id = `user-${Date.now()}`;
+        const userResult = await db.query(
             'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar, subscription_plan',
-            [id, name, normalizedEmail, passwordHash]
+            [id, registration.name, normalizedEmail, registration.password_hash]
         );
 
-        console.log(`User registered: ${normalizedEmail}`);
-        res.status(201).json(result.rows[0]);
+        // Cleanup: remove temporary registration
+        await db.query('DELETE FROM temp_registrations WHERE email = $1', [normalizedEmail]);
+
+        console.log(`User registered after OTP: ${normalizedEmail}`);
+        res.status(201).json(userResult.rows[0]);
     } catch (err) {
-        console.error('Registration error:', err);
-        res.status(500).json({ error: 'Failed to register user' });
+        console.error('OTP verification error:', err);
+        res.status(500).json({ error: 'Verification failed' });
+    }
+});
+
+app.post('/api/auth/resend-otp', async (req, res) => {
+    const { email } = req.body;
+    const normalizedEmail = email.toLowerCase();
+
+    try {
+        const result = await db.query('SELECT * FROM temp_registrations WHERE email = $1', [normalizedEmail]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Registration record not found.' });
+        }
+
+        const registration = result.rows[0];
+
+        // Limit resend attempts to 5
+        if (registration.resend_count >= 5) {
+            return res.status(429).json({ error: 'Too many resend attempts. Please try again later.' });
+        }
+
+        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        const newExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        await db.query(
+            'UPDATE temp_registrations SET otp = $1, expires_at = $2, resend_count = resend_count + 1 WHERE email = $3',
+            [newOtp, newExpiresAt, normalizedEmail]
+        );
+
+        const emailResult = await emailService.sendOTPEmail(normalizedEmail, newOtp);
+        if (!emailResult.success) {
+            return res.status(500).json({ 
+                error: 'Failed to resend verification email',
+                details: emailResult.error
+            });
+        }
+
+        res.json({ message: 'New OTP sent to your email.' });
+    } catch (err) {
+        console.error('Resend OTP error:', err);
+        res.status(500).json({ error: 'Failed to resend OTP' });
+    }
+});
+
+app.get('/api/auth/test-smtp', async (req, res) => {
+    try {
+        const result = await emailService.testSmtpConnection();
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
