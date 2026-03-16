@@ -1450,7 +1450,10 @@ function ControlBar() {
         updateParticipant,
         toggleHandRaise,
         toggleParticipantAudio,
-        toggleParticipantVideo
+        toggleParticipantVideo,
+        waitingRoom,
+        lastViewedWaitingRoomCount,
+        resetWaitingRoomBadge,
     } = useParticipantsStore();
 
     // Find current user participant
@@ -2352,6 +2355,9 @@ function ControlBar() {
                     break;
                 case 'p':
                     e.preventDefault();
+                    if (!isParticipantsOpen) {
+                        resetWaitingRoomBadge();
+                    }
                     toggleParticipants();
                     break;
                 case 'r':
@@ -2552,11 +2558,16 @@ function ControlBar() {
                         <ControlButton
                             icon={Users}
                             label="Participants"
-                            onClick={toggleParticipants}
+                            onClick={() => {
+                                if (!isParticipantsOpen) {
+                                    resetWaitingRoomBadge();
+                                }
+                                toggleParticipants();
+                            }}
                             isActiveState={isParticipantsOpen}
-                            badge={participants.filter(p => p.isHandRaised).length > 0 
-                                ? participants.filter(p => p.isHandRaised).length 
-                                : participants.length}
+                            badge={isParticipantsOpen 
+                                ? 0 
+                                : Math.max(0, waitingRoom.length - lastViewedWaitingRoomCount)}
                             className={participants.filter(p => p.isHandRaised).length > 0 ? "text-yellow-500" : ""}
                         />
 
