@@ -59,6 +59,8 @@ async function setup() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         avatar TEXT,
+        provider VARCHAR(50) DEFAULT 'local',
+        is_password_set BOOLEAN DEFAULT true,
         subscription_plan VARCHAR(50) DEFAULT 'free',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()

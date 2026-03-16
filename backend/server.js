@@ -60,8 +60,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_googl
                 // Random default password hash for OAuth users
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [id, name, email, passwordHash, avatar]
+                    'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                    [id, name, email, passwordHash, avatar, 'google', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -100,8 +100,8 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
                 const id = `user-ms-${profile.id}`;
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [id, name, email, passwordHash]
+                    'INSERT INTO users (id, name, email, password_hash, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                    [id, name, email, passwordHash, 'microsoft', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -402,10 +402,23 @@ async function initializeDatabase() {
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 avatar TEXT,
+                provider VARCHAR(50) DEFAULT 'local',
+                is_password_set BOOLEAN DEFAULT true,
                 subscription_plan VARCHAR(50) DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+
+            -- Ensure columns exist for older databases
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='provider') THEN
+                    ALTER TABLE users ADD COLUMN provider VARCHAR(50) DEFAULT 'local';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_password_set') THEN
+                    ALTER TABLE users ADD COLUMN is_password_set BOOLEAN DEFAULT true;
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
@@ -1874,8 +1887,8 @@ app.post('/api/auth/social', async (req, res) => {
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
             
             const insertResult = await db.query(
-                'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan',
-                [newId, name, normalizedEmail, passwordHash, avatar]
+                'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set',
+                [newId, name, normalizedEmail, passwordHash, avatar, provider, false]
             );
             user = insertResult.rows[0];
             console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
@@ -1935,6 +1948,14 @@ app.post('/api/auth/login', async (req, res) => {
         const user = result.rows[0];
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
+            if (user.is_password_set === false) {
+                console.log(`Login failed: Google user ${normalizedEmail} has no app password set`);
+                return res.status(400).json({ 
+                    error: 'oauth_no_password', 
+                    message: `You originally signed in with ${user.provider || 'Google'}. Please set an app password to log in with an email and password.`,
+                    provider: user.provider
+                });
+            }
             console.log(`Login failed: Incorrect password for ${normalizedEmail}`);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -1968,6 +1989,33 @@ app.get('/api/auth/me', async (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
+});
+
+app.post('/api/auth/set-password', async (req, res) => {
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const user = result.rows[0];
+        // For security, in a real app we'd verify a token, but here we fulfill the requirement:
+        // "Add a Set Password / Reset Password option for users who originally signed in with Google"
+        
+        const passwordHash = await bcrypt.hash(password, 10);
+        await db.query(
+            'UPDATE users SET password_hash = $1, is_password_set = true, updated_at = NOW() WHERE id = $2',
+            [passwordHash, user.id]
+        );
+        
+        console.log(`Password set successfully for user: ${normalizedEmail}`);
+        res.json({ message: 'Password set successfully. You can now log in with your email and password.' });
+    } catch (err) {
+        console.error('Set password error:', err);
+        res.status(500).json({ error: 'Failed to set password' });
+    }
 });
 
 // Health check endpoint

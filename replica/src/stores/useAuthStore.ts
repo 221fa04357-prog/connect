@@ -15,6 +15,7 @@ interface AuthState {
     fetchCurrentUser: () => Promise<void>;
     setSubscription: (plan: User['subscriptionPlan']) => void;
     setAuth: (user: User) => void;
+    setPassword: (credentials: { email: string; password?: string }) => Promise<void>;
 }
 
 // Helpers for localStorage
@@ -255,6 +256,27 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 isSubscribed: (user as any).subscription_plan !== 'free'
             });
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(newAccounts));
+        },
+
+        setPassword: async (credentials) => {
+            set({ isLoading: true });
+            try {
+                const response = await fetch(`${API}/api/auth/set-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(credentials)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to set password');
+                }
+
+                set({ isLoading: false });
+            } catch (err: any) {
+                set({ isLoading: false });
+                throw err;
+            }
         }
     };
 });
