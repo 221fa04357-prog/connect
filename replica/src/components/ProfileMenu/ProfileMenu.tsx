@@ -112,7 +112,9 @@ export default function ProfileMenu() {
                     <div className="flex flex-col min-w-0">
                         <span className="font-bold text-sm truncate leading-none">{user.name}</span>
                         <span className="text-[10px] text-gray-400 truncate mt-0.5 leading-none">{user.email}</span>
-                        <span className="text-[10px] text-blue-400 mt-1 leading-none cursor-pointer hover:underline">Basic</span>
+                        <span className="text-[10px] text-blue-400 mt-1 leading-none cursor-pointer hover:underline capitalize">
+                            {user.subscriptionPlan || user.subscription_plan || 'Basic'}
+                        </span>
                     </div>
                 </div>
 
@@ -162,7 +164,7 @@ export default function ProfileMenu() {
 
                 <DropdownMenuItem className="hover:bg-[#2A2A2A] h-8 px-3 text-xs" onClick={() => navigate('/upgrade')}>
                     <ArrowUpCircle className="w-3.5 h-3.5 mr-2 text-blue-400" />
-                    <span className="text-blue-400 font-medium">Upgrade to Pro</span>
+                    <span className="text-blue-400 font-medium font-bold">Upgrade to {user.subscriptionPlan === 'pro' ? 'Enterprise' : 'Pro'}</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator className="bg-[#333] my-0" />
@@ -236,7 +238,13 @@ export default function ProfileMenu() {
                     </>
                 )}
 
-                <DropdownMenuItem onClick={handleLogout} className="hover:bg-[#2A2A2A] h-8 px-3 text-xs text-red-500">
+                <DropdownMenuItem 
+                    onClick={() => {
+                        logout();
+                        navigate('/login');
+                    }} 
+                    className="hover:bg-[#2A2A2A] h-8 px-3 text-xs text-red-500 font-semibold"
+                >
                     <LogOut className="w-3.5 h-3.5 mr-2" />
                     Sign Out
                 </DropdownMenuItem>

@@ -11,6 +11,7 @@ export interface User {
   role?: UserRole;
   isLoggedOut?: boolean;
   avatar?: string;
+  lastActive?: number;
 }
 
 export type ViewMode = 'gallery' | 'speaker' | 'multi-speaker' | 'immersive';

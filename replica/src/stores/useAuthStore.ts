@@ -201,12 +201,34 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 const updatedAccounts = accounts.map(a => 
                     a.email?.toLowerCase() === user.email?.toLowerCase() ? { ...a, isLoggedOut: true } : a
                 );
-                set({ accounts: updatedAccounts });
+                
+                // Check if there are other accounts that are NOT logged out
+                const otherActiveAccount = updatedAccounts.find(a => !a.isLoggedOut);
+                
+                if (otherActiveAccount) {
+                    // Switch to the other active account
+                    saveAuth(otherActiveAccount, true);
+                    set({ 
+                        user: { ...otherActiveAccount, isLoggedOut: false }, 
+                        accounts: updatedAccounts,
+                        isAuthenticated: true,
+                        isSubscribed: !!(otherActiveAccount as any).subscription_plan && (otherActiveAccount as any).subscription_plan !== 'free'
+                    });
+                } else {
+                    // No other active accounts, full logout
+                    saveAuth(null, false);
+                    set({ 
+                        user: null, 
+                        accounts: updatedAccounts,
+                        isAuthenticated: false, 
+                        isSubscribed: false 
+                    });
+                }
                 localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(updatedAccounts));
+            } else {
+                saveAuth(null, false);
+                set({ user: null, isAuthenticated: false, isSubscribed: false });
             }
-            
-            saveAuth(null, false);
-            set({ user: null, isAuthenticated: false, isSubscribed: false });
         },
 
         setSubscription: (plan) => {
