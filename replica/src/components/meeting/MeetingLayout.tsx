@@ -30,7 +30,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, MousePointer2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -41,7 +41,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
-import { ChatMessage, Participant } from '@/types';
+import { ChatMessage, Participant, Meeting } from '@/types';
 import { useResourceStore } from '@/stores/useResourceStore';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
@@ -854,10 +854,22 @@ export function ParticipantsPanel() {
         }
     };
 
-    /** SEARCH */
-    const filteredParticipants = participants.filter(p =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    /** SEARCH & SORT */
+    const filteredParticipants = participants
+        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        .sort((a, b) => {
+            // Put hand raised participants at the top
+            if (a.isHandRaised && !b.isHandRaised) return -1;
+            if (!a.isHandRaised && b.isHandRaised) return 1;
+            
+            // If both have hands raised, sort by number
+            if (a.isHandRaised && b.isHandRaised) {
+                return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+            }
+            
+            // Otherwise maintain original order or sort by name/role if desired
+            return 0;
+        });
 
     /** 🔑 MUTE-ALL STATE */
     const manageableParticipants = participants.filter(p => {
@@ -1073,6 +1085,23 @@ export function ParticipantsPanel() {
                             </div>
                         )}
 
+                        {/* RAISED HANDS SUMMARY */}
+                        {participants.filter(p => p.isHandRaised).length > 0 && (
+                            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
+                                <div className="flex items-center gap-2">
+                                    <Hand className="w-4 h-4 text-yellow-500" />
+                                    <span className="text-sm font-bold text-yellow-500">
+                                        Raised Hands ({participants.filter(p => p.isHandRaised).length})
+                                    </span>
+                                </div>
+                                {participants.filter(p => p.isHandRaised).length >= 20 && (
+                                    <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
+                                        Priority List
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
                         {/* PARTICIPANTS LIST */}
                         {filteredParticipants.map(participant => {
                             const displayedRole = transientRoles[participant.id] || participant.role;
@@ -1133,6 +1162,7 @@ export function ParticipantsPanel() {
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
                                     hostCount={hostCount}
+                                    meeting={meeting}
                                 />
                             );
                         })}
@@ -1185,6 +1215,7 @@ interface ParticipantItemProps {
     displayedRole?: Participant['role'];
     coHostCount: number;
     hostCount: number;
+    meeting: Meeting | null;
 }
 
 function ParticipantItem({
@@ -1211,6 +1242,7 @@ function ParticipantItem({
     displayedRole = participant.role,
     coHostCount,
     hostCount,
+    meeting,
 }: ParticipantItemProps) {
     const effectiveRole = displayedRole || participant.role;
     const isSuspended = useMeetingStore(state => state.meeting?.settings?.suspendParticipantActivities);
@@ -1292,7 +1324,14 @@ function ParticipantItem({
                             )}
                         </button>
                         {participant.isHandRaised && (
-                            <Hand className="w-3 h-3 text-yellow-500" />
+                            <div className="flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
+                                <Hand className="w-3.5 h-3.5 text-yellow-500" />
+                                {participant.handRaiseNumber && (
+                                    <span className="text-[11px] font-bold text-yellow-500">
+                                        #{participant.handRaiseNumber}
+                                    </span>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1395,6 +1434,20 @@ function ParticipantItem({
                                             >
                                                 <Crown className="w-4 h-4 mr-2" />
                                                 Remove Host
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {effectiveRole === 'participant' && !isCurrentUser && (
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    if (meeting?.id) {
+                                                        useChatStore.getState().requestControl(meeting.id, participant.id);
+                                                        import('sonner').then(({ toast }) => toast.info(`Control request sent to ${participant.name}`));
+                                                    }
+                                                }}
+                                            >
+                                                <MousePointer2 className="w-4 h-4 mr-2" />
+                                                Take Control
                                             </DropdownMenuItem>
                                         )}
 

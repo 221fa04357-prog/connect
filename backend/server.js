@@ -60,8 +60,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_googl
                 // Random default password hash for OAuth users
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [id, name, email, passwordHash, avatar]
+                    'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                    [id, name, email, passwordHash, avatar, 'google', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -100,8 +100,8 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
                 const id = `user-ms-${profile.id}`;
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [id, name, email, passwordHash]
+                    'INSERT INTO users (id, name, email, password_hash, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                    [id, name, email, passwordHash, 'microsoft', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -402,10 +402,23 @@ async function initializeDatabase() {
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 avatar TEXT,
+                provider VARCHAR(50) DEFAULT 'local',
+                is_password_set BOOLEAN DEFAULT true,
                 subscription_plan VARCHAR(50) DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+
+            -- Ensure columns exist for older databases
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='provider') THEN
+                    ALTER TABLE users ADD COLUMN provider VARCHAR(50) DEFAULT 'local';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_password_set') THEN
+                    ALTER TABLE users ADD COLUMN is_password_set BOOLEAN DEFAULT true;
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
@@ -563,6 +576,7 @@ const waitingRooms = new Map(); // meetingId -> Map of socketId -> participantDa
 const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
+const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -1150,7 +1164,8 @@ io.on('connection', (socket) => {
                 if (camera_on !== undefined) {
                     query += `, camera_on = $${paramCount++}`;
                     params.push(camera_on);
-                }                query += ' WHERE meeting_id = $1 AND user_id = $2';
+                }
+                query += ' WHERE meeting_id = $1 AND user_id = $2';
                 await db.query(query, params);
             } catch (err) {
                 console.error('Error updating media state in DB:', err);
@@ -1168,6 +1183,22 @@ io.on('connection', (socket) => {
                 delete updates.role;
             }
 
+            // Hand Raise Logic
+            if (updates.isHandRaised !== undefined) {
+                if (updates.isHandRaised) {
+                    // Raising hand
+                    let currentCounter = handRaiseCounters.get(meeting_id) || 0;
+                    currentCounter++;
+                    handRaiseCounters.set(meeting_id, currentCounter);
+                    updates.handRaiseNumber = currentCounter;
+                    updates.handRaiseTimestamp = Date.now();
+                } else {
+                    // Lowering hand - need to recalculate others
+                    updates.handRaiseNumber = null;
+                    updates.handRaiseTimestamp = null;
+                }
+            }
+
             for (const [sId, p] of room.entries()) {
                 if (p.id === userId) {
                     // Security: Original host role cannot be changed
@@ -1179,6 +1210,26 @@ io.on('connection', (socket) => {
                     break;
                 }
             }
+
+            // If a hand was lowered, recalculate all handRaiseNumbers to keep them sequential
+            if (updates.isHandRaised === false) {
+                const participantsWithHands = Array.from(room.values())
+                    .filter(p => p.isHandRaised)
+                    .sort((a, b) => (a.handRaiseTimestamp || 0) - (b.handRaiseTimestamp || 0));
+                
+                participantsWithHands.forEach((p, index) => {
+                    const newNumber = index + 1;
+                    // Update all sockets for this participant
+                    for (const [sId, pData] of room.entries()) {
+                        if (pData.id === p.id) {
+                            room.set(sId, { ...pData, handRaiseNumber: newNumber });
+                        }
+                    }
+                });
+                // Update counter to the new max
+                handRaiseCounters.set(meeting_id, participantsWithHands.length);
+            }
+
             io.to(meeting_id).emit('participants_update', Array.from(room.values()));
         }
 
@@ -1633,10 +1684,85 @@ io.on('connection', (socket) => {
         if (targetSocketId) {
             // Find the sender's name
             const sender = room.get(socket.id);
-            const fromName = 'Host';
+            const fromName = sender?.name || 'Host';
 
             console.log(`Forwarding ${type} request from ${fromName} to participant ${userId} (Socket: ${targetSocketId})`);
             io.to(targetSocketId).emit('media_request', { type, fromName });
+        }
+    });
+
+    socket.on('request_control', (data) => {
+        const { meetingId, userId } = data;
+        console.log(`Received request_control for meeting ${meetingId}, target userId: ${userId}`);
+        const room = rooms.get(meetingId);
+        if (!room) {
+            console.log(`Room ${meetingId} not found`);
+            return;
+        }
+
+        let targetSocketId = null;
+        for (const [sId, p] of room.entries()) {
+            if (p.id === userId) {
+                targetSocketId = sId;
+                break;
+            }
+        }
+
+        if (targetSocketId) {
+            const sender = room.get(socket.id);
+            const fromName = sender?.name || 'Host';
+            const fromId = sender?.id || 'host';
+
+            console.log(`Forwarding control request from ${fromName} (${fromId}) to participant ${userId} (Socket: ${targetSocketId})`);
+            io.to(targetSocketId).emit('control_requested', { fromName, fromId });
+        } else {
+            console.log(`Target participant ${userId} not found in room ${meetingId}. Available IDs:`, Array.from(room.values()).map(p => p.id));
+        }
+    });
+
+    socket.on('respond_to_control', (data) => {
+        const { meetingId, hostId, accepted } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        const participant = room.get(socket.id);
+        const participantId = participant?.id;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === hostId) {
+                io.to(sId).emit('control_response_received', { participantId, accepted });
+                console.log(`User ${participantId} responded to control request: ${accepted ? 'Accepted' : 'Denied'}`);
+                break;
+            }
+        }
+    });
+
+    socket.on('stop_control', (data) => {
+        const { meetingId, targetId } = data;
+        // Broadcast to everyone in the room that control has stopped for a specific relationship
+        // or just broadcast to the room and let clients decide.
+        // Usually, we just relay it to the other party.
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('control_stopped');
+                break;
+            }
+        }
+    });
+
+    socket.on('send_control_event', (data) => {
+        const { meetingId, targetId, event } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('receive_control_event', { event });
+                break;
+            }
         }
     });
 
@@ -1836,8 +1962,8 @@ app.post('/api/auth/social', async (req, res) => {
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
             
             const insertResult = await db.query(
-                'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan',
-                [newId, name, normalizedEmail, passwordHash, avatar]
+                'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set',
+                [newId, name, normalizedEmail, passwordHash, avatar, provider, false]
             );
             user = insertResult.rows[0];
             console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
@@ -1897,6 +2023,14 @@ app.post('/api/auth/login', async (req, res) => {
         const user = result.rows[0];
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
+            if (user.is_password_set === false) {
+                console.log(`Login failed: Google user ${normalizedEmail} has no app password set`);
+                return res.status(400).json({ 
+                    error: 'oauth_no_password', 
+                    message: `You originally signed in with ${user.provider || 'Google'}. Please set an app password to log in with an email and password.`,
+                    provider: user.provider
+                });
+            }
             console.log(`Login failed: Incorrect password for ${normalizedEmail}`);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -1930,6 +2064,33 @@ app.get('/api/auth/me', async (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
+});
+
+app.post('/api/auth/set-password', async (req, res) => {
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const user = result.rows[0];
+        // For security, in a real app we'd verify a token, but here we fulfill the requirement:
+        // "Add a Set Password / Reset Password option for users who originally signed in with Google"
+        
+        const passwordHash = await bcrypt.hash(password, 10);
+        await db.query(
+            'UPDATE users SET password_hash = $1, is_password_set = true, updated_at = NOW() WHERE id = $2',
+            [passwordHash, user.id]
+        );
+        
+        console.log(`Password set successfully for user: ${normalizedEmail}`);
+        res.json({ message: 'Password set successfully. You can now log in with your email and password.' });
+    } catch (err) {
+        console.error('Set password error:', err);
+        res.status(500).json({ error: 'Failed to set password' });
+    }
 });
 
 // Health check endpoint

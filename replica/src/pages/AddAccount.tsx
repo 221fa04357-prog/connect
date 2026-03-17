@@ -5,22 +5,12 @@ import { ArrowLeft, UserPlus, UserCircle, Mail } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
-import { PublicClientApplication } from '@azure/msal-browser';
 
 // Constants
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'your-google-client-id';
 const MICROSOFT_CLIENT_ID = import.meta.env.VITE_MICROSOFT_CLIENT_ID || 'your-microsoft-client-id';
 
-// MSAL Instance setup
-const msalInstance = new PublicClientApplication({
-    auth: {
-        clientId: MICROSOFT_CLIENT_ID,
-        authority: 'https://login.microsoftonline.com/common',
-        redirectUri: window.location.origin
-    }
-});
-// Initialize immediately but non-blocking
-msalInstance.initialize().catch(console.error);
+
 
 function AddAccountInner() {
     const navigate = useNavigate();
@@ -82,38 +72,12 @@ function AddAccountInner() {
         flow: 'implicit'
     });
 
-    // Microsoft Login Flow
-    const loginMicrosoft = async () => {
-        setIsConnecting('microsoft');
-        setError(null);
-        try {
-            const response = await msalInstance.loginPopup({
-                scopes: ["user.read"]
-            });
-            // Profile info
-            const profile = response.account;
-            await processSocialLogin('microsoft', {
-                email: profile.username || profile.localAccountId,
-                name: profile.name,
-                avatar: null, // Microsoft Graph API requires another call for photos, saving UI footprint
-                id: profile.localAccountId
-            });
-        } catch (err: any) {
-            console.error('Microsoft Login Error:', err);
-            setError('Microsoft sign-in was cancelled or failed.');
-            setIsConnecting(null);
-            // Fallback for popup blocking gracefully handles internally for MSAL if possible or prompts users
-        }
-    };
 
-    const handleSocialLogin = (provider: 'google' | 'microsoft') => {
-        setIsConnecting(provider);
+
+    const handleSocialLogin = () => {
+        setIsConnecting('google');
         setError(null);
-        if (provider === 'google') {
-            loginGoogle();
-        } else {
-            loginMicrosoft();
-        }
+        loginGoogle();
     };
 
     return (
@@ -123,7 +87,7 @@ function AddAccountInner() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="max-w-md w-full bg-[#1A1A1A] rounded-3xl overflow-hidden shadow-2xl border border-white/5"
             >
-                <div className="p-8 space-y-8 text-center">
+                <div className="p-6 space-y-4 text-center">
                     <div className="flex justify-start">
                         <Button
                             variant="ghost"
@@ -135,11 +99,11 @@ function AddAccountInner() {
                         </Button>
                     </div>
 
-                    <div className="space-y-4">
-                        <div className="w-20 h-20 bg-[#0B5CFF]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <UserPlus className="w-10 h-10 text-[#0B5CFF]" />
+                    <div className="space-y-1">
+                        <div className="w-16 h-16 bg-[#0B5CFF]/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <UserPlus className="w-8 h-8 text-[#0B5CFF]" />
                         </div>
-                        <h2 className="text-3xl font-black tracking-tight">Add Account</h2>
+                        <h2 className="text-2xl font-black tracking-tight">Add Account</h2>
                         <p className="text-gray-400">Manage multiple accounts seamlessly with NeuralChat.</p>
                     </div>
 
@@ -151,7 +115,7 @@ function AddAccountInner() {
 
                     <div className="space-y-4 pt-4">
                         <Button
-                            className="w-full bg-[#0B5CFF] hover:bg-[#0948c7] h-14 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold shadow-lg shadow-blue-500/25 transition-all"
+                            className="w-full bg-[#0B5CFF] hover:bg-[#0948c7] h-12 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold shadow-lg shadow-blue-500/25 transition-all"
                             onClick={() => navigate('/login')}
                             disabled={!!isConnecting}
                         >
@@ -161,7 +125,7 @@ function AddAccountInner() {
 
                         <Button
                             variant="outline"
-                            className="w-full bg-transparent border-white/10 hover:bg-white/5 h-14 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold border-2 disabled:opacity-50"
+                            className="w-full bg-transparent border-white/10 hover:bg-white/5 h-12 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold border-2 disabled:opacity-50"
                             onClick={() => navigate('/register')}
                             disabled={!!isConnecting}
                         >
@@ -170,7 +134,7 @@ function AddAccountInner() {
                         </Button>
                     </div>
 
-                    <div className="pt-6">
+                    <div className="pt-5">
                         <div className="flex items-center gap-4 text-gray-500">
                             <div className="h-[1px] bg-white/10 flex-1"></div>
                             <span className="text-xs font-bold uppercase tracking-widest">Or continue with</span>
@@ -178,26 +142,36 @@ function AddAccountInner() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="pt-3 flex justify-center">
                         <Button
                             variant="ghost"
-                            className="bg-white/5 hover:bg-white/10 h-12 rounded-xl border border-white/10 font-bold disabled:opacity-50 transition-colors"
-                            onClick={() => handleSocialLogin('google')}
+                            className="w-full bg-white/5 hover:bg-white/10 h-12 rounded-xl border border-white/10 font-bold disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                            onClick={() => handleSocialLogin()}
                             disabled={!!isConnecting}
                         >
-                            {isConnecting === 'google' ? 'Connecting...' : 'Google'}
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            className="bg-white/5 hover:bg-white/10 h-12 rounded-xl border border-white/10 font-bold disabled:opacity-50 transition-colors"
-                            onClick={() => handleSocialLogin('microsoft')}
-                            disabled={!!isConnecting}
-                        >
-                            {isConnecting === 'microsoft' ? 'Connecting...' : 'Microsoft'}
+                            <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
+                                <path
+                                    fill="#4285F4"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                />
+                                <path
+                                    fill="#34A853"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                />
+                                <path
+                                    fill="#FBBC05"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+                                />
+                                <path
+                                    fill="#EA4335"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                />
+                            </svg>
+                            {isConnecting === 'google' ? 'Connecting...' : 'Continue with Google'}
                         </Button>
                     </div>
 
-                    <p className="text-[10px] text-gray-500 pt-4">
+                    <p className="text-[10px] text-gray-500 pt-5">
                         By adding an account, you agree to our <span className="text-[#0B5CFF] cursor-pointer">Terms of Service</span> and <span className="text-[#0B5CFF] cursor-pointer">Privacy Policy</span>.
                     </p>
                 </div>

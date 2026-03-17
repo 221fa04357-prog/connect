@@ -21,6 +21,7 @@ interface ParticipantsState {
   spotlightedParticipantId: string | null;
   videoRestricted: boolean;
   knownWaitingRoomIds: string[];
+  lastViewedWaitingRoomCount: number;
 
   // Actions
   setParticipants: (participants: Participant[]) => void;
@@ -61,6 +62,7 @@ interface ParticipantsState {
   toggleParticipantVideo: (id: string) => void;
   forceSetParticipantVideo: (id: string, isOff: boolean) => void;
   syncParticipants: (participants: Participant[]) => void;
+  resetWaitingRoomBadge: () => void;
   reset: () => void;
 }
 
@@ -78,6 +80,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
       activeSpeakerId: null,
       pinnedParticipantId: null,
       spotlightedParticipantId: null,
+      lastViewedWaitingRoomCount: 0,
 
       setParticipants: (participants) => set({ participants }),
 
@@ -464,6 +467,10 @@ export const useParticipantsStore = create<ParticipantsState>()(
 
       syncParticipants: (participants) => set({ participants }),
 
+      resetWaitingRoomBadge: () => set((state) => ({ 
+        lastViewedWaitingRoomCount: state.waitingRoom.length 
+      })),
+
       reset: () => set({
         participants: [],
         waitingRoom: [],
@@ -472,7 +479,8 @@ export const useParticipantsStore = create<ParticipantsState>()(
         activeSpeakerId: null,
         pinnedParticipantId: null,
         spotlightedParticipantId: null,
-        focusedParticipantId: null
+        focusedParticipantId: null,
+        lastViewedWaitingRoomCount: 0
       })
     }),
     {

@@ -126,6 +126,10 @@ export function Login() {
                 }
             } catch (err: any) {
                 setAuthError(err.message || 'Login failed. Please check your credentials.');
+                if (err.message?.includes('oauth_no_password') || err.message?.includes('originally signed in with')) {
+                    // Set a specific flag or state to show the prompt
+                    setAuthError('originally_google');
+                }
             }
         }
     }
@@ -168,10 +172,17 @@ export function Login() {
                     </p>
 
                     {authError && (
-                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                        <div className={cn(
+                            "px-4 py-3 rounded-lg text-sm mb-6 text-center",
+                            authError === 'originally_google' 
+                                ? "bg-blue-500/20 border border-blue-500/50 text-blue-100" 
+                                : "bg-red-500/20 border border-red-500/50 text-red-100"
+                        )}>
                             {authError === 'Account not found'
                                 ? 'Account not found. Please sign up to continue.'
-                                : authError}
+                                : authError === 'originally_google'
+                                    ? "You originally joined via Google. To continue reset password."
+                                    : authError}
                         </div>
                     )}
 
@@ -235,9 +246,9 @@ export function Login() {
                             <button
                                 type="button"
                                 className="text-[#0B5CFF] hover:underline"
-                                onClick={() => navigate('/reset-password')}
+                                onClick={() => navigate('/reset-password' + (formData.email ? `?email=${encodeURIComponent(formData.email)}` : ''))}
                             >
-                                Forgot password?
+                                Reset Password
                             </button>
                         </div>
 
@@ -283,6 +294,8 @@ export function ResetPassword() {
         password: false,
         confirmPassword: false
     });
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     // Validation logic
     function validate(field: string, value: string) {
@@ -316,8 +329,24 @@ export function ResetPassword() {
         setErrors(errs => ({ ...errs, [name]: validate(name, form[name as keyof typeof form]) }));
     }
 
-    function handleSubmit(e: React.FormEvent) {
+    const setPasswordAction = useAuthStore((state) => state.setPassword);
+    const isLoading = useAuthStore((state) => state.isLoading);
+    const [authError, setAuthError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
+
+    useState(() => {
+        const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1]);
+        const email = params.get('email');
+        if (email) {
+            setForm(f => ({ ...f, email }));
+        }
+    });
+
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
+        setAuthError('');
+        setSuccessMsg('');
+        
         // Validate all fields
         const newErrors = {
             email: validate('email', form.email),
@@ -326,10 +355,20 @@ export function ResetPassword() {
         };
         setErrors(newErrors);
         setTouched({ email: true, password: true, confirmPassword: true });
+        
         if (!newErrors.email && !newErrors.password && !newErrors.confirmPassword) {
-            // Submit to backend here later
-            // For now, just navigate to login
-            navigate('/login');
+            try {
+                await setPasswordAction({
+                    email: form.email,
+                    password: form.password
+                });
+                setSuccessMsg('Password set successfully! Redirecting to login...');
+                setTimeout(() => {
+                    navigate('/login');
+                }, 2000);
+            } catch (err: any) {
+                setAuthError(err.message || 'Failed to set password. Please try again.');
+            }
         }
     }
 
@@ -349,6 +388,18 @@ export function ResetPassword() {
                     </div>
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Reset Password</h2>
                     <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
+                    
+                    {authError && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {authError}
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {successMsg}
+                        </div>
+                    )}
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
                             <Label htmlFor="reset-email" className="text-white">Email Address</Label>
@@ -377,14 +428,21 @@ export function ResetPassword() {
                                 <Input
                                     id="reset-password"
                                     name="password"
-                                    type="password"
+                                    type={showPassword ? 'text' : 'password'}
                                     placeholder="New password"
                                     value={form.password}
                                     onChange={handleChange}
                                     onBlur={handleBlur}
                                     required
-                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
                                 {touched.password && errors.password && (
                                     <div className="absolute left-0 top-full mt-1 z-50">
                                         {getNativeStyleTooltip(errors.password)}
@@ -398,14 +456,21 @@ export function ResetPassword() {
                                 <Input
                                     id="reset-confirm"
                                     name="confirmPassword"
-                                    type="password"
+                                    type={showConfirmPassword ? 'text' : 'password'}
                                     placeholder="Confirm password"
                                     value={form.confirmPassword}
                                     onChange={handleChange}
                                     onBlur={handleBlur}
                                     required
-                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
                                 {touched.confirmPassword && errors.confirmPassword && (
                                     <div className="absolute left-0 top-full mt-1 z-50">
                                         {getNativeStyleTooltip(errors.confirmPassword)}
@@ -416,9 +481,9 @@ export function ResetPassword() {
                         <Button
                             type="submit"
                             className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            disabled={!isValid}
+                            disabled={!isValid || isLoading}
                         >
-                            Reset Password
+                            {isLoading ? 'Processing...' : 'Reset Password'}
                         </Button>
                         <div className="mt-4 text-center">
                             <button type="button" className="text-[#0B5CFF] hover:underline font-semibold" onClick={() => navigate('/login')}>

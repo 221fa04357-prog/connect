@@ -249,11 +249,39 @@ export function VideoTile({
                 )}
 
                 {/* Hand Raised Indicator - top right, next to pin */}
-                {participant.isHandRaised && (
-                    <div className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow">
-                        <Hand className="w-4 h-4 text-white" />
-                    </div>
-                )}
+                <AnimatePresence>
+                    {participant.isHandRaised && (
+                        <motion.div 
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ 
+                                scale: 1, 
+                                opacity: 1,
+                                transition: { type: 'spring', stiffness: 300, damping: 20 }
+                            }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow gap-1.5"
+                        >
+                            <motion.div
+                                animate={{ 
+                                    scale: [1, 1.2, 1],
+                                    rotate: [0, 10, -10, 0]
+                                }}
+                                transition={{ 
+                                    duration: 2, 
+                                    repeat: Infinity,
+                                    repeatType: 'loop'
+                                }}
+                            >
+                                <Hand className="w-4 h-4 text-white" />
+                            </motion.div>
+                            {participant.handRaiseNumber && (
+                                <span className="text-xs font-bold text-white leading-none">
+                                    {participant.handRaiseNumber}
+                                </span>
+                            )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Bottom Info Bar anchored to bottom */}
@@ -344,6 +372,9 @@ interface ScreenShareViewProps {
 
 export function ScreenShareView({ participant, stream, isLocal }: ScreenShareViewProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { remoteControlState, remoteCursor, setRemoteCursor, meeting } = useMeetingStore();
+    const { sendControlEvent, stopControl } = useChatStore();
 
     useEffect(() => {
         if (videoRef.current && stream) {
@@ -351,16 +382,149 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         }
     }, [stream]);
 
+    // Handle incoming events (for the controlled user)
+    useEffect(() => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controlled') return;
+
+        const handleRemoteEvent = (e: any) => {
+            const event = e.detail;
+            const x = event.x * window.innerWidth;
+            const y = event.y * window.innerHeight;
+
+            if (event.type === 'remote_mouse_move') {
+                setRemoteCursor({ x: event.x, y: event.y });
+            } else if (event.type === 'remote_mouse_click') {
+                setRemoteCursor({ x: event.x, y: event.y });
+                const el = document.elementFromPoint(x, y) as HTMLElement;
+                if (el) {
+                    el.click();
+                    el.focus();
+                    // Dispatch sequence for better compatibility
+                    const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+                    el.dispatchEvent(new MouseEvent('mousedown', opt));
+                    el.dispatchEvent(new MouseEvent('mouseup', opt));
+                }
+            } else if (event.type === 'remote_key_press') {
+                const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
+                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+                    if ('value' in el) {
+                        const start = el.selectionStart || 0;
+                        const end = el.selectionEnd || 0;
+                        const val = el.value;
+                        
+                        if (event.key === 'Backspace') {
+                            el.value = val.slice(0, Math.max(0, start - (start === end ? 1 : 0))) + val.slice(end);
+                        } else if (event.key === 'Enter') {
+                            el.form?.requestSubmit();
+                        } else if (event.key.length === 1) {
+                            el.value = val.slice(0, start) + event.key + val.slice(end);
+                            el.selectionStart = el.selectionEnd = start + 1;
+                        }
+                        
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            } else if (event.type === 'remote_scroll') {
+                window.scrollBy({ top: event.deltaY, behavior: 'auto' });
+            }
+        };
+
+        window.addEventListener('remote_control_event', handleRemoteEvent);
+        return () => window.removeEventListener('remote_control_event', handleRemoteEvent);
+    }, [remoteControlState.status, remoteControlState.role, setRemoteCursor]);
+
+    // Capture events (for the controller)
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { type: 'remote_mouse_move', x, y });
+        }
+    };
+
+    const handleClick = (e: React.MouseEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { type: 'remote_mouse_click', x, y });
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { type: 'remote_key_press', key: e.key });
+        }
+    };
+
+    const handleScroll = (e: React.WheelEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { type: 'remote_scroll', deltaY: e.deltaY });
+        }
+    };
+
     return (
-        <div className="relative w-full h-full bg-black rounded-xl overflow-hidden group">
+        <div 
+            ref={containerRef}
+            className="relative w-full h-full bg-black rounded-xl overflow-hidden group outline-none"
+            onMouseMove={handleMouseMove}
+            onClick={handleClick}
+            onKeyDown={handleKeyDown}
+            onWheel={handleScroll}
+            onContextMenu={(e) => e.preventDefault()}
+            tabIndex={remoteControlState.status === 'active' && remoteControlState.role === 'controller' ? 0 : -1}
+        >
             <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
                 onLoadedMetadata={(e) => e.currentTarget.play()}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain pointer-events-none"
             />
+
+            {/* Remote Cursor (visible for the controlled user) */}
+            {remoteControlState.status === 'active' && remoteControlState.role === 'controlled' && remoteCursor && (
+                <div 
+                    className="absolute pointer-events-none z-50 transition-all duration-75"
+                    style={{ 
+                        left: `${remoteCursor.x * 100}%`, 
+                        top: `${remoteCursor.y * 100}%`,
+                        transform: 'translate(-50%, -50%)'
+                    }}
+                >
+                    <MousePointer2 className="w-6 h-6 text-blue-500 fill-blue-500/20" />
+                    <div className="bg-blue-500 text-white text-[10px] px-1 rounded absolute left-4 top-4 whitespace-nowrap">
+                        {remoteControlState.targetName}
+                    </div>
+                </div>
+            )}
+
+            {/* Controller Instructions Overlay */}
+            {remoteControlState.status === 'active' && remoteControlState.role === 'controller' && remoteControlState.targetId === participant.id && (
+                <div className="absolute top-4 right-4 bg-blue-500/90 text-white text-xs px-3 py-1 rounded-full z-40 pointer-events-none">
+                    Remote Controlling - Click to type
+                </div>
+            )}
+
             {/* Overlay info */}
             <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -433,14 +597,27 @@ export function VideoGrid() {
         }
     }
 
-    // Apply Host Video Order sorting if setting is enabled
-    if (meeting?.settings?.followHostVideoOrder) {
-        visibleParticipants = [...visibleParticipants].sort((a, b) => {
+    // Sort participants: Pinned first, then Hand Raised (in order), then others
+    visibleParticipants = [...visibleParticipants].sort((a, b) => {
+        // 1. Pinned
+        if (a.id === pinnedParticipantId) return -1;
+        if (b.id === pinnedParticipantId) return 1;
+
+        // 2. Hand Raised
+        if (a.isHandRaised && !b.isHandRaised) return -1;
+        if (!a.isHandRaised && b.isHandRaised) return 1;
+        if (a.isHandRaised && b.isHandRaised) {
+            return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+        }
+
+        // 3. Role (Host first)
+        if (meeting?.settings?.followHostVideoOrder) {
             if (a.role === 'host') return -1;
             if (b.role === 'host') return 1;
-            return 0;
-        });
-    }
+        }
+
+        return 0;
+    });
 
     // Identify who is sharing screen
     const remoteSharingParticipant = participants.find(p => p.isScreenSharing && !p.id.includes(user?.id || ''));
