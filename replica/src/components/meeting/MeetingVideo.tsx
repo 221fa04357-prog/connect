@@ -391,40 +391,93 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
             const x = event.x * window.innerWidth;
             const y = event.y * window.innerHeight;
 
-            if (event.type === 'remote_mouse_move') {
-                setRemoteCursor({ x: event.x, y: event.y });
-            } else if (event.type === 'remote_mouse_click') {
-                setRemoteCursor({ x: event.x, y: event.y });
+            const dispatchMouseEvent = (type: string, button: number = 0) => {
                 const el = document.elementFromPoint(x, y) as HTMLElement;
                 if (el) {
-                    el.click();
-                    el.focus();
-                    // Dispatch sequence for better compatibility
-                    const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
-                    el.dispatchEvent(new MouseEvent('mousedown', opt));
-                    el.dispatchEvent(new MouseEvent('mouseup', opt));
+                    const buttons = button === 0 ? 1 : (button === 2 ? 2 : (button === 1 ? 4 : 0));
+                    const opt = { 
+                        bubbles: true, 
+                        cancelable: true, 
+                        view: window, 
+                        clientX: x, 
+                        clientY: y,
+                        button: button,
+                        buttons: buttons,
+                        which: button + 1,
+                        pointerId: 1,
+                        pointerType: 'mouse',
+                        isPrimary: true
+                    };
+
+                    // Dispatch Pointer Events for better compatibility
+                    if (type === 'mousedown') el.dispatchEvent(new PointerEvent('pointerdown', opt));
+                    if (type === 'mouseup') el.dispatchEvent(new PointerEvent('pointerup', opt));
+
+                    el.dispatchEvent(new MouseEvent(type, opt));
+                    if (type === 'click' || type === 'mousedown') el.focus();
                 }
-            } else if (event.type === 'remote_key_press') {
-                const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
-                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
-                    if ('value' in el) {
-                        const start = el.selectionStart || 0;
-                        const end = el.selectionEnd || 0;
-                        const val = el.value;
+            };
+
+            if (event.type === 'remote_mouse_move') {
+                setRemoteCursor({ x: event.x, y: event.y });
+            } else if (event.type === 'remote_mouse_down') {
+                dispatchMouseEvent('mousedown', event.button);
+            } else if (event.type === 'remote_mouse_up') {
+                dispatchMouseEvent('mouseup', event.button);
+            } else if (event.type === 'remote_mouse_click') {
+                setRemoteCursor({ x: event.x, y: event.y });
+                dispatchMouseEvent('click', event.button);
+            } else if (event.type === 'remote_mouse_double_click') {
+                dispatchMouseEvent('dblclick', event.button);
+            } else if (event.type === 'remote_mouse_context_menu') {
+                dispatchMouseEvent('contextmenu', 2);
+            } else if (event.type === 'remote_key_down' || event.type === 'remote_key_press') {
+                const el = document.activeElement as HTMLElement;
+                
+                // Dispatch KeyboardEvent first
+                const keyOpt = { 
+                    key: event.key, 
+                    code: event.code, 
+                    bubbles: true, 
+                    cancelable: true, 
+                    keyCode: event.keyCode,
+                    which: event.keyCode
+                };
+                el.dispatchEvent(new KeyboardEvent('keydown', keyOpt));
+
+                // Handle text input specifically
+                if (el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable)) {
+                    const inputEl = el as HTMLInputElement | HTMLTextAreaElement;
+                    if ('value' in inputEl) {
+                        const start = inputEl.selectionStart || 0;
+                        const end = inputEl.selectionEnd || 0;
+                        const val = inputEl.value;
                         
                         if (event.key === 'Backspace') {
-                            el.value = val.slice(0, Math.max(0, start - (start === end ? 1 : 0))) + val.slice(end);
+                            inputEl.value = val.slice(0, Math.max(0, start - (start === end ? 1 : 0))) + val.slice(end);
+                            inputEl.selectionStart = inputEl.selectionEnd = Math.max(0, start - 1);
+                        } else if (event.key === 'Delete') {
+                            inputEl.value = val.slice(0, start) + val.slice(end + (start === end ? 1 : 0));
+                            inputEl.selectionStart = inputEl.selectionEnd = start;
                         } else if (event.key === 'Enter') {
-                            el.form?.requestSubmit();
-                        } else if (event.key.length === 1) {
-                            el.value = val.slice(0, start) + event.key + val.slice(end);
-                            el.selectionStart = el.selectionEnd = start + 1;
+                            if (inputEl instanceof HTMLInputElement) {
+                                inputEl.form?.requestSubmit();
+                            } else {
+                                inputEl.value = val.slice(0, start) + '\n' + val.slice(end);
+                                inputEl.selectionStart = inputEl.selectionEnd = start + 1;
+                            }
+                        } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+                            inputEl.value = val.slice(0, start) + event.key + val.slice(end);
+                            inputEl.selectionStart = inputEl.selectionEnd = start + 1;
                         }
                         
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }
+            } else if (event.type === 'remote_key_up') {
+                const el = document.activeElement as HTMLElement;
+                el.dispatchEvent(new KeyboardEvent('keyup', { key: event.key, bubbles: true }));
             } else if (event.type === 'remote_scroll') {
                 window.scrollBy({ top: event.deltaY, behavior: 'auto' });
             }
@@ -449,6 +502,42 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         }
     };
 
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_mouse_down', 
+                x, y, 
+                button: e.button 
+            });
+        }
+    };
+
+    const handleMouseUp = (e: React.MouseEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_mouse_up', 
+                x, y, 
+                button: e.button 
+            });
+        }
+    };
+
     const handleClick = (e: React.MouseEvent) => {
         if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
         if (remoteControlState.targetId !== participant.id) return;
@@ -459,7 +548,47 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { type: 'remote_mouse_click', x, y });
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_mouse_click', 
+                x, y, 
+                button: e.button 
+            });
+        }
+    };
+
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_mouse_double_click', 
+                x, y, 
+                button: e.button 
+            });
+        }
+    };
+
+    const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+        if (!containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_mouse_context_menu', 
+                x, y 
+            });
         }
     };
 
@@ -468,7 +597,28 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { type: 'remote_key_press', key: e.key });
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_key_down', 
+                key: e.key,
+                code: e.code,
+                keyCode: e.keyCode,
+                ctrlKey: e.ctrlKey,
+                metaKey: e.metaKey,
+                shiftKey: e.shiftKey,
+                altKey: e.altKey
+            });
+        }
+    };
+
+    const handleKeyUp = (e: React.KeyboardEvent) => {
+        if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controller') return;
+        if (remoteControlState.targetId !== participant.id) return;
+
+        if (meeting?.id) {
+            sendControlEvent(meeting.id, participant.id, { 
+                type: 'remote_key_up', 
+                key: e.key 
+            });
         }
     };
 
@@ -486,10 +636,14 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
             ref={containerRef}
             className="relative w-full h-full bg-black rounded-xl overflow-hidden group outline-none"
             onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
             onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
+            onContextMenu={handleContextMenu}
             onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
             onWheel={handleScroll}
-            onContextMenu={(e) => e.preventDefault()}
             tabIndex={remoteControlState.status === 'active' && remoteControlState.role === 'controller' ? 0 : -1}
         >
             <video
