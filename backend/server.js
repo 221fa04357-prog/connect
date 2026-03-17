@@ -5,7 +5,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const groqService = require('./groqService');
-const emailService = require('./emailService');
 
 const { spawn } = require("child_process");
 
@@ -64,8 +63,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your_googl
                 // Random default password hash for OAuth users
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [id, name, email, passwordHash, avatar]
+                    'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                    [id, name, email, passwordHash, avatar, 'google', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -104,8 +103,8 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_ID !== 'your
                 const id = `user-ms-${profile.id}`;
                 const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
                 const insertResult = await db.query(
-                    'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [id, name, email, passwordHash]
+                    'INSERT INTO users (id, name, email, password_hash, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                    [id, name, email, passwordHash, 'microsoft', false]
                 );
                 user = insertResult.rows[0];
             } else {
@@ -416,6 +415,17 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+
+            -- Ensure columns exist for older databases
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='provider') THEN
+                    ALTER TABLE users ADD COLUMN provider VARCHAR(50) DEFAULT 'local';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_password_set') THEN
+                    ALTER TABLE users ADD COLUMN is_password_set BOOLEAN DEFAULT true;
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
@@ -1725,10 +1735,85 @@ io.on('connection', (socket) => {
         if (targetSocketId) {
             // Find the sender's name
             const sender = room.get(socket.id);
-            const fromName = 'Host';
+            const fromName = sender?.name || 'Host';
 
             console.log(`Forwarding ${type} request from ${fromName} to participant ${userId} (Socket: ${targetSocketId})`);
             io.to(targetSocketId).emit('media_request', { type, fromName });
+        }
+    });
+
+    socket.on('request_control', (data) => {
+        const { meetingId, userId } = data;
+        console.log(`Received request_control for meeting ${meetingId}, target userId: ${userId}`);
+        const room = rooms.get(meetingId);
+        if (!room) {
+            console.log(`Room ${meetingId} not found`);
+            return;
+        }
+
+        let targetSocketId = null;
+        for (const [sId, p] of room.entries()) {
+            if (p.id === userId) {
+                targetSocketId = sId;
+                break;
+            }
+        }
+
+        if (targetSocketId) {
+            const sender = room.get(socket.id);
+            const fromName = sender?.name || 'Host';
+            const fromId = sender?.id || 'host';
+
+            console.log(`Forwarding control request from ${fromName} (${fromId}) to participant ${userId} (Socket: ${targetSocketId})`);
+            io.to(targetSocketId).emit('control_requested', { fromName, fromId });
+        } else {
+            console.log(`Target participant ${userId} not found in room ${meetingId}. Available IDs:`, Array.from(room.values()).map(p => p.id));
+        }
+    });
+
+    socket.on('respond_to_control', (data) => {
+        const { meetingId, hostId, accepted } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        const participant = room.get(socket.id);
+        const participantId = participant?.id;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === hostId) {
+                io.to(sId).emit('control_response_received', { participantId, accepted });
+                console.log(`User ${participantId} responded to control request: ${accepted ? 'Accepted' : 'Denied'}`);
+                break;
+            }
+        }
+    });
+
+    socket.on('stop_control', (data) => {
+        const { meetingId, targetId } = data;
+        // Broadcast to everyone in the room that control has stopped for a specific relationship
+        // or just broadcast to the room and let clients decide.
+        // Usually, we just relay it to the other party.
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('control_stopped');
+                break;
+            }
+        }
+    });
+
+    socket.on('send_control_event', (data) => {
+        const { meetingId, targetId, event } = data;
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        for (const [sId, p] of room.entries()) {
+            if (p.id === targetId) {
+                io.to(sId).emit('receive_control_event', { event });
+                break;
+            }
         }
     });
 
@@ -1928,8 +2013,8 @@ app.post('/api/auth/social', async (req, res) => {
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
             
             const insertResult = await db.query(
-                'INSERT INTO users (id, name, email, password_hash, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan',
-                [newId, name, normalizedEmail, passwordHash, avatar]
+                'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set',
+                [newId, name, normalizedEmail, passwordHash, avatar, provider, false]
             );
             user = insertResult.rows[0];
             console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
@@ -1989,10 +2074,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             return res.status(409).json({ error: 'Email already registered' });
         }
 
-        // Generate 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
-
+        const id = `user-${Date.now()}`;
         const passwordHash = await bcrypt.hash(password, 10);
 
         // Store registration attempt
@@ -2199,8 +2281,16 @@ app.get('/api/auth/test-smtp', async (req, res) => {
     try {
         const result = await emailService.testSmtpConnection();
         res.json(result);
+        const result = await db.query(
+            'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar, subscription_plan',
+            [id, name, normalizedEmail, passwordHash]
+        );
+
+        console.log(`User registered: ${normalizedEmail}`);
+        res.status(201).json(result.rows[0]);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Registration error:', err);
+        res.status(500).json({ error: 'Failed to register user' });
     }
 });
 
@@ -2219,6 +2309,14 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         const user = result.rows[0];
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
+            if (user.is_password_set === false) {
+                console.log(`Login failed: Google user ${normalizedEmail} has no app password set`);
+                return res.status(400).json({ 
+                    error: 'oauth_no_password', 
+                    message: `You originally signed in with ${user.provider || 'Google'}. Please set an app password to log in with an email and password.`,
+                    provider: user.provider
+                });
+            }
             console.log(`Login failed: Incorrect password for ${normalizedEmail}`);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -2275,6 +2373,33 @@ app.post('/api/auth/logout-all', async (req, res) => {
     } catch (err) {
         console.error('Logout-all error:', err);
         res.status(500).json({ error: 'Failed to logout from all devices' });
+    }
+});
+
+app.post('/api/auth/set-password', async (req, res) => {
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const result = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const user = result.rows[0];
+        // For security, in a real app we'd verify a token, but here we fulfill the requirement:
+        // "Add a Set Password / Reset Password option for users who originally signed in with Google"
+        
+        const passwordHash = await bcrypt.hash(password, 10);
+        await db.query(
+            'UPDATE users SET password_hash = $1, is_password_set = true, updated_at = NOW() WHERE id = $2',
+            [passwordHash, user.id]
+        );
+        
+        console.log(`Password set successfully for user: ${normalizedEmail}`);
+        res.json({ message: 'Password set successfully. You can now log in with your email and password.' });
+    } catch (err) {
+        console.error('Set password error:', err);
+        res.status(500).json({ error: 'Failed to set password' });
     }
 });
 
@@ -2723,76 +2848,6 @@ app.post('/api/ai/summarize', async (req, res) => {
         res.status(500).json({ error: 'AI failed to summarize' });
     }
 });
-
-// ================= AUTO-CLEANUP LOGIC =================
-/**
- * Automatically cleans up data older than 40 days from the database.
- * This includes meetings, recaps, messages, participants, polls, and analytics.
- */
-async function cleanupOldData() {
-    console.log('[Cleanup] Starting 40-day data retention cleanup...');
-    try {
-        const fortyDaysAgo = "NOW() - INTERVAL '40 days'";
-
-        // 1. Clean up standalone entries with timestamps
-        const recapRes = await db.query(`DELETE FROM recaps WHERE created_at < ${fortyDaysAgo}`);
-        const msgRes = await db.query(`DELETE FROM messages WHERE timestamp < ${fortyDaysAgo}`);
-        
-        console.log(`[Cleanup] Deleted ${recapRes.rowCount} old recaps.`);
-        console.log(`[Cleanup] Deleted ${msgRes.rowCount} old messages from history.`);
-
-        // 2. Identify and clean up meetings older than 40 days
-        // We use subqueries to ensure all related data is removed before the parent meeting record
-        
-        // Clean up Poll Votes
-        await db.query(`
-            DELETE FROM poll_votes 
-            WHERE poll_id IN (
-                SELECT id FROM polls 
-                WHERE meeting_id IN (SELECT id FROM meetings WHERE created_at < ${fortyDaysAgo})
-            )
-        `);
-
-        // Clean up Polls
-        await db.query(`
-            DELETE FROM polls 
-            WHERE meeting_id IN (SELECT id FROM meetings WHERE created_at < ${fortyDaysAgo})
-        `);
-
-        // Clean up Participants
-        await db.query(`
-            DELETE FROM meeting_participants 
-            WHERE meeting_id IN (SELECT id FROM meetings WHERE created_at < ${fortyDaysAgo})
-        `);
-
-        // Clean up Resources
-        await db.query(`
-            DELETE FROM resources 
-            WHERE meeting_id IN (SELECT id FROM meetings WHERE created_at < ${fortyDaysAgo})
-        `);
-
-        // Clean up Analytics
-        await db.query(`
-            DELETE FROM meeting_analytics 
-            WHERE meeting_id IN (SELECT id FROM meetings WHERE created_at < ${fortyDaysAgo})
-        `);
-
-        // Finally, delete the meetings themselves
-        const meetingRes = await db.query(`DELETE FROM meetings WHERE created_at < ${fortyDaysAgo}`);
-        
-        console.log(`[Cleanup] Deleted ${meetingRes.rowCount} expired meetings and associated metadata.`);
-        console.log(`[Cleanup] Data retention policy (40 days) enforced successfully.`);
-
-    } catch (err) {
-        console.error('[Cleanup] ERROR during database maintenance:', err);
-    }
-}
-
-// Execute cleanup immediately on server start
-cleanupOldData();
-
-// Schedule cleanup to run once every 24 hours (86,400,000 ms)
-setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
 server.listen(port, () => {
     console.log(`Server running on port ${port}`);

@@ -31,6 +31,25 @@ export interface PreSuspensionState {
   isAudioMuted: boolean;
   isVideoOff: boolean;
 }
+
+export interface RemoteControlState {
+  status: 'idle' | 'pending' | 'active';
+  role: 'controller' | 'controlled' | null;
+  targetId: string | null;
+  targetName: string | null;
+}
+
+export interface RemoteCursor {
+  x: number;
+  y: number;
+}
+
+const DEFAULT_REMOTE_CONTROL_STATE: RemoteControlState = {
+  status: 'idle',
+  role: null,
+  targetId: null,
+  targetName: null,
+};
 // ──────────────────────────────────────────────────────────────────────────────
 
 interface MeetingState {
@@ -160,6 +179,12 @@ interface MeetingState {
 
   preSuspensionState: PreSuspensionState | null;
   setPreSuspensionState: (state: PreSuspensionState | null) => void;
+
+  remoteControlState: RemoteControlState;
+  setRemoteControlState: (state: Partial<RemoteControlState>) => void;
+
+  remoteCursor: RemoteCursor | null;
+  setRemoteCursor: (cursor: RemoteCursor | null) => void;
 }
 
 
@@ -208,6 +233,14 @@ export const useMeetingStore = create<MeetingState>()(
 
       preSuspensionState: null,
       setPreSuspensionState: (state) => set({ preSuspensionState: state }),
+
+      remoteControlState: DEFAULT_REMOTE_CONTROL_STATE,
+      setRemoteControlState: (state) => set((s) => ({
+        remoteControlState: { ...s.remoteControlState, ...state }
+      })),
+
+      remoteCursor: null,
+      setRemoteCursor: (cursor) => set({ remoteCursor: cursor }),
 
       isMiniVisible: false,
       meetingJoined: false,

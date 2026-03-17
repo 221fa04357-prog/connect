@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
 import { Label } from '@/components/ui';
-import { Video, Eye, EyeOff, X, Mail } from 'lucide-react';
+import { Video, Eye, EyeOff, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -126,6 +126,10 @@ export function Login() {
                 }
             } catch (err: any) {
                 setAuthError(err.message || 'Login failed. Please check your credentials.');
+                if (err.message?.includes('oauth_no_password') || err.message?.includes('originally signed in with')) {
+                    // Set a specific flag or state to show the prompt
+                    setAuthError('originally_google');
+                }
             }
         }
     }
@@ -168,10 +172,17 @@ export function Login() {
                     </p>
 
                     {authError && (
-                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                        <div className={cn(
+                            "px-4 py-3 rounded-lg text-sm mb-6 text-center",
+                            authError === 'originally_google' 
+                                ? "bg-blue-500/20 border border-blue-500/50 text-blue-100" 
+                                : "bg-red-500/20 border border-red-500/50 text-red-100"
+                        )}>
                             {authError === 'Account not found'
                                 ? 'Account not found. Please sign up to continue.'
-                                : authError}
+                                : authError === 'originally_google'
+                                    ? "You originally joined via Google. To continue reset password."
+                                    : authError}
                         </div>
                     )}
 
@@ -235,9 +246,9 @@ export function Login() {
                             <button
                                 type="button"
                                 className="text-[#0B5CFF] hover:underline"
-                                onClick={() => navigate('/reset-password')}
+                                onClick={() => navigate('/reset-password' + (formData.email ? `?email=${encodeURIComponent(formData.email)}` : ''))}
                             >
-                                Forgot password?
+                                Reset Password
                             </button>
                         </div>
 
@@ -293,6 +304,8 @@ export function ResetPassword() {
         password: false,
         confirmPassword: false
     });
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     function validate(field: string, value: string) {
         switch (field) {
@@ -354,6 +367,25 @@ export function ResetPassword() {
     async function handleReset(e: React.FormEvent) {
         e.preventDefault();
         setError('');
+    const setPasswordAction = useAuthStore((state) => state.setPassword);
+    const isLoading = useAuthStore((state) => state.isLoading);
+    const [authError, setAuthError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
+
+    useState(() => {
+        const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1]);
+        const email = params.get('email');
+        if (email) {
+            setForm(f => ({ ...f, email }));
+        }
+    });
+
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault();
+        setAuthError('');
+        setSuccessMsg('');
+        
+        // Validate all fields
         const newErrors = {
             email: validate('email', form.email),
             otp: validate('otp', form.otp),
@@ -373,6 +405,20 @@ export function ResetPassword() {
                 setError(err.message || 'Reset failed. Check your code or try again.');
             } finally {
                 setIsLoading(false);
+        setTouched({ email: true, password: true, confirmPassword: true });
+        
+        if (!newErrors.email && !newErrors.password && !newErrors.confirmPassword) {
+            try {
+                await setPasswordAction({
+                    email: form.email,
+                    password: form.password
+                });
+                setSuccessMsg('Password set successfully! Redirecting to login...');
+                setTimeout(() => {
+                    navigate('/login');
+                }, 2000);
+            } catch (err: any) {
+                setAuthError(err.message || 'Failed to set password. Please try again.');
             }
         }
     }
@@ -517,6 +563,110 @@ export function ResetPassword() {
                             Back to Sign In
                         </button>
                     </div>
+                    <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
+                    
+                    {authError && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {authError}
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {successMsg}
+                        </div>
+                    )}
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="space-y-2">
+                            <Label htmlFor="reset-email" className="text-white">Email Address</Label>
+                            <div className="relative">
+                                <Input
+                                    id="reset-email"
+                                    name="email"
+                                    type="email"
+                                    placeholder="you@example.com"
+                                    value={form.email}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                />
+                                {touched.email && errors.email && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.email)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="reset-password" className="text-white">New Password</Label>
+                            <div className="relative">
+                                <Input
+                                    id="reset-password"
+                                    name="password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="New password"
+                                    value={form.password}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                                {touched.password && errors.password && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.password)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="reset-confirm" className="text-white">Confirm Password</Label>
+                            <div className="relative">
+                                <Input
+                                    id="reset-confirm"
+                                    name="confirmPassword"
+                                    type={showConfirmPassword ? 'text' : 'password'}
+                                    placeholder="Confirm password"
+                                    value={form.confirmPassword}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                                {touched.confirmPassword && errors.confirmPassword && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.confirmPassword)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <Button
+                            type="submit"
+                            className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                            disabled={!isValid || isLoading}
+                        >
+                            {isLoading ? 'Processing...' : 'Reset Password'}
+                        </Button>
+                        <div className="mt-4 text-center">
+                            <button type="button" className="text-[#0B5CFF] hover:underline font-semibold" onClick={() => navigate('/login')}>
+                                Back to Sign In
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </motion.div>
         </div>
@@ -526,15 +676,10 @@ export function ResetPassword() {
 export function Register() {
     const navigate = useNavigate();
     const register = useAuthStore((state) => state.register);
-    const verifyOTP = useAuthStore((state) => state.verifyOTP);
-    const resendOTP = useAuthStore((state) => state.resendOTP);
     const isLoading = useAuthStore((state) => state.isLoading);
     const [authError, setAuthError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
-    const [step, setStep] = useState<'details' | 'otp'>('details');
-    const [otp, setOtp] = useState('');
-    const [resendCooldown, setResendCooldown] = useState(0);
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -556,13 +701,6 @@ export function Register() {
     });
 
     const passwordStrength = calculatePasswordStrength(formData.password);
-
-    useEffect(() => {
-        if (resendCooldown > 0) {
-            const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
-            return () => clearTimeout(timer);
-        }
-    }, [resendCooldown]);
 
     function validate(field: string, value: string) {
         switch (field) {
@@ -657,38 +795,10 @@ export function Register() {
                 email: formData.email,
                 password: formData.password
             });
-            setStep('otp');
-            setResendCooldown(30);
+            // Redirect to login on success as requested
+            navigate('/login');
         } catch (err: any) {
             setAuthError(err.message || 'Registration failed. Please try again.');
-        }
-    };
-
-    const handleOTPSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setAuthError('');
-        if (otp.length !== 6) {
-            setAuthError('Please enter a 6-digit code');
-            return;
-        }
-
-        try {
-            await verifyOTP(formData.email, otp);
-            navigate('/');
-        } catch (err: any) {
-            setAuthError(err.message || 'Invalid OTP. Please try again.');
-        }
-    };
-
-    const handleResendOTP = async () => {
-        if (resendCooldown > 0) return;
-        setAuthError('');
-        try {
-            await resendOTP(formData.email);
-            setResendCooldown(60); // Longer cooldown for subsequent resends
-            setOtp('');
-        } catch (err: any) {
-            setAuthError(err.message || 'Failed to resend OTP');
         }
     };
 
@@ -723,10 +833,10 @@ export function Register() {
                     </div>
 
                     <h2 className="text-2xl font-bold text-white text-center mb-2">
-                        {step === 'details' ? 'Create Account' : 'Verify Your Email'}
+                        Create Account
                     </h2>
                     <p className="text-gray-400 text-center mb-8">
-                        {step === 'details' ? 'Sign up to start your meetings' : 'Enter the code we sent you to continue'}
+                        Sign up to start your meetings
                     </p>
 
                     {authError && (
@@ -735,202 +845,140 @@ export function Register() {
                         </div>
                     )}
 
-                    {step === 'details' ? (
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="name" className="text-white">
-                                    Full Name
-                                </Label>
-                                <div className="relative">
-                                    <Input
-                                        id="name"
-                                        type="text"
-                                        placeholder="John Doe"
-                                        value={formData.name}
-                                        onChange={handleChange}
-                                        onBlur={handleBlur}
-                                        required
-                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
-                                    />
-                                    {touched.name && errors.name && (
-                                        <div className="absolute left-0 top-full mt-1 z-50">
-                                            {getNativeStyleTooltip(errors.name)}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="email" className="text-white">
-                                    Email Address
-                                </Label>
-                                <div className="relative">
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        placeholder="you@example.com"
-                                        value={formData.email}
-                                        onChange={handleChange}
-                                        onBlur={handleBlur}
-                                        required
-                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
-                                    />
-                                    {touched.email && errors.email && (
-                                        <div className="absolute left-0 top-full mt-1 z-50">
-                                            {getNativeStyleTooltip(errors.email)}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="password" className="text-white">
-                                    Password
-                                </Label>
-                                <div className="relative">
-                                    <Input
-                                        id="password"
-                                        type={showPassword ? 'text' : 'password'}
-                                        placeholder="••••••••"
-                                        value={formData.password}
-                                        onChange={handleChange}
-                                        onBlur={handleBlur}
-                                        required
-                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                                    >
-                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                    </button>
-                                    {touched.password && errors.password && (
-                                        <div className="absolute left-0 top-full mt-1 z-50">
-                                            {getNativeStyleTooltip(errors.password)}
-                                        </div>
-                                    )}
-                                </div>
-                                {formData.password && !errors.password && (
-                                    <p className={cn('text-sm mt-2', passwordStrength.color)}>
-                                        {passwordStrength.text}
-                                    </p>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="space-y-2">
+                            <Label htmlFor="name" className="text-white">
+                                Full Name
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    id="name"
+                                    type="text"
+                                    placeholder="John Doe"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                />
+                                {touched.name && errors.name && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.name)}
+                                    </div>
                                 )}
                             </div>
+                        </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="confirmPassword" className="text-white">
-                                    Confirm Password
-                                </Label>
-                                <div className="relative">
-                                    <Input
-                                        id="confirmPassword"
-                                        type={showConfirm ? 'text' : 'password'}
-                                        placeholder="••••••••"
-                                        value={formData.confirmPassword}
-                                        onChange={handleChange}
-                                        onBlur={handleBlur}
-                                        required
-                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowConfirm(!showConfirm)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                                    >
-                                        {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                    </button>
-                                    {touched.confirmPassword && errors.confirmPassword && (
-                                        <div className="absolute left-0 top-full mt-1 z-50">
-                                            {getNativeStyleTooltip(errors.confirmPassword)}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <label className="flex items-start gap-2 text-sm text-gray-400 cursor-pointer">
-                                <input type="checkbox" required className="mt-1 rounded" />
-                                <span>
-                                    I agree to the{' '}
-                                    <a href="#" className="text-[#0B5CFF] hover:underline">
-                                        Terms of Service
-                                    </a>{' '}
-                                    and{' '}
-                                    <a href="#" className="text-[#0B5CFF] hover:underline">
-                                        Privacy Policy
-                                    </a>
-                                </span>
-                            </label>
-
-                            <Button
-                                type="submit"
-                                className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                                disabled={!isValid || isLoading}
-                            >
-                                {isLoading ? 'Sending OTP...' : 'Next'}
-                            </Button>
-                        </form>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="flex flex-col items-center justify-center text-center space-y-4">
-                                <div className="w-16 h-16 bg-[#0B5CFF]/10 rounded-full flex items-center justify-center">
-                                    <Mail className="w-8 h-8 text-[#0B5CFF]" />
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="text-white font-medium">Please check your email</p>
-                                    <p className="text-gray-400 text-sm">
-                                        We've sent a 6-digit code to <span className="text-white">{formData.email}</span>
-                                    </p>
-                                </div>
-                            </div>
-
-                            <form onSubmit={handleOTPSubmit} className="space-y-6">
-                                <div className="space-y-4">
-                                    <div className="flex justify-center">
-                                        <Input
-                                            type="text"
-                                            maxLength={6}
-                                            placeholder="Enter 6-digit code"
-                                            value={otp}
-                                            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                                            className="bg-[#1C1C1C] border-[#404040] text-white text-center text-2xl tracking-[0.5em] h-14"
-                                            autoFocus
-                                        />
+                        <div className="space-y-2">
+                            <Label htmlFor="email" className="text-white">
+                                Email Address
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="you@example.com"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                />
+                                {touched.email && errors.email && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.email)}
                                     </div>
-                                    
-                                    <Button
-                                        type="submit"
-                                        className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                                        disabled={otp.length !== 6 || isLoading}
-                                    >
-                                        {isLoading ? 'Verifying...' : 'Verify & Create Account'}
-                                    </Button>
-                                </div>
-                            </form>
-
-                            <div className="text-center space-y-4">
-                                <p className="text-gray-400 text-sm">
-                                    Didn't receive the code?{' '}
-                                    {resendCooldown > 0 ? (
-                                        <span className="text-gray-500">Resend in {resendCooldown}s</span>
-                                    ) : (
-                                        <button
-                                            onClick={handleResendOTP}
-                                            className="text-[#0B5CFF] hover:underline font-semibold"
-                                        >
-                                            Resend OTP
-                                        </button>
-                                    )}
-                                </p>
-                                <button
-                                    onClick={() => setStep('details')}
-                                    className="text-gray-400 hover:text-white text-sm"
-                                >
-                                    Change email address
-                                </button>
+                                )}
                             </div>
                         </div>
-                    )}
+
+                        <div className="space-y-2">
+                            <Label htmlFor="password" className="text-white">
+                                Password
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    id="password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="••••••••"
+                                    value={formData.password}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                                {touched.password && errors.password && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.password)}
+                                    </div>
+                                )}
+                            </div>
+                            {formData.password && !errors.password && (
+                                <p className={cn('text-sm mt-2', passwordStrength.color)}>
+                                    {passwordStrength.text}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="confirmPassword" className="text-white">
+                                Confirm Password
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    id="confirmPassword"
+                                    type={showConfirm ? 'text' : 'password'}
+                                    placeholder="••••••••"
+                                    value={formData.confirmPassword}
+                                    onChange={handleChange}
+                                    onBlur={handleBlur}
+                                    required
+                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirm(!showConfirm)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                                >
+                                    {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                                {touched.confirmPassword && errors.confirmPassword && (
+                                    <div className="absolute left-0 top-full mt-1 z-50">
+                                        {getNativeStyleTooltip(errors.confirmPassword)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <label className="flex items-start gap-2 text-sm text-gray-400 cursor-pointer">
+                            <input type="checkbox" required className="mt-1 rounded" />
+                            <span>
+                                I agree to the{' '}
+                                <a href="#" className="text-[#0B5CFF] hover:underline">
+                                    Terms of Service
+                                </a>{' '}
+                                and{' '}
+                                <a href="#" className="text-[#0B5CFF] hover:underline">
+                                    Privacy Policy
+                                </a>
+                            </span>
+                        </label>
+
+                        <Button
+                            type="submit"
+                            className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                            disabled={!isValid || isLoading}
+                        >
+                            {isLoading ? 'Creating Account...' : 'Create Account'}
+                        </Button>
+                    </form>
 
                     <div className="mt-6 text-center text-gray-400">
                         Already have an account?{' '}
