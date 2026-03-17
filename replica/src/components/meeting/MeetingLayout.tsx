@@ -85,6 +85,7 @@ export function ChatPanel() {
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
     const [isListening, setIsListening] = useState(false);
     const recognitionRef = useRef<any>(null);
+    const dictationBaseRef = useRef('');
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -153,24 +154,11 @@ export function ChatPanel() {
             recognitionRef.current.interimResults = true;
 
             recognitionRef.current.onresult = (event: any) => {
-                let finalTranscript = '';
                 let interimTranscript = '';
-
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    const transcript = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcript;
-                    } else {
-                        interimTranscript += transcript;
-                    }
+                    interimTranscript += event.results[i][0].transcript;
                 }
-
-                if (finalTranscript) {
-                    setInput(prev => {
-                        const trimmed = prev.trim();
-                        return trimmed ? trimmed + ' ' + finalTranscript : finalTranscript;
-                    });
-                }
+                setInput(dictationBaseRef.current + interimTranscript);
             };
 
             recognitionRef.current.onerror = (event: any) => {
@@ -197,11 +185,14 @@ export function ChatPanel() {
             setIsListening(false);
         } else {
             try {
+                // Store current input as base for dictation
+                dictationBaseRef.current = input.trim() ? input.trim() + ' ' : '';
                 recognitionRef.current.start();
                 setIsListening(true);
                 toast.success("Listening...");
             } catch (err) {
                 console.error("Failed to start recognition:", err);
+                setIsListening(false);
             }
         }
     };
@@ -887,11 +878,11 @@ export function ParticipantsPanel() {
                     transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                     className="
             fixed right-0 top-0 bottom-20
-            w-full md:w-80 lg:w-96
+            w-full sm:w-[380px]
             bg-[#1C1C1C]
             border-l border-[#404040]
             rounded-none
-            z-30 flex flex-col min-h-0 overflow-hidden
+            z-50 flex flex-col min-h-0 overflow-hidden
             shadow-2xl
           "
                 >
