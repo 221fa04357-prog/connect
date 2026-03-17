@@ -891,22 +891,24 @@ export function ParticipantsPanel() {
 
     return (
         <AnimatePresence>
-            {isParticipantsOpen && (
-                <motion.div
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="
-            fixed right-0 top-0 bottom-20
-            w-full md:w-80 lg:w-96
-            bg-[#1C1C1C]
-            border-l border-[#404040]
-            rounded-none
-            z-30 flex flex-col min-h-0 overflow-hidden
-            shadow-2xl
-          "
-                >
+                        {isParticipantsOpen && (
+                                <motion.div
+                                        initial={{ x: '100%' }}
+                                        animate={{ x: 0 }}
+                                        exit={{ x: '100%' }}
+                                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                        className="
+                        fixed top-0 right-0 bottom-20
+                        w-full sm:w-[380px]
+                        bg-[#1C1C1C]
+                        border-l border-[#404040]
+                        rounded-none
+                        z-50
+                        flex flex-col
+                        overflow-hidden
+                        shadow-2xl
+                    "
+                                >
                     {/* HEADER */}
                     <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
                         <h3 className="text-lg font-semibold">
