@@ -1505,6 +1505,20 @@ function ControlBar() {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
+    // Synchronize remote control stop with screen share termination
+    useEffect(() => {
+        const handleSessionStopped = () => {
+            console.log('MeetingControls: control_session_stopped event received');
+            // If we are currently sharing our screen, stop it
+            if (useMeetingStore.getState().isScreenSharing) {
+                handleStopScreenShare();
+            }
+        };
+
+        window.addEventListener('control_session_stopped', handleSessionStopped);
+        return () => window.removeEventListener('control_session_stopped', handleSessionStopped);
+    }, []);
+
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {

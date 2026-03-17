@@ -731,6 +731,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           targetId: null,
           targetName: null
         });
+        // Dispatch event so MeetingControls/MeetingVideo can stop screen share
+        window.dispatchEvent(new CustomEvent('control_session_stopped'));
         import('sonner').then(({ toast }) => toast.info('Remote control session ended.'));
       });
     });
