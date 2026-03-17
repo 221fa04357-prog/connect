@@ -13,7 +13,10 @@ interface AuthState {
     switchAccount: (email: string) => void;
     removeAccount: (email: string) => void;
     verifyOTP: (email: string, otp: string) => Promise<User>;
+    sendOTP: (email: string) => Promise<void>;
     resendOTP: (email: string) => Promise<void>;
+    forgotPassword: (email: string) => Promise<void>;
+    resetPassword: (email: string, otp: string, newPassword: string) => Promise<void>;
     fetchCurrentUser: () => Promise<void>;
     setSubscription: (plan: User['subscriptionPlan']) => void;
     setAuth: (user: User) => void;
@@ -194,6 +197,23 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
         },
 
+        sendOTP: async (email) => {
+            try {
+                const response = await fetch(`${API}/api/auth/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to send OTP');
+                }
+            } catch (err: any) {
+                throw err;
+            }
+        },
+
         resendOTP: async (email) => {
             try {
                 const response = await fetch(`${API}/api/auth/resend-otp`, {
@@ -205,6 +225,40 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 if (!response.ok) {
                     const err = await response.json();
                     throw new Error(err.error || 'Failed to resend OTP');
+                }
+            } catch (err: any) {
+                throw err;
+            }
+        },
+
+        forgotPassword: async (email) => {
+            try {
+                const response = await fetch(`${API}/api/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to send reset code');
+                }
+            } catch (err: any) {
+                throw err;
+            }
+        },
+
+        resetPassword: async (email, otp, newPassword) => {
+            try {
+                const response = await fetch(`${API}/api/auth/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, otp, newPassword })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to reset password');
                 }
             } catch (err: any) {
                 throw err;

@@ -12,6 +12,9 @@ const { spawn } = require("child_process");
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const expressRateLimit = require('express-rate-limit');
+const pgSession = require('connect-pg-simple')(session);
+const morgan = require('morgan');
 require('dotenv').config();
 
 
@@ -162,6 +165,7 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 }));
 
+app.use(morgan('dev'));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -403,6 +407,11 @@ async function initializeDatabase() {
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 avatar TEXT,
+                provider VARCHAR(50) DEFAULT 'local',
+                is_password_set BOOLEAN DEFAULT true,
+                is_email_verified BOOLEAN DEFAULT false,
+                mfa_enabled BOOLEAN DEFAULT false,
+                mfa_secret TEXT,
                 subscription_plan VARCHAR(50) DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
@@ -483,6 +492,15 @@ async function initializeDatabase() {
                 resend_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT NOW()
             );
+
+            -- Session store table for connect-pg-simple
+            CREATE TABLE IF NOT EXISTS session (
+                sid varchar NOT NULL COLLATE "default",
+                sess json NOT NULL,
+                expire timestamp(6) NOT NULL,
+                PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE
+            );
+            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
         `);
         console.log('Database initialization successful: all tables ready.');
     } catch (err) {
@@ -549,11 +567,36 @@ const io = new Server(server, {
 
 const port = process.env.PORT || 5001;
 
+// ================= SECURITY: RATE LIMITING =================
+const authLimiter = expressRateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 requests per window
+    message: { error: 'Too many attempts from this IP, please try again after 15 minutes' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const otpLimiter = expressRateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 5, // Limit each IP to 5 OTP requests per window
+    message: { error: 'Too many OTP requests. Please wait 10 minutes before requesting again.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 app.use(session({
+    store: new pgSession({
+        pool: db,                // Connection pool
+        tableName: 'session'   // Use another table-name than "session"
+    }),
     secret: process.env.SESSION_SECRET || 'neural_chat_secret_key',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production', 
+        maxAge: 24 * 60 * 60 * 1000,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    }
 }));
 
 app.use(passport.initialize());
@@ -1906,7 +1949,38 @@ app.post('/api/auth/social', async (req, res) => {
         res.status(500).json({ error: 'Failed to authenticate with social provider' });
     }
 });
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/send-otp', otpLimiter, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        // Store or update OTP in a transient table
+        await db.query(`
+            INSERT INTO temp_registrations (email, otp, expires_at, name, password_hash)
+            VALUES ($1, $2, $3, 'Verification', 'N/A')
+            ON CONFLICT (email) DO UPDATE SET 
+                otp = EXCLUDED.otp, 
+                expires_at = EXCLUDED.expires_at,
+                resend_count = temp_registrations.resend_count + 1
+        `, [normalizedEmail, otp, expiresAt]);
+
+        const emailResult = await emailService.sendOTPEmail(normalizedEmail, otp);
+        if (!emailResult.success) {
+            return res.status(500).json({ error: 'Failed to send OTP', details: emailResult.error });
+        }
+
+        res.json({ message: 'OTP sent successfully', devMode: emailResult.devMode });
+    } catch (err) {
+        console.error('Send OTP error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/auth/register', authLimiter, async (req, res) => {
     const { name, email, password } = req.body;
     const normalizedEmail = email.toLowerCase();
     try {
@@ -1951,7 +2025,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-app.post('/api/auth/verify-otp', async (req, res) => {
+app.post('/api/auth/verify-otp', authLimiter, async (req, res) => {
     const { email, otp } = req.body;
     const normalizedEmail = email.toLowerCase();
 
@@ -1975,7 +2049,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         // Success - create the actual user account
         const id = `user-${Date.now()}`;
         const userResult = await db.query(
-            'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar, subscription_plan',
+            'INSERT INTO users (id, name, email, password_hash, is_email_verified) VALUES ($1, $2, $3, $4, true) RETURNING id, name, email, avatar, subscription_plan',
             [id, registration.name, normalizedEmail, registration.password_hash]
         );
 
@@ -2031,6 +2105,96 @@ app.post('/api/auth/resend-otp', async (req, res) => {
     }
 });
 
+// ================= FORGOT PASSWORD FLOW =================
+
+app.post('/api/auth/forgot-password', otpLimiter, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const userResult = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        
+        // Security: Don't reveal if account exists
+        if (userResult.rows.length === 0) {
+            return res.json({ message: 'If an account exists with this email, an OTP has been sent.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins for reset
+
+        await db.query(`
+            INSERT INTO temp_registrations (email, name, password_hash, otp, expires_at)
+            VALUES ($1, 'PasswordReset', 'N/A', $2, $3)
+            ON CONFLICT (email) DO UPDATE SET otp = EXCLUDED.otp, expires_at = EXCLUDED.expires_at
+        `, [normalizedEmail, otp, expiresAt]);
+
+        const emailResult = await emailService.sendOTPEmail(normalizedEmail, otp);
+        if (!emailResult.success) {
+            return res.status(500).json({ error: 'Failed to send reset code' });
+        }
+
+        res.json({ message: 'If an account exists with this email, an OTP has been sent.' });
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) return res.status(400).json({ error: 'Missing required fields' });
+
+    const normalizedEmail = email.toLowerCase();
+    try {
+        const tempResult = await db.query('SELECT * FROM temp_registrations WHERE email = $1', [normalizedEmail]);
+        if (tempResult.rows.length === 0 || tempResult.rows[0].otp !== otp || new Date() > new Date(tempResult.rows[0].expires_at)) {
+            return res.status(400).json({ error: 'Invalid or expired OTP' });
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+        await db.query(
+            'UPDATE users SET password_hash = $1, is_password_set = true, updated_at = NOW() WHERE LOWER(email) = LOWER($2)',
+            [passwordHash, normalizedEmail]
+        );
+
+        // Cleanup
+        await db.query('DELETE FROM temp_registrations WHERE email = $1', [normalizedEmail]);
+
+        res.json({ message: 'Password has been reset successfully. You can now log in.' });
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ error: 'Failed to reset password' });
+    }
+});
+
+app.post('/api/auth/set-password', authLimiter, async (req, res) => {
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+    const userId = req.headers['x-user-id'];
+
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+    try {
+        const userResult = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        
+        const user = userResult.rows[0];
+        if (user.is_password_set) return res.status(400).json({ error: 'Password already set. Use Reset Password instead.' });
+
+        const passwordHash = await bcrypt.hash(password, 10);
+        await db.query(
+            'UPDATE users SET password_hash = $1, is_password_set = true WHERE LOWER(email) = LOWER($2)',
+            [passwordHash, normalizedEmail]
+        );
+
+        res.json({ message: 'Password set successfully. You can now log in with your email and password.' });
+    } catch (err) {
+        console.error('Set password error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 app.get('/api/auth/test-smtp', async (req, res) => {
     try {
         const result = await emailService.testSmtpConnection();
@@ -2040,7 +2204,7 @@ app.get('/api/auth/test-smtp', async (req, res) => {
     }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
     const { email, password } = req.body;
     const normalizedEmail = email.toLowerCase();
     try {
@@ -2087,7 +2251,31 @@ app.get('/api/auth/me', async (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-    res.json({ message: 'Logged out successfully' });
+    req.session.destroy((err) => {
+        if (err) return res.status(500).json({ error: 'Failed to destroy session' });
+        res.clearCookie('connect.sid');
+        res.json({ message: 'Logged out successfully' });
+    });
+});
+
+app.post('/api/auth/logout-all', async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+        // Clear all sessions for this user from pg-store
+        // Sess column contains JSON, usually user data is nested there in passport-session
+        await db.query(`
+            DELETE FROM session 
+            WHERE (sess->'passport'->>'user')::text = $1 
+            OR (sess->>'user_id')::text = $1
+        `, [userId]);
+        
+        res.json({ message: 'Log out from all devices was successful' });
+    } catch (err) {
+        console.error('Logout-all error:', err);
+        res.status(500).json({ error: 'Failed to logout from all devices' });
+    }
 });
 
 // Health check endpoint

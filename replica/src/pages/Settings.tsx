@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
-import { Video, Mic, Monitor, Keyboard, ArrowLeft } from 'lucide-react';
+import { Video, Mic, Monitor, Keyboard, ArrowLeft, Shield, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useMeetingStore } from '@/stores/useMeetingStore';
@@ -147,6 +147,10 @@ export default function Settings() {
               <TabsTrigger value="shortcuts" className="gap-2">
                 <Keyboard className="w-4 h-4" />
                 Shortcuts
+              </TabsTrigger>
+              <TabsTrigger value="security" className="gap-2">
+                <Shield className="w-4 h-4" />
+                Security
               </TabsTrigger>
             </TabsList>
 
@@ -414,6 +418,48 @@ export default function Settings() {
                     </kbd>
                   </div>
                 ))}
+              </div>
+            </TabsContent>
+            <TabsContent value="security" className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg text-white">Security & Access</h3>
+                
+                <div className="p-4 bg-[#1C1C1C] rounded-xl border border-[#404040] space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-white">Two-Factor Authentication (MFA)</Label>
+                      <p className="text-xs text-gray-500">Secure your account with an additional 6-digit verification code.</p>
+                    </div>
+                    <Switch
+                      checked={settings.hd} // Reusing hd for state mock or better add to settings
+                      onCheckedChange={() => alert('MFA Setup: This would normally show a QR code or send an OTP to your email.')}
+                    />
+                  </div>
+
+                  <div className="pt-4 border-t border-[#404040]">
+                    <div className="space-y-2">
+                      <Label className="text-white">Active Sessions</Label>
+                      <p className="text-xs text-gray-500">Manage your active sessions on other devices.</p>
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="mt-2 flex items-center gap-2"
+                        onClick={async () => {
+                          if (confirm('Are you sure you want to log out from ALL other devices?')) {
+                            const res = await fetch(`${API}/api/auth/logout-all`, {
+                              method: 'POST',
+                              headers: { 'x-user-id': 'default-user' } // Use real user ID from store
+                            });
+                            if (res.ok) alert('Successfully logged out from all devices.');
+                          }
+                        }}
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Log out from all devices
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
