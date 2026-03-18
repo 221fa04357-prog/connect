@@ -1,0 +1,10 @@
+{
+  "name": "connect",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "cd replica && npm install && npm run build"
+  }
+}

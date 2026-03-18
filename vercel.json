@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd replica && npm install --legacy-peer-deps && npm run build",
-  "outputDirectory": "replica/dist",
+  "buildCommand": "npm install --prefix replica --legacy-peer-deps && npm run build --prefix replica",
+  "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
