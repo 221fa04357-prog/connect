@@ -30,7 +30,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, MousePointer2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -41,7 +41,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
-import { ChatMessage, Participant } from '@/types';
+import { ChatMessage, Participant, Meeting } from '@/types';
 import { useResourceStore } from '@/stores/useResourceStore';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
@@ -891,22 +891,24 @@ export function ParticipantsPanel() {
 
     return (
         <AnimatePresence>
-            {isParticipantsOpen && (
-                <motion.div
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="
-            fixed right-0 top-0 bottom-20
-            w-full md:w-80 lg:w-96
-            bg-[#1C1C1C]
-            border-l border-[#404040]
-            rounded-none
-            z-30 flex flex-col min-h-0 overflow-hidden
-            shadow-2xl
-          "
-                >
+                        {isParticipantsOpen && (
+                                <motion.div
+                                        initial={{ x: '100%' }}
+                                        animate={{ x: 0 }}
+                                        exit={{ x: '100%' }}
+                                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                        className="
+                        fixed top-0 right-0 bottom-20
+                        w-full sm:w-[380px]
+                        bg-[#1C1C1C]
+                        border-l border-[#404040]
+                        rounded-none
+                        z-50
+                        flex flex-col
+                        overflow-hidden
+                        shadow-2xl
+                    "
+                                >
                     {/* HEADER */}
                     <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
                         <h3 className="text-lg font-semibold">
@@ -1171,6 +1173,7 @@ export function ParticipantsPanel() {
                                     displayedRole={displayedRole}
                                     coHostCount={coHostCount}
                                     hostCount={hostCount}
+                                    meeting={meeting}
                                 />
                             );
                         })}
@@ -1223,6 +1226,7 @@ interface ParticipantItemProps {
     displayedRole?: Participant['role'];
     coHostCount: number;
     hostCount: number;
+    meeting: Meeting | null;
 }
 
 function ParticipantItem({
@@ -1249,6 +1253,7 @@ function ParticipantItem({
     displayedRole = participant.role,
     coHostCount,
     hostCount,
+    meeting,
 }: ParticipantItemProps) {
     const effectiveRole = displayedRole || participant.role;
     const isSuspended = useMeetingStore(state => state.meeting?.settings?.suspendParticipantActivities);
@@ -1440,6 +1445,20 @@ function ParticipantItem({
                                             >
                                                 <Crown className="w-4 h-4 mr-2" />
                                                 Remove Host
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {effectiveRole === 'participant' && !isCurrentUser && (
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    if (meeting?.id) {
+                                                        useChatStore.getState().requestControl(meeting.id, participant.id);
+                                                        import('sonner').then(({ toast }) => toast.info(`Control request sent to ${participant.name}`));
+                                                    }
+                                                }}
+                                            >
+                                                <MousePointer2 className="w-4 h-4 mr-2" />
+                                                Take Control
                                             </DropdownMenuItem>
                                         )}
 

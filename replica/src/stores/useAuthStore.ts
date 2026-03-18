@@ -20,6 +20,7 @@ interface AuthState {
     fetchCurrentUser: () => Promise<void>;
     setSubscription: (plan: User['subscriptionPlan']) => void;
     setAuth: (user: User) => void;
+    setPassword: (credentials: { email: string; password?: string }) => Promise<void>;
 }
 
 // Helpers for localStorage
@@ -153,45 +154,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
                     const err = await response.json();
                     throw new Error(err.error || 'Registration failed');
                 }
-                set({ isLoading: false });
-            } catch (err: any) {
-                set({ isLoading: false });
-                throw err;
-            }
-        },
-
-        verifyOTP: async (email, otp) => {
-            set({ isLoading: true });
-            try {
-                const response = await fetch(`${API}/api/auth/verify-otp`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, otp })
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error || 'Verification failed');
-                }
 
                 const user = await response.json();
-                saveAuth(user, true);
-                
-                const currentAccounts = get().accounts;
-                const newAccounts = currentAccounts.some(a => a.email === user.email) 
-                    ? currentAccounts.map(a => a.email === user.email ? { ...user, isLoggedOut: false } : a)
-                    : [...currentAccounts, { ...user, isLoggedOut: false }];
-                
-                set({
-                    user,
-                    accounts: newAccounts,
-                    isAuthenticated: true,
-                    isSubscribed: user.subscription_plan !== 'free',
-                    isLoading: false
-                });
-                localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(newAccounts));
-                return user;
-            } catch (err: any) {
                 set({ isLoading: false });
                 throw err;
             }
@@ -227,6 +191,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
                     throw new Error(err.error || 'Failed to resend OTP');
                 }
             } catch (err: any) {
+                set({ isLoading: false });
                 throw err;
             }
         },
@@ -363,6 +328,27 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 isSubscribed: (user as any).subscription_plan !== 'free'
             });
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(newAccounts));
+        },
+
+        setPassword: async (credentials) => {
+            set({ isLoading: true });
+            try {
+                const response = await fetch(`${API}/api/auth/set-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(credentials)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Failed to set password');
+                }
+
+                set({ isLoading: false });
+            } catch (err: any) {
+                set({ isLoading: false });
+                throw err;
+            }
         }
     };
 });
