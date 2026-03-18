@@ -279,30 +279,43 @@ export function Login() {
 // Export both components as named exports. Import them as { Login } and { ResetPassword } in your router.
 export function ResetPassword() {
     const navigate = useNavigate();
+    const forgotPassword = useAuthStore((state) => state.forgotPassword);
+    const resetPassword = useAuthStore((state) => state.resetPassword);
+    const [step, setStep] = useState<'request' | 'reset'>('request');
     const [form, setForm] = useState({
         email: '',
+        otp: '',
         password: '',
         confirmPassword: ''
     });
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
     const [errors, setErrors] = useState({
         email: '',
+        otp: '',
         password: '',
         confirmPassword: ''
     });
     const [touched, setTouched] = useState({
         email: false,
+        otp: false,
         password: false,
         confirmPassword: false
     });
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-    // Validation logic
     function validate(field: string, value: string) {
         switch (field) {
             case 'email':
                 if (!value) return 'Email is required';
                 if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return 'Invalid email';
+                return '';
+            case 'otp':
+                if (!value) return 'Verification code is required';
+                if (value.length !== 6) return 'Code must be 6 digits';
                 return '';
             case 'password':
                 if (!value) return 'Password is required';
@@ -329,6 +342,31 @@ export function ResetPassword() {
         setErrors(errs => ({ ...errs, [name]: validate(name, form[name as keyof typeof form]) }));
     }
 
+    async function handleRequest(e: React.FormEvent) {
+        e.preventDefault();
+        setError('');
+        const emailErr = validate('email', form.email);
+        if (emailErr) {
+            setErrors(prev => ({ ...prev, email: emailErr }));
+            setTouched(prev => ({ ...prev, email: true }));
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            await forgotPassword(form.email);
+            setSuccess('If your email is registered, you will receive a 6-digit code shortly.');
+            setStep('reset');
+        } catch (err: any) {
+            setError(err.message || 'Failed to send reset code');
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    async function handleReset(e: React.FormEvent) {
+        e.preventDefault();
+        setError('');
     const setPasswordAction = useAuthStore((state) => state.setPassword);
     const isLoading = useAuthStore((state) => state.isLoading);
     const [authError, setAuthError] = useState('');
@@ -350,10 +388,23 @@ export function ResetPassword() {
         // Validate all fields
         const newErrors = {
             email: validate('email', form.email),
+            otp: validate('otp', form.otp),
             password: validate('password', form.password),
             confirmPassword: validate('confirmPassword', form.confirmPassword)
         };
         setErrors(newErrors);
+        setTouched({ email: true, otp: true, password: true, confirmPassword: true });
+
+        if (!Object.values(newErrors).some(err => err)) {
+            setIsLoading(true);
+            try {
+                await resetPassword(form.email, form.otp, form.password);
+                setSuccess('Password reset successful! Redirecting to login...');
+                setTimeout(() => navigate('/login'), 2000);
+            } catch (err: any) {
+                setError(err.message || 'Reset failed. Check your code or try again.');
+            } finally {
+                setIsLoading(false);
         setTouched({ email: true, password: true, confirmPassword: true });
         
         if (!newErrors.email && !newErrors.password && !newErrors.confirmPassword) {
@@ -372,8 +423,6 @@ export function ResetPassword() {
         }
     }
 
-    const isValid = !errors.email && !errors.password && !errors.confirmPassword && form.email && form.password && form.confirmPassword;
-
     return (
         <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-4">
             <motion.div
@@ -387,110 +436,133 @@ export function ResetPassword() {
                         <span className="text-2xl font-bold text-white">NeuralChat</span>
                     </div>
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Reset Password</h2>
-                    <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
-                    
-                    {authError && (
-                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
-                            {authError}
+                    <p className="text-gray-400 text-center mb-8">
+                        {step === 'request' ? 'Enter your email to receive a reset code' : 'Enter the code and your new password'}
+                    </p>
+
+                    {error && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-2 rounded-lg text-sm mb-6 text-center">
+                            {error}
+                        </div>
+                    )}
+                    {success && (
+                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-2 rounded-lg text-sm mb-6 text-center">
+                            {success}
                         </div>
                     )}
 
-                    {successMsg && (
-                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
-                            {successMsg}
-                        </div>
+                    {step === 'request' ? (
+                        <form onSubmit={handleRequest} className="space-y-6">
+                            <div className="space-y-2">
+                                <Label htmlFor="reset-email" className="text-white">Email Address</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="reset-email"
+                                        name="email"
+                                        type="email"
+                                        placeholder="you@example.com"
+                                        value={form.email}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        required
+                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                    />
+                                    {touched.email && errors.email && (
+                                        <div className="absolute left-0 top-full mt-1 z-50">
+                                            {getNativeStyleTooltip(errors.email)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <Button
+                                type="submit"
+                                className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? 'Sending...' : 'Send Reset Code'}
+                            </Button>
+                        </form>
+                    ) : (
+                        <form onSubmit={handleReset} className="space-y-6">
+                            <div className="space-y-2">
+                                <Label htmlFor="reset-otp" className="text-white">6-Digit Code</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="reset-otp"
+                                        name="otp"
+                                        type="text"
+                                        placeholder="000000"
+                                        maxLength={6}
+                                        value={form.otp}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        required
+                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 text-center text-xl tracking-widest"
+                                    />
+                                    {touched.otp && errors.otp && (
+                                        <div className="absolute left-0 top-full mt-1 z-50">
+                                            {getNativeStyleTooltip(errors.otp)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="reset-password" className="text-white">New Password</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="reset-password"
+                                        name="password"
+                                        type="password"
+                                        placeholder="New password"
+                                        value={form.password}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        required
+                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                    />
+                                    {touched.password && errors.password && (
+                                        <div className="absolute left-0 top-full mt-1 z-50">
+                                            {getNativeStyleTooltip(errors.password)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="reset-confirm" className="text-white">Confirm Password</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="reset-confirm"
+                                        name="confirmPassword"
+                                        type="password"
+                                        placeholder="Confirm password"
+                                        value={form.confirmPassword}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        required
+                                        className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
+                                    />
+                                    {touched.confirmPassword && errors.confirmPassword && (
+                                        <div className="absolute left-0 top-full mt-1 z-50">
+                                            {getNativeStyleTooltip(errors.confirmPassword)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <Button
+                                type="submit"
+                                className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? 'Resetting...' : 'Reset Password'}
+                            </Button>
+                        </form>
                     )}
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-2">
-                            <Label htmlFor="reset-email" className="text-white">Email Address</Label>
-                            <div className="relative">
-                                <Input
-                                    id="reset-email"
-                                    name="email"
-                                    type="email"
-                                    placeholder="you@example.com"
-                                    value={form.email}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                    required
-                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500"
-                                />
-                                {touched.email && errors.email && (
-                                    <div className="absolute left-0 top-full mt-1 z-50">
-                                        {getNativeStyleTooltip(errors.email)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="reset-password" className="text-white">New Password</Label>
-                            <div className="relative">
-                                <Input
-                                    id="reset-password"
-                                    name="password"
-                                    type={showPassword ? 'text' : 'password'}
-                                    placeholder="New password"
-                                    value={form.password}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                    required
-                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                                >
-                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                </button>
-                                {touched.password && errors.password && (
-                                    <div className="absolute left-0 top-full mt-1 z-50">
-                                        {getNativeStyleTooltip(errors.password)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="reset-confirm" className="text-white">Confirm Password</Label>
-                            <div className="relative">
-                                <Input
-                                    id="reset-confirm"
-                                    name="confirmPassword"
-                                    type={showConfirmPassword ? 'text' : 'password'}
-                                    placeholder="Confirm password"
-                                    value={form.confirmPassword}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                    required
-                                    className="bg-[#1C1C1C] border-[#404040] text-white placeholder:text-gray-500 pr-10"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                                >
-                                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                </button>
-                                {touched.confirmPassword && errors.confirmPassword && (
-                                    <div className="absolute left-0 top-full mt-1 z-50">
-                                        {getNativeStyleTooltip(errors.confirmPassword)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <Button
-                            type="submit"
-                            className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg"
-                            disabled={!isValid || isLoading}
-                        >
-                            {isLoading ? 'Processing...' : 'Reset Password'}
-                        </Button>
-                        <div className="mt-4 text-center">
-                            <button type="button" className="text-[#0B5CFF] hover:underline font-semibold" onClick={() => navigate('/login')}>
-                                Back to Sign In
-                            </button>
-                        </div>
-                    </form>
+
+                    <div className="mt-6 text-center">
+                        <button type="button" className="text-[#0B5CFF] hover:underline font-semibold" onClick={() => navigate('/login')}>
+                            Back to Sign In
+                        </button>
+                    </div>
                 </div>
             </motion.div>
         </div>
