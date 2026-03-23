@@ -2,7 +2,7 @@ import { SonnerToaster, TooltipProvider, Toaster } from '@/components/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
-import { Login, Register, ResetPassword } from './pages/Auth';
+import { Login, Register, ResetPassword, VerifyEmail } from './pages/Auth';
 import { JoinMeeting, CreateMeeting } from './pages/MeetingSetup';
 import MeetingRoom from './pages/MeetingRoom';
 import Settings from './pages/Settings';
@@ -336,6 +336,7 @@ const AppContent = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/join-meeting" element={<JoinMeeting />} />
         <Route path="/join/:meetingId" element={<JoinMeeting />} />
         <Route path="/create-meeting" element={

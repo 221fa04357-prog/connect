@@ -59,6 +59,7 @@ interface ParticipantsState {
   toggleParticipantAudio: (id: string) => void;
   toggleParticipantVideo: (id: string) => void;
   forceSetParticipantVideo: (id: string, isOff: boolean) => void;
+  lowerAllHandsLocal: () => void;
   syncParticipants: (participants: Participant[]) => void;
   resetWaitingRoomBadge: () => void;
   reset: () => void;
@@ -128,6 +129,17 @@ export const useParticipantsStore = create<ParticipantsState>()(
         const participants = state.participants.map(p =>
           p.id === id ? { ...p, isHandRaised: nextHandRaised } : p
         );
+        setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+        return { participants };
+      }),
+
+      lowerAllHandsLocal: () => set((state) => {
+        const participants = state.participants.map(p => ({
+          ...p,
+          isHandRaised: false,
+          handRaiseNumber: undefined,
+          handRaiseTimestamp: undefined
+        }));
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
