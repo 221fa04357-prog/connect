@@ -16,6 +16,8 @@ interface AuthState {
     setSubscription: (plan: User['subscriptionPlan']) => void;
     setAuth: (user: User) => void;
     setPassword: (credentials: { email: string; password?: string }) => Promise<void>;
+    verifyOTP: (data: { email: string; otp: string }) => Promise<void>;
+    resendOTP: (email: string) => Promise<void>;
 }
 
 // Helpers for localStorage
@@ -110,8 +112,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 });
 
                 if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error || 'Login failed');
+                    let errMsg = 'Login failed';
+                    try {
+                        const err = await response.json();
+                        errMsg = err.error || errMsg;
+                        if (err.message?.includes('email_not_verified')) errMsg = 'email_not_verified';
+                    } catch {
+                        errMsg = `Server error (${response.status})`;
+                    }
+                    throw new Error(errMsg);
                 }
 
                 const user = await response.json();
@@ -146,8 +155,14 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 });
 
                 if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error || 'Registration failed');
+                    let errMsg = 'Registration failed';
+                    try {
+                        const err = await response.json();
+                        errMsg = err.error || errMsg;
+                    } catch {
+                        errMsg = `Server error (${response.status})`;
+                    }
+                    throw new Error(errMsg);
                 }
 
                 const user = await response.json();
@@ -270,6 +285,75 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 if (!response.ok) {
                     const err = await response.json();
                     throw new Error(err.error || 'Failed to set password');
+                }
+
+                set({ isLoading: false });
+            } catch (err: any) {
+                set({ isLoading: false });
+                throw err;
+            }
+        },
+
+        verifyOTP: async (data) => {
+            set({ isLoading: true });
+            try {
+                const response = await fetch(`${API}/api/auth/verify-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    let errMsg = 'OTP verification failed';
+                    try {
+                        const err = await response.json();
+                        errMsg = err.error || errMsg;
+                    } catch {
+                        errMsg = `Server error (${response.status})`;
+                    }
+                    throw new Error(errMsg);
+                }
+
+                const user = await response.json();
+                saveAuth(user, true);
+                
+                const currentAccounts = get().accounts;
+                const newAccounts = currentAccounts.some(a => a.email === user.email) 
+                    ? currentAccounts.map(a => a.email === user.email ? { ...user, isLoggedOut: false } : a)
+                    : [...currentAccounts, { ...user, isLoggedOut: false }];
+                
+                set({
+                    user,
+                    accounts: newAccounts,
+                    isAuthenticated: true,
+                    isSubscribed: user.subscription_plan !== 'free',
+                    isLoading: false
+                });
+                localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(newAccounts));
+            } catch (err: any) {
+                set({ isLoading: false });
+                throw err;
+            }
+        },
+
+        resendOTP: async (email) => {
+            set({ isLoading: true });
+            try {
+                const response = await fetch(`${API}/api/auth/resend-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                if (!response.ok) {
+                    let errMsg = 'Failed to resend code';
+                    try {
+                        const err = await response.json();
+                        errMsg = err.error || errMsg;
+                    } catch {
+                        errMsg = `Server error (${response.status})`;
+                    }
+                    throw new Error(errMsg);
                 }
 
                 set({ isLoading: false });
