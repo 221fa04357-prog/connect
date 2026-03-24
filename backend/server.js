@@ -599,7 +599,15 @@ const io = new Server(server, {
     }
 });
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5000;
+
+// Environment Variable Safety Checks
+const requiredEnvVars = ['DATABASE_URL', 'RESEND_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+    console.error(`[WARNING] Missing environment variables: ${missingVars.join(', ')}`);
+}
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'neural_chat_secret_key',
