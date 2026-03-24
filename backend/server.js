@@ -23,9 +23,62 @@ const MicrosoftStrategy = require('passport-microsoft').Strategy;
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-const emailService = require('./emailService');
+const nodemailer = require('nodemailer');
 
-// ================= EMAIL CONFIG MOVED TO emailService.js =================
+// ================= NODEMAILER CONFIG =================
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+});
+
+// Verify transporter
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('[SMTP] Connection Error:', error);
+    } else {
+        console.log('[SMTP] Server is ready to take our messages');
+    }
+});
+
+async function sendOTPEmail(email, otp) {
+    const mailOptions = {
+        from: `"NeuralChat" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Verify your email - NeuralChat',
+        html: `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                <h2 style="color: #0B5CFF; text-align: center;">Welcome to NeuralChat!</h2>
+                <p style="font-size: 16px; color: #333;">Please use the following verification code to complete your registration:</p>
+                <div style="background-color: #f4f7ff; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+                    <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #0B5CFF;">${otp}</span>
+                </div>
+                <p style="font-size: 14px; color: #666;">This code will expire in 5 minutes. If you did not request this, please ignore this email.</p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                <p style="font-size: 12px; color: #999; text-align: center;">&copy; 2026 NeuralChat. All rights reserved.</p>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`[OTP] Sent ${otp} to ${email}`);
+        } else {
+            console.log(`[OTP] Sent to ${email}`);
+        }
+    } catch (err) {
+        console.error('[OTP] Email delivery failed:', err);
+        throw new Error('Failed to send verification email');
+    }
+}
 
 // ================= PASSPORT CONFIG =================
 
@@ -2057,19 +2110,19 @@ app.post('/api/auth/register', async (req, res) => {
                 [id, name, normalizedEmail, passwordHash, false]
             );
 
-            // Generate 6-digit OTP using Math.random as requested
-            const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+            // Generate 6-digit OTP
+            const otp = crypto.randomInt(100000, 1000000).toString();
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
             await client.query(
                 'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otpCode, expiresAt]
+                [normalizedEmail, otp, expiresAt]
             );
 
             await client.query('COMMIT');
 
-            // Send Email using Resend
-            await emailService.sendVerificationEmail(normalizedEmail, otpCode);
+            // Send Email
+            await sendOTPEmail(normalizedEmail, otp);
 
             console.log(`User registered (pending verification): ${normalizedEmail}`);
             res.status(201).json(userResult.rows[0]);
@@ -2158,9 +2211,9 @@ app.post('/api/auth/resend-otp', async (req, res) => {
             return res.status(404).json({ error: 'Account not found' });
         }
 
-        // Generate new OTP using Math.random as requested
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        // Generate new OTP
+        const otp = crypto.randomInt(100000, 1000000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
         // Delete old OTPs for this email and insert new one
         const client = await db.pool.connect();
@@ -2169,7 +2222,7 @@ app.post('/api/auth/resend-otp', async (req, res) => {
             await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
             await client.query(
                 'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otpCode, expiresAt]
+                [normalizedEmail, otp, expiresAt]
             );
             await client.query('COMMIT');
         } catch (err) {
@@ -2179,8 +2232,8 @@ app.post('/api/auth/resend-otp', async (req, res) => {
             client.release();
         }
 
-        // Send Email using Resend
-        await emailService.sendVerificationEmail(normalizedEmail, otpCode);
+        // Send Email
+        await sendOTPEmail(normalizedEmail, otp);
 
         console.log(`OTP resent to: ${normalizedEmail}`);
         res.json({ message: 'A new verification code has been sent to your email.' });
@@ -2209,7 +2262,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (user.provider === 'local' && user.is_verified === false) {
             console.log(`Login blocked: ${normalizedEmail} is not verified`);
             return res.status(403).json({ 
-                error: 'Email not verified',
+                error: 'email_not_verified', 
                 message: 'Please verify your email address to log in.',
                 email: user.email 
             });
