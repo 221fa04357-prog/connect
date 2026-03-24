@@ -135,36 +135,12 @@ async function transcribeWithWhisper(audioPath, language = null) {
 const app = express();
 const server = http.createServer(app);
 
-// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
-const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
-
-// Allow both localhost and Vercel production origin
-const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://connect-eta-one.vercel.app",
-    "https://connect-pro-awg4.onrender.com",
-    "https://connect-pupt.onrender.com"
-];
-
-// If FRONTEND_URL is set in env, add it too
-if (process.env.FRONTEND_URL && !allowedOrigins.includes(frontendOrigin)) {
-    allowedOrigins.push(frontendOrigin);
-}
-
-// CRITICAL: Middleware MUST be initialized before routes
+// CORS Configuration
 app.use(cors({
-    origin: function (origin, callback) {
-        // allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1 && frontendOrigin !== "*") {
-            var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
-    },
+    origin: process.env.FRONTEND_URL,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json());
