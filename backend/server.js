@@ -2033,17 +2033,18 @@ app.post('/api/auth/register', async (req, res) => {
 
         // Use a client from the pool for transactions
         const client = await db.pool.connect();
+        let otpCode, userResult;
         
         try {
             await client.query('BEGIN');
             
-            const userResult = await client.query(
+            userResult = await client.query(
                 'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
                 [id, name, normalizedEmail, passwordHash, false]
             );
 
-            // Generate 6-digit OTP using Math.random as requested
-            const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+            // Generate 6-digit OTP using Math.random
+            otpCode = Math.floor(100000 + Math.random() * 900000).toString();
             const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
             await client.query(
@@ -2052,23 +2053,33 @@ app.post('/api/auth/register', async (req, res) => {
             );
 
             await client.query('COMMIT');
-
-            // Send Email using Resend
-            await emailService.sendVerificationEmail(normalizedEmail, otpCode);
-
-            console.log(`User registered (pending verification): ${normalizedEmail}`);
-            res.status(201).json(userResult.rows[0]);
         } catch (err) {
             await client.query('ROLLBACK');
             throw err;
         } finally {
             client.release();
         }
+
+        // Send Email using Resend (MOVE OUTSIDE TRANSACTION)
+        try {
+            await emailService.sendVerificationEmail(normalizedEmail, otpCode);
+            console.log(`User registered (pending verification): ${normalizedEmail}`);
+            res.status(201).json(userResult.rows[0]);
+        } catch (emailErr) {
+            console.error('[Email-Error] Registration email failed but user was created:', emailErr);
+            // Technically the user IS registered now, but they can't verify yet without a resend attempt.
+            // We return 500 for now but with more specific info.
+            res.status(500).json({ 
+                error: 'Failed to send verification email. Please try re-requesting the OTP or use the login screen to verify.',
+                emailError: emailErr.message || 'Unknown error'
+            });
+        }
     } catch (err) {
         console.error('Registration error:', err);
         res.status(500).json({ error: 'Failed to register user. ' + (err.message || '') });
     }
 });
+
 
 app.post('/api/auth/verify-otp', async (req, res) => {
     const { email, otp } = req.body;
