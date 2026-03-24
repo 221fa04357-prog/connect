@@ -189,8 +189,9 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS Configuration
+const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigin,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
