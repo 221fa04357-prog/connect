@@ -1115,11 +1115,28 @@ export function ParticipantsPanel() {
                                         Raised Hands ({participants.filter(p => p.isHandRaised).length})
                                     </span>
                                 </div>
-                                {participants.filter(p => p.isHandRaised).length >= 20 && (
-                                    <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
-                                        Priority List
-                                    </span>
-                                )}
+                                <div className="flex items-center gap-2">
+                                    {participants.filter(p => p.isHandRaised).length >= 20 && (
+                                        <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
+                                            Priority List
+                                        </span>
+                                    )}
+                                    {canControl && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                                if (confirm('Lower all hands?')) {
+                                                    const { meetingId, lowerAllHands } = useChatStore.getState();
+                                                    if (meetingId) lowerAllHands(meetingId);
+                                                }
+                                            }}
+                                            className="h-7 text-[10px] bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 font-bold px-2 py-0 border border-yellow-500/30 rounded"
+                                        >
+                                            Lower All
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -1556,14 +1573,30 @@ function ParticipantItem({
                             )}
                         </button>
                         {participant.isHandRaised && (
-                            <div className="flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
-                                <Hand className="w-3.5 h-3.5 text-yellow-500" />
+                            <motion.div 
+                                initial={{ scale: 0, x: 10 }}
+                                animate={{ scale: 1, x: 0 }}
+                                className="flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 shadow-[0_0_10px_rgba(234,179,8,0.1)]"
+                            >
+                                <motion.div
+                                    animate={{ 
+                                        rotate: [0, -10, 10, -10, 0],
+                                        scale: [1, 1.1, 1]
+                                    }}
+                                    transition={{ 
+                                        duration: 2, 
+                                        repeat: Infinity,
+                                        repeatDelay: 3
+                                    }}
+                                >
+                                    <Hand className="w-3.5 h-3.5 text-yellow-500" />
+                                </motion.div>
                                 {participant.handRaiseNumber && (
                                     <span className="text-[11px] font-bold text-yellow-500">
                                         #{participant.handRaiseNumber}
                                     </span>
                                 )}
-                            </div>
+                            </motion.div>
                         )}
                     </div>
                 </div>

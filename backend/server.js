@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const cors = require('cors');
 const db = require('./db');
 const http = require('http');
@@ -22,6 +23,62 @@ const MicrosoftStrategy = require('passport-microsoft').Strategy;
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
+
+// ================= NODEMAILER CONFIG =================
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+});
+
+// Verify transporter
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('[SMTP] Connection Error:', error);
+    } else {
+        console.log('[SMTP] Server is ready to take our messages');
+    }
+});
+
+async function sendOTPEmail(email, otp) {
+    const mailOptions = {
+        from: `"NeuralChat" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Verify your email - NeuralChat',
+        html: `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                <h2 style="color: #0B5CFF; text-align: center;">Welcome to NeuralChat!</h2>
+                <p style="font-size: 16px; color: #333;">Please use the following verification code to complete your registration:</p>
+                <div style="background-color: #f4f7ff; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+                    <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #0B5CFF;">${otp}</span>
+                </div>
+                <p style="font-size: 14px; color: #666;">This code will expire in 5 minutes. If you did not request this, please ignore this email.</p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                <p style="font-size: 12px; color: #999; text-align: center;">&copy; 2026 NeuralChat. All rights reserved.</p>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`[OTP] Sent ${otp} to ${email}`);
+        } else {
+            console.log(`[OTP] Sent to ${email}`);
+        }
+    } catch (err) {
+        console.error('[OTP] Email delivery failed:', err);
+        throw new Error('Failed to send verification email');
+    }
+}
 
 // ================= PASSPORT CONFIG =================
 
@@ -131,34 +188,13 @@ async function transcribeWithWhisper(audioPath, language = null) {
 const app = express();
 const server = http.createServer(app);
 
-// Sanitize FRONTEND_URL to remove trailing slash (CORS requires exact match)
-const frontendOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
-
-// Allow both localhost and Vercel production origin
-const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://connect-eta-one.vercel.app"
-];
-
-// If FRONTEND_URL is set in env, add it too
-if (process.env.FRONTEND_URL && !allowedOrigins.includes(frontendOrigin)) {
-    allowedOrigins.push(frontendOrigin);
-}
-
-// CRITICAL: Middleware MUST be initialized before routes
+// CORS Configuration
+const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
 app.use(cors({
-    origin: function (origin, callback) {
-        // allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1 && frontendOrigin !== "*") {
-            var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
-    },
+    origin: allowedOrigin,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json());
@@ -404,6 +440,7 @@ async function initializeDatabase() {
                 avatar TEXT,
                 provider VARCHAR(50) DEFAULT 'local',
                 is_password_set BOOLEAN DEFAULT true,
+                is_verified BOOLEAN DEFAULT false,
                 subscription_plan VARCHAR(50) DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
@@ -418,7 +455,21 @@ async function initializeDatabase() {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_password_set') THEN
                     ALTER TABLE users ADD COLUMN is_password_set BOOLEAN DEFAULT true;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_verified') THEN
+                    ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT false;
+                    -- Mark existing users as verified
+                    UPDATE users SET is_verified = true WHERE provider != 'local' OR password_hash IS NOT NULL;
+                END IF;
             END $$;
+
+            CREATE TABLE IF NOT EXISTS otps (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                otp_code VARCHAR(10) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                attempts INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
 
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
@@ -543,13 +594,21 @@ async function finalizeAnalytics(meetingId) {
 
 const io = new Server(server, {
     cors: {
-        origin: allowedOrigins,
+        origin: process.env.FRONTEND_URL,
         methods: ["GET", "POST"],
         credentials: true
     }
 });
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5000;
+
+// Environment Variable Safety Checks
+const requiredEnvVars = ['DATABASE_URL', 'RESEND_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+    console.error(`[WARNING] Missing environment variables: ${missingVars.join(', ')}`);
+}
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'neural_chat_secret_key',
@@ -1235,6 +1294,31 @@ io.on('connection', (socket) => {
 
         // Broadcast the update to everyone else
         socket.to(meeting_id).emit('participant_updated', { userId, updates });
+    });
+
+    // Lower all hands in meeting
+    socket.on('lower_all_hands', ({ meetingId }) => {
+        const room = rooms.get(meetingId);
+        if (!room) return;
+
+        // Verify sender is host/co-host
+        const sender = room.get(socket.id);
+        if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
+
+        // Update all participants in the room
+        for (const [sId, p] of room.entries()) {
+            if (p.isHandRaised) {
+                room.set(sId, { ...p, isHandRaised: false, handRaiseNumber: null, handRaiseTimestamp: null });
+            }
+        }
+
+        // Reset the counter
+        handRaiseCounters.set(meetingId, 0);
+
+        // Broadcast update
+        io.to(meetingId).emit('participants_update', Array.from(room.values()));
+        // Broadcast specifically that hands were lowered to all users to update their local states
+        io.to(meetingId).emit('all_hands_lowered');
     });
 
     // Ban participant
@@ -1962,13 +2046,18 @@ app.post('/api/auth/social', async (req, res) => {
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
             
             const insertResult = await db.query(
-                'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set',
-                [newId, name, normalizedEmail, passwordHash, avatar, provider, false]
+                'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set, is_verified) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set, is_verified',
+                [newId, name, normalizedEmail, passwordHash, avatar, provider, false, true]
             );
             user = insertResult.rows[0];
             console.log(`OAuth (${provider}) User registered: ${normalizedEmail}`);
         } else {
             user = result.rows[0];
+            // If logging in via OAuth, ensure user is marked as verified
+            if (!user.is_verified) {
+                await db.query('UPDATE users SET is_verified = TRUE WHERE id = $1', [user.id]);
+                user.is_verified = true;
+            }
             if (avatar && !user.avatar) {
                 await db.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, user.id]);
                 user.avatar = avatar;
@@ -1995,16 +2084,148 @@ app.post('/api/auth/register', async (req, res) => {
         const id = `user-${Date.now()}`;
         const passwordHash = await bcrypt.hash(password, 10);
 
-        const result = await db.query(
-            'INSERT INTO users (id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar, subscription_plan',
-            [id, name, normalizedEmail, passwordHash]
-        );
+        // Use a client from the pool for transactions
+        const client = await db.pool.connect();
+        
+        try {
+            await client.query('BEGIN');
+            
+            const userResult = await client.query(
+                'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
+                [id, name, normalizedEmail, passwordHash, false]
+            );
 
-        console.log(`User registered: ${normalizedEmail}`);
-        res.status(201).json(result.rows[0]);
+            // Generate 6-digit OTP
+            const otp = crypto.randomInt(100000, 1000000).toString();
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+            await client.query(
+                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
+                [normalizedEmail, otp, expiresAt]
+            );
+
+            await client.query('COMMIT');
+
+            // Send Email
+            await sendOTPEmail(normalizedEmail, otp);
+
+            console.log(`User registered (pending verification): ${normalizedEmail}`);
+            res.status(201).json(userResult.rows[0]);
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     } catch (err) {
         console.error('Registration error:', err);
-        res.status(500).json({ error: 'Failed to register user' });
+        res.status(500).json({ error: 'Failed to register user. ' + (err.message || '') });
+    }
+});
+
+app.post('/api/auth/verify-otp', async (req, res) => {
+    const { email, otp } = req.body;
+    const normalizedEmail = email.toLowerCase();
+
+    try {
+        const result = await db.query(
+            'SELECT * FROM otps WHERE email = $1 ORDER BY created_at DESC LIMIT 1',
+            [normalizedEmail]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No verification code found for this email.' });
+        }
+
+        const otpRecord = result.rows[0];
+
+        // Check if expired
+        if (new Date() > new Date(otpRecord.expires_at)) {
+            return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+        }
+
+        // Check attempts
+        if (otpRecord.attempts >= 5) {
+            return res.status(403).json({ error: 'Too many attempts. Please request a new code.' });
+        }
+
+        // Compare codes
+        if (otpRecord.otp_code !== otp) {
+            await db.query('UPDATE otps SET attempts = attempts + 1 WHERE id = $1', [otpRecord.id]);
+            return res.status(400).json({ error: 'Invalid verification code.' });
+        }
+
+        // Success!
+        const client = await db.pool.connect();
+        try {
+            await client.query('BEGIN');
+            
+            // Mark user as verified
+            const userUpdate = await client.query(
+                'UPDATE users SET is_verified = TRUE WHERE LOWER(email) = LOWER($1) RETURNING id, name, email, avatar, subscription_plan, is_verified',
+                [normalizedEmail]
+            );
+
+            // Delete used OTP
+            await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
+
+            await client.query('COMMIT');
+
+            console.log(`User verified successfully: ${normalizedEmail}`);
+            res.json(userUpdate.rows[0]);
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+    } catch (err) {
+        console.error('OTP Verification error:', err);
+        res.status(500).json({ error: 'Failed to verify OTP' });
+    }
+});
+
+app.post('/api/auth/resend-otp', async (req, res) => {
+    const { email } = req.body;
+    const normalizedEmail = email.toLowerCase();
+
+    try {
+        const userCheck = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (userCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        // Generate new OTP
+        const otp = crypto.randomInt(100000, 1000000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+        // Delete old OTPs for this email and insert new one
+        const client = await db.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
+            await client.query(
+                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
+                [normalizedEmail, otp, expiresAt]
+            );
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        // Send Email
+        await sendOTPEmail(normalizedEmail, otp);
+
+        console.log(`OTP resent to: ${normalizedEmail}`);
+        res.json({ message: 'A new verification code has been sent to your email.' });
+
+    } catch (err) {
+        console.error('Resend OTP error:', err);
+        res.status(500).json({ error: 'Failed to resend OTP' });
     }
 });
 
@@ -2021,6 +2242,17 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const user = result.rows[0];
+
+        // Check if verified
+        if (user.provider === 'local' && user.is_verified === false) {
+            console.log(`Login blocked: ${normalizedEmail} is not verified`);
+            return res.status(403).json({ 
+                error: 'email_not_verified', 
+                message: 'Please verify your email address to log in.',
+                email: user.email 
+            });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             if (user.is_password_set === false) {

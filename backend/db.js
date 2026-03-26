@@ -17,7 +17,9 @@ const pool = new Pool(
             database: process.env.DB_NAME || 'connect_pro',
             password: process.env.DB_PASSWORD || 'krish#1821',
             port: process.env.DB_PORT || 5432,
-            ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+            ssl: (process.env.DB_SSL === 'true' || (process.env.DB_HOST && process.env.DB_HOST.includes('neon.tech'))) 
+                ? { rejectUnauthorized: false } 
+                : false,
         }
 );
 
@@ -26,8 +28,11 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-    console.error('Unexpected PostgreSQL error', err);
-    process.exit(1);
+    console.error('[PostgreSQL] Unexpected error on idle client:', err.message);
+    // Do not exit process in production to allow Render to handle restarts or potential reconnections
+    if (process.env.NODE_ENV !== 'production') {
+        process.exit(-1);
+    }
 });
 
 module.exports = {

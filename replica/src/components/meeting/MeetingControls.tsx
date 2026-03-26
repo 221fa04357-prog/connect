@@ -2627,7 +2627,10 @@ function ControlBar() {
                             label={isHandRaised ? "Lower Hand" : "Raise Hand"}
                             onClick={handleToggleHand}
                             className={isHandRaised ? "text-yellow-500" : ""}
-                            badge={isHandRaised && currentParticipant?.handRaiseNumber ? currentParticipant.handRaiseNumber : undefined}
+                            badge={isHandRaised && currentParticipant?.handRaiseNumber 
+                                ? currentParticipant.handRaiseNumber 
+                                : (participants.filter(p => p.isHandRaised).length || undefined)}
+                            badgeColor={isHandRaised ? "bg-green-500" : "bg-yellow-500"}
                         />
 
                         {/* 🔥 INLINE REACTIONS STRIP (NOT A POPUP) */}
@@ -3514,7 +3517,6 @@ function AnalyticsModal() {
     );
 }
 
-// Helper Component for consistent button styling
 interface ControlButtonProps {
     icon: any;
     label: string;
@@ -3523,10 +3525,11 @@ interface ControlButtonProps {
     isActiveState?: boolean; // Active UI state (e.g. panel open is blue)
     className?: string;
     badge?: number | string;
+    badgeColor?: string;
 }
 
 // Remove ref usage from ControlButton, ensure no ref is passed to function component
-function ControlButton({ icon: Icon, label, onClick, active, isActiveState, className, badge }: ControlButtonProps) {
+function ControlButton({ icon: Icon, label, onClick, active, isActiveState, className, badge, badgeColor }: ControlButtonProps) {
     return (
         <div
             className={cn("group flex flex-col items-center gap-1 cursor-pointer min-w-[3.5rem] flex-none", className)}
@@ -3543,8 +3546,11 @@ function ControlButton({ icon: Icon, label, onClick, active, isActiveState, clas
                     className
                 )}>
                     <Icon className={cn("w-5 h-5", active && "fill-current")} strokeWidth={2} />
-                    {badge !== undefined && (typeof badge === 'number' ? badge > 0 : badge.length > 0) && (
-                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] h-[16px] flex items-center justify-center">
+                    {badge !== undefined && (typeof badge === 'number' ? badge > 0 : (typeof badge === 'string' && badge.length > 0)) && (
+                        <span className={cn(
+                            "absolute -top-1 -right-1 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] h-[16px] flex items-center justify-center",
+                            badgeColor || "bg-red-500"
+                        )}>
                             {badge}
                         </span>
                     )}

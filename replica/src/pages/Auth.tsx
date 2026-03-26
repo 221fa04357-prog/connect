@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
 import { Label } from '@/components/ui';
@@ -8,6 +8,21 @@ import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui';
+
+function maskEmail(email: string) {
+    if (!email) return '';
+    const [name, domain] = email.split('@');
+    if (!domain) return email;
+    const maskedName = name.length > 3 
+        ? name.substring(0, 3) + '***'
+        : name.substring(0, 1) + '***';
+    const [domainName, domainExt] = domain.split('.');
+    const maskedDomain = domainName.length > 2
+        ? domainName.substring(0, 2) + '***'
+        : domainName.substring(0, 1) + '***';
+    return `${maskedName}@${maskedDomain}.${domainExt}`;
+}
 
 // Custom SVG for browser-native exclamation in orange box
 function NativeExclamationIcon() {
@@ -116,7 +131,7 @@ export function Login() {
                     email: formData.email,
                     password: formData.password
                 });
-                // If guest was redirected here after session expiry, send them back to the join page
+                // Success redirect
                 const pendingRedirect = localStorage.getItem('neuralchat_post_login_redirect');
                 if (pendingRedirect) {
                     localStorage.removeItem('neuralchat_post_login_redirect');
@@ -125,9 +140,12 @@ export function Login() {
                     navigate('/');
                 }
             } catch (err: any) {
+                if (err.message?.includes('email_not_verified')) {
+                    navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`);
+                    return;
+                }
                 setAuthError(err.message || 'Login failed. Please check your credentials.');
                 if (err.message?.includes('oauth_no_password') || err.message?.includes('originally signed in with')) {
-                    // Set a specific flag or state to show the prompt
                     setAuthError('originally_google');
                 }
             }
@@ -619,8 +637,8 @@ export function Register() {
                 email: formData.email,
                 password: formData.password
             });
-            // Redirect to login on success as requested
-            navigate('/login');
+            // Production Flow: Redirect to OTP verification
+            navigate(`/verify-email?email=${encodeURIComponent(formData.email)}&new=true`);
         } catch (err: any) {
             setAuthError(err.message || 'Registration failed. Please try again.');
         }
@@ -831,4 +849,159 @@ function calculatePasswordStrength(password: string) {
     if (strength === 2) return { level: 2, text: 'Fair', color: 'text-orange-500 bg-orange-500' };
     if (strength === 3) return { level: 3, text: 'Good', color: 'text-yellow-500 bg-yellow-500' };
     return { level: 4, text: 'Strong', color: 'text-green-500 bg-green-500' };
+}
+
+export function VerifyEmail() {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const verifyOTP = useAuthStore((state) => state.verifyOTP);
+    const resendOTP = useAuthStore((state) => state.resendOTP);
+    const isLoading = useAuthStore((state) => state.isLoading);
+    
+    const [email, setEmail] = useState('');
+    const [otp, setOtp] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [cooldown, setCooldown] = useState(0);
+
+    useState(() => {
+        const params = new URLSearchParams(location.search);
+        const emailParam = params.get('email');
+        if (emailParam) {
+            setEmail(emailParam);
+        } else {
+            navigate('/login');
+        }
+    });
+
+    useEffect(() => {
+        let timer: any;
+        if (cooldown > 0) {
+            timer = setInterval(() => {
+                setCooldown(c => c - 1);
+            }, 1000);
+        }
+        return () => clearInterval(timer);
+    }, [cooldown]);
+
+    async function handleVerify(e?: React.FormEvent) {
+        if (e) e.preventDefault();
+        setError('');
+        setSuccess('');
+        
+        const code = otp;
+        if (code.length !== 6) {
+            setError('Please enter the full 6-digit code');
+            return;
+        }
+
+        try {
+            await verifyOTP({ email, otp: code });
+            setSuccess('Email verified successfully! Redirecting...');
+            setTimeout(() => navigate('/'), 2000);
+        } catch (err: any) {
+            setError(err.message || 'Verification failed');
+        }
+    }
+
+    async function handleResend() {
+        if (cooldown > 0) return;
+        
+        setError('');
+        setSuccess('');
+        try {
+            await resendOTP(email);
+            setSuccess('A new code has been sent to your email.');
+            setCooldown(60); // 60s cooldown
+        } catch (err: any) {
+            setError(err.message || 'Failed to resend code');
+        }
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-[#0B5CFF] to-[#1C1C1C] flex items-center justify-center p-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-md"
+            >
+                <div className="bg-[#232323] rounded-2xl shadow-2xl p-8 relative">
+                    <div className="flex items-center justify-center gap-2 mb-8">
+                        <Video className="w-10 h-10 text-[#0B5CFF]" />
+                        <span className="text-2xl font-bold text-white">NeuralChat</span>
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-white text-center mb-2">Verify Your Email</h2>
+                    <p className="text-gray-400 text-center mb-8">
+                        We've sent a 6-digit code to <br />
+                        <span className="text-white font-medium">{maskEmail(email)}</span>
+                    </p>
+
+                    {error && (
+                        <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {error}
+                        </div>
+                    )}
+
+                    {success && (
+                        <div className="bg-green-500/20 border border-green-500/50 text-green-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
+                            {success}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleVerify}>
+                        <div className="flex justify-center mb-8">
+                            <InputOTP
+                                maxLength={6}
+                                value={otp}
+                                onChange={(value) => setOtp(value)}
+                            >
+                                <InputOTPGroup className="gap-2">
+                                    {[0, 1, 2, 3, 4, 5].map((idx) => (
+                                        <InputOTPSlot 
+                                            key={idx} 
+                                            index={idx} 
+                                            className="w-12 h-14 text-xl font-bold bg-[#1C1C1C] border-[#404040] text-white focus:border-[#0B5CFF] focus:ring-1 focus:ring-[#0B5CFF] rounded-md border-l border-r border-t border-b data-[active=true]:border-[#0B5CFF] data-[active=true]:ring-1 data-[active=true]:ring-[#0B5CFF]"
+                                        />
+                                    ))}
+                                </InputOTPGroup>
+                            </InputOTP>
+                        </div>
+
+                        <Button
+                            type="submit"
+                            className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg mb-6"
+                            disabled={otp.length < 6 || isLoading}
+                        >
+                            {isLoading ? 'Verifying...' : 'Verify Email'}
+                        </Button>
+                    </form>
+
+                    <div className="text-center">
+                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
+                        <button
+                            onClick={handleResend}
+                            disabled={cooldown > 0 || isLoading}
+                            className={cn(
+                                "font-semibold underline transition-colors",
+                                cooldown > 0 ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
+                            )}
+                        >
+                            {cooldown > 0 ? `Resend Code in ${cooldown}s` : 'Resend OTP'}
+                        </button>
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                        <button onClick={() => navigate('/login')} className="text-gray-500 hover:text-white text-sm">
+                            Back to Sign In
+                        </button>
+                    </div>
+                </div>
+                
+                <p className="text-center text-gray-500 text-xs mt-6">
+                    Check your spam or junk folder if you don't see the email in your inbox.
+                </p>
+            </motion.div>
+        </div>
+    );
 }
