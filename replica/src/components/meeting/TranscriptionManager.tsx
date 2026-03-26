@@ -147,81 +147,108 @@ export function TranscriptionManager() {
                 console.log(`[Transcription] VAD: rms=${currentAverageVolume.toFixed(2)}, frames=${speakingFramesCount}, speaking=${isSpeakingInSegment}, mute=${muteState}, uiEnabled=${captionsOn}, lang=${lang} (Recording active for AI)`);
             }, 3000);
 
-            // 2. Setup MediaRecorder
-            const recorder = new MediaRecorder(localStream, { mimeType: 'audio/webm;codecs=opus' });
+            // 2. Setup MediaRecorder with supported mimeType
+            const getSupportedMimeType = () => {
+                const types = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/ogg;codecs=opus',
+                    'audio/wav',
+                    'audio/x-matroska;codecs=opus',
+                    'audio/mp4'
+                ];
+                for (const t of types) {
+                    if (MediaRecorder.isTypeSupported(t)) return t;
+                }
+                return '';
+            };
+
+            const selectedMimeType = getSupportedMimeType();
+            console.log(`[Transcription] Selected MIME type: ${selectedMimeType || 'default'}`);
+
+            // Use only audio tracks to avoid issues with video tracks in localStream
+            const audioStream = new MediaStream(localStream.getAudioTracks());
+            const recorder = new MediaRecorder(audioStream, selectedMimeType ? { mimeType: selectedMimeType } : undefined);
+            
             mediaRecorderRef.current = recorder;
 
             // Prevent GC and provide debug access
             (recorder as any)._debugNodes = { audioCtx, source, analyser };
 
             recorder.ondataavailable = async (event) => {
-    const hasData = event.data.size > 0;
-    const forceSend = (window as any)._forceTranscription === true;
-    const muteState = useMeetingStore.getState().isAudioMuted;
+                const hasData = event.data.size > 0;
+                const forceSend = (window as any)._forceTranscription === true;
+                const muteState = useMeetingStore.getState().isAudioMuted;
 
-    console.log(`[Transcription] chunk ready: ${event.data.size}b, spoke: ${isSpeakingInSegment} (force=${forceSend}, mute=${muteState})`);
+                console.log(`[Transcription] chunk ready: ${event.data.size}b, spoke: ${isSpeakingInSegment} (force=${forceSend}, mute=${muteState})`);
 
-    if (hasData) {
-        // Only send if NOT muted and speech detected
-        if (!muteState && (isSpeakingInSegment || forceSend)) {
+                if (hasData) {
+                    // Only send if NOT muted and speech detected
+                    if (!muteState && (isSpeakingInSegment || forceSend)) {
 
-            const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
-            const isHost = useMeetingStore.getState().isJoinedAsHost;
-            const role = isHost ? 'host' : 'participant';
-            const meetingId = meeting?.id || '';
+                        const speakingLanguage = useTranscriptionStore.getState().speakingLanguage;
+                        const isHost = useMeetingStore.getState().isJoinedAsHost;
+                        const role = isHost ? 'host' : 'participant';
+                        const meetingId = meeting?.id || '';
 
-            console.log(`[Transcription] POSTing chunk (lang=${speakingLanguage}, role=${role})...`);
+                        console.log(`[Transcription] POSTing chunk (lang=${speakingLanguage}, role=${role})...`);
 
-            const formData = new FormData();
-            formData.append('audio', event.data, 'segment.webm');
-            formData.append('meetingId', meetingId);
-            formData.append('participantId', user?.id || 'guest');
-            formData.append('participantName', user?.name || 'Guest');
-            formData.append('language', speakingLanguage);
-            formData.append('role', role);
+                        const formData = new FormData();
+                        formData.append('audio', event.data, 'segment.webm');
+                        formData.append('meetingId', meetingId);
+                        formData.append('participantId', user?.id || 'guest');
+                        formData.append('participantName', user?.name || 'Guest');
+                        formData.append('language', speakingLanguage);
+                        formData.append('role', role);
 
-            try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
-                    method: 'POST',
-                    body: formData
-                });
+                        try {
+                            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/transcribe`, {
+                                method: 'POST',
+                                body: formData
+                            });
 
-                if (response.ok) {
-                    if (response.status === 204) return;
+                            if (response.ok) {
+                                if (response.status === 204) return;
 
-                    const data = await response.json();
-                    if (data.text) {
-                        console.log(`[Transcription] Result: "${data.text}"`);
+                                const data = await response.json();
+                                if (data.text) {
+                                    console.log(`[Transcription] Result: "${data.text}"`);
+                                }
+                            } else {
+                                const errText = await response.text();
+                                console.error(`[Transcription] API error ${response.status}:`, errText);
+                            }
+
+                        } catch (err) {
+                            console.error('[Transcription] Request failed:', err);
+                        }
+
+                    } else if (muteState) {
+                        console.log('[Transcription] Suppressing chunk: Microphone is muted.');
+                    } else {
+                        console.log('[Transcription] Suppressing chunk: No speech detected.');
                     }
-                } else {
-                    const errText = await response.text();
-                    console.error(`[Transcription] API error ${response.status}:`, errText);
+
+                    // Reset speaking flag
+                    isSpeakingInSegment = false;
                 }
-
-            } catch (err) {
-                console.error('[Transcription] Request failed:', err);
-            }
-
-        } else if (muteState) {
-            console.log('[Transcription] Suppressing chunk: Microphone is muted.');
-        } else {
-            console.log('[Transcription] Suppressing chunk: No speech detected.');
-        }
-
-        // Reset speaking flag
-        isSpeakingInSegment = false;
-    }
-};
+            };
 
             recorder.onstop = () => {
                 // Restart immediately to keep capturing audio for AI, regardless of UI toggle
                 if (mediaRecorderRef.current === recorder && !useMeetingStore.getState().isAudioMuted) {
-                    try { recorder.start(); } catch(e) {}
+                    try { 
+                        if (recorder.state === 'inactive') recorder.start(); 
+                    } catch(e) {
+                        console.warn('[Transcription] Failed to restart recorder:', e);
+                    }
                 }
             };
 
             // Initial start
-            recorder.start();
+            if (recorder.state === 'inactive') {
+                recorder.start();
+            }
 
             // Instead of timeslice, we stop and restart every 5 seconds to force a new valid file
             // Increased to 5s for better acoustic context in Whisper

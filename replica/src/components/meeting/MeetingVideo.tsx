@@ -165,7 +165,8 @@ export function VideoTile({
             exit={{ opacity: 0, scale: 0.95 }}
             className={cn(
                 'relative aspect-square bg-[#232323] rounded-lg overflow-hidden group min-h-[200px] md:min-h-[280px] cursor-pointer shadow-lg border border-[#333]',
-                isPinned && 'ring-2 ring-blue-500',
+                isPinned && 'ring-2 ring-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]',
+                !isPinned && participant.isHandRaised && 'ring-2 ring-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.4)]',
                 fullscreen && 'w-full h-full',
                 className
             )}
