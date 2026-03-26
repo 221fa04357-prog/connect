@@ -36,6 +36,8 @@ export interface Participant {
   avatar?: string;
   isVideoAllowed?: boolean; // From index.ts
   socketId?: string; // Socket ID for WebRTC signaling
+  hasAgent?: boolean; // Track if participant has the native agent running
+  agentConnected?: boolean; // Real-time connection status
 }
 
 export interface ChatMessage {

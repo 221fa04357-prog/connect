@@ -169,6 +169,8 @@ interface MeetingState {
 
   pendingMediaRequest: { type: 'audio' | 'video', fromName: string } | null;
   setPendingMediaRequest: (request: { type: 'audio' | 'video', fromName: string } | null) => void;
+  remoteControlState: RemoteControlState;
+  setRemoteControlState: (state: Partial<RemoteControlState>) => void;
 
   // ─── Single canonical definition ───
   videoRequestState: VideoRequestState;
@@ -179,12 +181,6 @@ interface MeetingState {
 
   preSuspensionState: PreSuspensionState | null;
   setPreSuspensionState: (state: PreSuspensionState | null) => void;
-
-  remoteControlState: RemoteControlState;
-  setRemoteControlState: (state: Partial<RemoteControlState>) => void;
-
-  remoteCursor: RemoteCursor | null;
-  setRemoteCursor: (cursor: RemoteCursor | null) => void;
 }
 
 
@@ -234,14 +230,6 @@ export const useMeetingStore = create<MeetingState>()(
       preSuspensionState: null,
       setPreSuspensionState: (state) => set({ preSuspensionState: state }),
 
-      remoteControlState: DEFAULT_REMOTE_CONTROL_STATE,
-      setRemoteControlState: (state) => set((s) => ({
-        remoteControlState: { ...s.remoteControlState, ...state }
-      })),
-
-      remoteCursor: null,
-      setRemoteCursor: (cursor) => set({ remoteCursor: cursor }),
-
       isMiniVisible: false,
       meetingJoined: false,
       isInsideMeeting: false,
@@ -260,6 +248,10 @@ export const useMeetingStore = create<MeetingState>()(
 
       pendingMediaRequest: null,
       setPendingMediaRequest: (request) => set({ pendingMediaRequest: request }),
+      remoteControlState: DEFAULT_REMOTE_CONTROL_STATE,
+      setRemoteControlState: (newState) => set((s) => ({
+        remoteControlState: { ...s.remoteControlState, ...newState }
+      })),
 
       audioDevices: [],
       videoDevices: [],
@@ -427,6 +419,7 @@ export const useMeetingStore = create<MeetingState>()(
 
       toggleStats: () =>
         set((state) => ({ isStatsOpen: !state.isStatsOpen })),
+
 
       setMicConfirm: (show) => set({ showMicConfirm: show }),
       setVideoConfirm: (show) => set({ showVideoConfirm: show }),

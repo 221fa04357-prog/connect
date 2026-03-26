@@ -27,6 +27,7 @@ interface ParticipantsState {
   addParticipant: (participant: Participant) => void;
   removeParticipant: (id: string) => void;
   updateParticipant: (id: string, updates: Partial<Participant>) => void;
+  updateParticipantAgentStatus: (id: string, isConnected: boolean) => void;
   toggleHandRaise: (id: string) => void;
   setActiveSpeaker: (id: string | null) => void;
   pinParticipant: (id: string) => void;
@@ -108,6 +109,14 @@ export const useParticipantsStore = create<ParticipantsState>()(
       updateParticipant: (id, updates) => set((state) => {
         const participants = state.participants.map(p =>
           p.id === id ? { ...p, ...updates } : p
+        );
+        setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
+        return { participants };
+      }),
+
+      updateParticipantAgentStatus: (id, isConnected) => set((state) => {
+        const participants = state.participants.map(p =>
+          p.id === id ? { ...p, agentConnected: isConnected } : p
         );
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
