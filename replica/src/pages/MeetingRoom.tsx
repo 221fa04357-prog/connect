@@ -21,6 +21,8 @@ import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay'
 import { CaptionSettings } from '@/components/meeting/CaptionSettings';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { MeetingStats } from '@/components/meeting/MeetingStats';
+import { RemoteControlStream } from '@/components/meeting/RemoteControlStream';
+
 
 export default function MeetingRoom() {
   const navigate = useNavigate();
@@ -52,10 +54,11 @@ export default function MeetingRoom() {
     isJoinedAsHost,
     hasHydrated,
     isStatsOpen,
-    toggleStats
+    toggleStats,
+    remoteControlState
   } = useMeetingStore();
 
-  const { initSocket, emitParticipantUpdate, emitReaction } = useChatStore();
+  const { initSocket, emitParticipantUpdate, emitReaction, nativeAgentStatus, checkAndLinkAgent } = useChatStore();
   const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, removeRemoteScreenStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   /* ---------------- SIGNALING STATE ---------------- */
@@ -267,6 +270,9 @@ export default function MeetingRoom() {
 
       if (hasHydrated) {
         initSocket(meeting.id, identity, initialState);
+        
+        // AUTO-DETECT LOCAL AGENT on join
+        checkAndLinkAgent(meeting.id, identity.id);
       }
 
       const socket = useChatStore.getState().socket;
@@ -901,6 +907,11 @@ export default function MeetingRoom() {
       <div className="flex-1 min-h-0 relative">
         <MeetingControls />
         <VideoGrid />
+        {nativeAgentStatus.status === 'connected' && remoteControlState.role === 'controller' && (
+          <div className="absolute inset-x-4 top-[30px] bottom-[105px] z-10">
+            <RemoteControlStream />
+          </div>
+        )}
 
         {/* Global Reactions Overlay */}
         <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
@@ -986,8 +997,8 @@ export default function MeetingRoom() {
       <AICompanionPanel />
       <TranscriptPanel />
       <ResourceHubPanel />
-      <PollPanel />
       <VideoStartRequestPopup />
+
 
       {/* Real-time Transcription System */}
       <TranscriptionManager />
