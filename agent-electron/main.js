@@ -233,7 +233,7 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('Connected to signaling server');
+        console.log('[AGENT] Connected to signaling server');
         socket.emit('agent_register', {
             agentId: AGENT_ID,
             name: 'Electron Agent',
@@ -251,7 +251,33 @@ app.whenReady().then(() => {
         }
 
         if (mainWindow) {
-            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
+            mainWindow.webContents.send('status-update', { 
+                status: 'Connected', 
+                agentId: AGENT_ID,
+                serverUrl: SERVER_URL 
+            });
+        }
+    });
+
+    // NEW: Listen for pairing/link signals from the backend (Socket Bridge)
+    socket.on('link_session', (data) => {
+        const { meetingId, participantId } = data;
+        console.log('[AGENT] Received link_session via socket:', data);
+        global.meetingId = meetingId;
+        global.participantId = participantId;
+
+        socket.emit('agent_ready', {
+            agentId: AGENT_ID,
+            participantId: global.participantId,
+            meetingId: global.meetingId
+        });
+
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Linked & Ready',
+                agentId: AGENT_ID,
+                meetingId: global.meetingId
+            });
         }
     });
 
