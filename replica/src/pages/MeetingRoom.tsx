@@ -270,9 +270,6 @@ export default function MeetingRoom() {
 
       if (hasHydrated) {
         initSocket(meeting.id, identity, initialState);
-        
-        // AUTO-DETECT LOCAL AGENT on join
-        checkAndLinkAgent(meeting.id, identity.id);
       }
 
       const socket = useChatStore.getState().socket;
