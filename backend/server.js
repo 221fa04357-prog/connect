@@ -2089,36 +2089,36 @@ io.on('connection', (socket) => {
 
     socket.on('agent_status', (data) => {
         const { participantId, meetingId, ready } = data;
-        console.log(`[AGENT] agent registered: ${participantId} in ${meetingId} (ready: ${ready})`);
+        console.log(`[BACKEND-RECV] agent_status received: partId=${participantId}, meetId=${meetingId}, ready=${ready}`);
         
+        if (!participantId || !meetingId) {
+           console.log(`[BACKEND-WARN] agent_status missing IDs for socket ${socket.id}`);
+           return;
+        }
+
         agentStatusMap[participantId] = {
             socketId: socket.id,
             meetingId,
             ready: !!ready
         };
+        console.log(`[BACKEND-MAP] Updated agentStatusMap for ${participantId}: ready=${ready}`);
 
         io.to(meetingId).emit("agent_status_update", {
             participantId,
             ready: !!ready
         });
+        console.log(`[BACKEND-EMIT] Broadscasted agent_status_update to room ${meetingId}`);
     });
 
     socket.on('get_agent_status', (data) => {
         const { participantId, meetingId } = data;
         const agent = agentStatusMap[participantId];
-        console.log(`[AGENT] Status request for ${participantId} in ${meetingId}. Found: ${!!agent?.ready}`);
+        console.log(`[BACKEND-REQ] Status request for ${participantId} in ${meetingId}. Found in map: ${!!agent?.ready}`);
         
-        if (agent && agent.ready) {
-            socket.emit("agent_status_update", {
-                participantId,
-                ready: true
-            });
-        } else {
-            socket.emit("agent_status_update", {
-                participantId,
-                ready: false
-            });
-        }
+        socket.emit("agent_status_update", {
+            participantId,
+            ready: !!agent?.ready
+        });
     });
 });
 

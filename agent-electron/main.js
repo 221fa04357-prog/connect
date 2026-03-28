@@ -216,6 +216,64 @@ function startLocalServer() {
     });
 }
 
+// Protocol Registration
+const PROTOCOL = 'replica-agent';
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    }
+} else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+function handleProtocolUrl(url) {
+    console.log('[AGENT-RECV] Received protocol URL:', url);
+    try {
+        // Expected format: replica-agent://link/MEETING_ID/PARTICIPANT_ID
+        const parsedUrl = new URL(url);
+        if (parsedUrl.host === 'link') {
+            const parts = parsedUrl.pathname.split('/').filter(Boolean);
+            if (parts.length >= 2) {
+                global.meetingId = parts[0];
+                global.participantId = parts[1];
+                console.log(`[AGENT-ID] Identity parsed: Meet=${global.meetingId}, Part=${global.participantId}`);
+                
+                if (socket && socket.connected) {
+                    emitStatus(true);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[AGENT-ERR] Failed to parse protocol URL:', err);
+    }
+}
+
+function emitStatus(ready) {
+    if (global.participantId && global.meetingId) {
+        console.log(`[AGENT-EMIT] agent_status: partId=${global.participantId}, ready=${ready}`);
+        socket.emit("agent_status", {
+            participantId: global.participantId,
+            meetingId: global.meetingId,
+            ready: !!ready
+        });
+    }
+}
+
+app.on('second-instance', (event, commandLine) => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+    }
+    // Protocol handler for Windows
+    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (url) handleProtocolUrl(url);
+});
+
+app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleProtocolUrl(url);
+});
+
 app.whenReady().then(() => {
     createWindow();
 
@@ -225,32 +283,37 @@ app.whenReady().then(() => {
         rejectUnauthorized: false
     });
 
-  socket.on('connect', () => {
-    console.log('Connected to signaling server');
+    socket.on('connect', () => {
+        console.log('[AGENT] Connected to signaling server');
 
-    socket.emit('agent_register', {
-        agentId: AGENT_ID,
-        name: 'Electron Agent',
-        meetingId: global.meetingId,
-        participantId: global.participantId
-    });
-
-    if (global.participantId && global.meetingId) {
-        console.log("agent_status sent", global.participantId);
-
-        socket.emit("agent_status", {
-            participantId: global.participantId,
+        // ✅ Register agent (optional but useful)
+        socket.emit('agent_register', {
+            agentId: AGENT_ID,
+            name: 'Electron Agent',
             meetingId: global.meetingId,
-            ready: true
+            participantId: global.participantId
         });
-    }
 
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Connected',
-            agentId: AGENT_ID
-        });
-    }
+        // ✅ Send status ONLY if identity exists
+        if (global.participantId && global.meetingId) {
+            console.log('[AGENT] Sending agent_status:', global.participantId);
+
+            socket.emit("agent_status", {
+                participantId: global.participantId,
+                meetingId: global.meetingId,
+                ready: true
+            });
+        } else {
+            console.log('[AGENT] Waiting for identity (deep link)...');
+        }
+
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Connected',
+                agentId: AGENT_ID
+            });
+        }
+    });
 });
 
 

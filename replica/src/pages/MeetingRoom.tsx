@@ -270,6 +270,9 @@ export default function MeetingRoom() {
 
       if (hasHydrated) {
         initSocket(meeting.id, identity, initialState);
+        
+        // Pure socket-based identity link via custom protocol
+        checkAndLinkAgent(meeting.id, identity.id);
       }
 
       const socket = useChatStore.getState().socket;

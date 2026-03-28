@@ -1222,11 +1222,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  checkAndLinkAgent: async (meetingId, participantId) => {
-    return true;
+  checkAndLinkAgent: async (meetingId: string, participantId: string) => {
+    console.log('[AGENT-PROTOCOL] Triggering deep link for:', participantId);
+    try {
+      // Pure socket-based identity link via custom protocol
+      // NO localhost, NO HTTP, NO polling
+      window.location.assign(`replica-agent://link/${meetingId}/${participantId}`);
+      return true;
+    } catch (err) {
+      console.error('[AGENT-PROTOCOL] Protocol link failed:', err);
+      return false;
+    }
   },
-
-
 
   sendControlEvent: (event: any) => {
     const { socket, nativeAgentStatus } = get();

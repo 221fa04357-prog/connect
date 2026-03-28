@@ -35,7 +35,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -1317,27 +1317,39 @@ function ControlApprovalDialog() {
                         <span className="font-bold text-white">{pendingRequest.hostName}</span> wants to take control of your system.
                     </p>
 
-                    {!agentConnected && !hasAgent && (
-                        <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
-                            <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    Please start or install the Remote Control Agent to allow the host to control your screen.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {!agentConnected && hasAgent && (
-                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
-                            <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
-                                </p>
-                            </div>
+                    {!agentConnected && (
+                        <div className="flex flex-col gap-2">
+                            {!hasAgent ? (
+                                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
+                                    <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Please start or install the Remote Control Agent to allow the host to control your screen.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+                                    <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="w-full border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                                onClick={() => meetingId && localUserId && checkAndLinkAgent(meetingId, localUserId)}
+                            >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Link & Start Agent
+                            </Button>
                         </div>
                     )}
 
