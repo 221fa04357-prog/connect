@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
 const cors = require('cors');
@@ -12,7 +13,6 @@ const { spawn } = require("child_process");
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-require('dotenv').config();
 
 
 const axios = require('axios');
@@ -23,28 +23,28 @@ const MicrosoftStrategy = require('passport-microsoft').Strategy;
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+// ================= EMAIL CONFIG (DYNAMIC SMTP) =================
 const nodemailer = require('nodemailer');
 
-// ================= NODEMAILER CONFIG =================
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587
     auth: {
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        pass: process.env.SMTP_PASS || process.env.BREVO_API_KEY, // Use either SMTP_PASS or BREVO_API_KEY
     },
     tls: {
         rejectUnauthorized: false
     }
 });
 
-// Verify transporter
+// Verify SMTP connection
 transporter.verify((error, success) => {
     if (error) {
-        console.error('[SMTP] Connection Error:', error);
+        console.error('[Email] Error: SMTP connection failed!', error.message);
     } else {
-        console.log('[SMTP] Server is ready to take our messages');
+        console.log(`[Email] Service is ready (${process.env.SMTP_HOST}). User: ${process.env.SMTP_USER}`);
     }
 });
 
@@ -68,17 +68,20 @@ async function sendOTPEmail(email, otp) {
     };
 
     try {
+        console.log(`[Email] Sending OTP via Brevo SMTP to ${email}...`);
         await transporter.sendMail(mailOptions);
+        console.log(`[Email] Email sent successfully to ${email}`);
+        
         if (process.env.NODE_ENV !== 'production') {
-            console.log(`[OTP] Sent ${otp} to ${email}`);
-        } else {
-            console.log(`[OTP] Sent to ${email}`);
+            console.log(`[OTP] Debug: Sent ${otp} to ${email}`);
         }
     } catch (err) {
-        console.error('[OTP] Email delivery failed:', err);
+        console.error('[Email] Error: Failed to send email via SMTP!');
+        console.error('[Email] Exact Error:', err.message);
         throw new Error('Failed to send verification email');
     }
 }
+
 
 // ================= PASSPORT CONFIG =================
 
@@ -463,13 +466,15 @@ async function initializeDatabase() {
             END $$;
 
             CREATE TABLE IF NOT EXISTS otps (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) NOT NULL,
-                otp_code VARCHAR(10) NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                attempts INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      otp_code VARCHAR(10) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      name VARCHAR(255),
+      password_hash TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
 
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
@@ -603,7 +608,7 @@ const io = new Server(server, {
 const port = process.env.PORT || 5000;
 
 // Environment Variable Safety Checks
-const requiredEnvVars = ['DATABASE_URL', 'RESEND_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
+const requiredEnvVars = ['DATABASE_URL', 'BREVO_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 
 if (missingVars.length > 0) {
@@ -2076,47 +2081,31 @@ app.post('/api/auth/register', async (req, res) => {
     const { name, email, password } = req.body;
     const normalizedEmail = email.toLowerCase();
     try {
+        // Check if user already exists
         const userCheck = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
         if (userCheck.rows.length > 0) {
-            return res.status(409).json({ error: 'Email already registered' });
+            return res.status(409).json({ error: 'Already registered' });
         }
 
-        const id = `user-${Date.now()}`;
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Use a client from the pool for transactions
-        const client = await db.pool.connect();
-        
-        try {
-            await client.query('BEGIN');
-            
-            const userResult = await client.query(
-                'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
-                [id, name, normalizedEmail, passwordHash, false]
-            );
+        // Generate 6-digit OTP
+        const otp = crypto.randomInt(100000, 1000000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-            // Generate 6-digit OTP
-            const otp = crypto.randomInt(100000, 1000000).toString();
-            const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+        // Store OTP and pending registration data
+        // Delete any existing OTP for this email first
+        await db.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
+        await db.query(
+            'INSERT INTO otps (email, otp_code, expires_at, name, password_hash) VALUES ($1, $2, $3, $4, $5)',
+            [normalizedEmail, otp, expiresAt, name, passwordHash]
+        );
 
-            await client.query(
-                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otp, expiresAt]
-            );
+        // Send Email
+        await sendOTPEmail(normalizedEmail, otp);
 
-            await client.query('COMMIT');
-
-            // Send Email
-            await sendOTPEmail(normalizedEmail, otp);
-
-            console.log(`User registered (pending verification): ${normalizedEmail}`);
-            res.status(201).json(userResult.rows[0]);
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
-        }
+        console.log(`OTP sent for registration: ${normalizedEmail}`);
+        res.status(200).json({ message: 'OTP sent' });
     } catch (err) {
         console.error('Registration error:', err);
         res.status(500).json({ error: 'Failed to register user. ' + (err.message || '') });
@@ -2141,7 +2130,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
         // Check if expired
         if (new Date() > new Date(otpRecord.expires_at)) {
-            return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+            return res.status(400).json({ error: 'OTP expired' });
         }
 
         // Check attempts
@@ -2152,7 +2141,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         // Compare codes
         if (otpRecord.otp_code !== otp) {
             await db.query('UPDATE otps SET attempts = attempts + 1 WHERE id = $1', [otpRecord.id]);
-            return res.status(400).json({ error: 'Invalid verification code.' });
+            return res.status(400).json({ error: 'Invalid OTP' });
         }
 
         // Success!
@@ -2160,10 +2149,20 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         try {
             await client.query('BEGIN');
             
-            // Mark user as verified
+            // Check if user already exists (ONLY after OTP verification as requested)
+            const userCheck = await client.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+            
+            if (userCheck.rows.length > 0) {
+                await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
+                await client.query('COMMIT');
+                return res.status(409).json({ error: 'Already registered' });
+            }
+
+            // Create new user using the data kept in the OTP record
+            const newUserId = `user-${Date.now()}`;
             const userUpdate = await client.query(
-                'UPDATE users SET is_verified = TRUE WHERE LOWER(email) = LOWER($1) RETURNING id, name, email, avatar, subscription_plan, is_verified',
-                [normalizedEmail]
+                'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
+                [newUserId, otpRecord.name, normalizedEmail, otpRecord.password_hash, true]
             );
 
             // Delete used OTP
@@ -2171,7 +2170,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
             await client.query('COMMIT');
 
-            console.log(`User verified successfully: ${normalizedEmail}`);
+            console.log(`User registered and verified successfully: ${normalizedEmail}`);
             res.json(userUpdate.rows[0]);
         } catch (err) {
             await client.query('ROLLBACK');
@@ -2186,46 +2185,40 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     }
 });
 
-app.post('/api/auth/resend-otp', async (req, res) => {
+app.post('/api/auth/send-new-otp', async (req, res) => {
     const { email } = req.body;
     const normalizedEmail = email.toLowerCase();
 
     try {
+        // Check if user already exists
         const userCheck = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
-        if (userCheck.rows.length === 0) {
-            return res.status(404).json({ error: 'Account not found' });
+        if (userCheck.rows.length > 0) {
+            return res.status(409).json({ error: 'Already registered' });
         }
 
         // Generate new OTP
         const otp = crypto.randomInt(100000, 1000000).toString();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-        // Delete old OTPs for this email and insert new one
-        const client = await db.pool.connect();
-        try {
-            await client.query('BEGIN');
-            await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
-            await client.query(
-                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otp, expiresAt]
-            );
-            await client.query('COMMIT');
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
+        // Update the existing OTP record (preserves name and password_hash)
+        const updateResult = await db.query(
+            'UPDATE otps SET otp_code = $2, expires_at = $3, attempts = 0 WHERE email = $1 RETURNING *',
+            [normalizedEmail, otp, expiresAt]
+        );
+
+        if (updateResult.rows.length === 0) {
+            return res.status(404).json({ error: 'No pending registration found.' });
         }
 
         // Send Email
         await sendOTPEmail(normalizedEmail, otp);
 
         console.log(`OTP resent to: ${normalizedEmail}`);
-        res.json({ message: 'A new verification code has been sent to your email.' });
+        res.json({ message: 'OTP sent' });
 
     } catch (err) {
-        console.error('Resend OTP error:', err);
-        res.status(500).json({ error: 'Failed to resend OTP' });
+        console.error('Send new OTP error:', err);
+        res.status(500).json({ error: 'Failed to send new OTP' });
     }
 });
 
