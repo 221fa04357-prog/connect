@@ -855,7 +855,7 @@ export function VerifyEmail() {
     const navigate = useNavigate();
     const location = useLocation();
     const verifyOTP = useAuthStore((state) => state.verifyOTP);
-    const resendOTP = useAuthStore((state) => state.resendOTP);
+    const sendNewOTP = useAuthStore((state) => state.sendNewOTP);
     const isLoading = useAuthStore((state) => state.isLoading);
     
     const [email, setEmail] = useState('');
@@ -898,23 +898,27 @@ export function VerifyEmail() {
         try {
             await verifyOTP({ email, otp: code });
             setSuccess('Email verified successfully! Redirecting...');
+            setOtp('');
             setTimeout(() => navigate('/'), 2000);
         } catch (err: any) {
             setError(err.message || 'Verification failed');
+            setOtp('');
         }
     }
 
-    async function handleResend() {
+    async function handleSendNew() {
         if (cooldown > 0) return;
         
         setError('');
         setSuccess('');
         try {
-            await resendOTP(email);
+            await sendNewOTP(email);
             setSuccess('A new code has been sent to your email.');
             setCooldown(60); // 60s cooldown
+            setOtp('');
         } catch (err: any) {
             setError(err.message || 'Failed to resend code');
+            setOtp('');
         }
     }
 
@@ -980,14 +984,14 @@ export function VerifyEmail() {
                     <div className="text-center">
                         <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
                         <button
-                            onClick={handleResend}
+                            onClick={handleSendNew}
                             disabled={cooldown > 0 || isLoading}
                             className={cn(
                                 "font-semibold underline transition-colors",
                                 cooldown > 0 ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
                             )}
                         >
-                            {cooldown > 0 ? `Resend Code in ${cooldown}s` : 'Resend OTP'}
+                            {cooldown > 0 ? `Wait ${cooldown}s` : 'Send New Code'}
                         </button>
                     </div>
 
