@@ -888,7 +888,7 @@ export function VerifyEmail() {
         if (e) e.preventDefault();
         setError('');
         setSuccess('');
-        
+
         const code = otp;
         if (code.length !== 6) {
             setError('Please enter the full 6-digit code');
@@ -897,9 +897,11 @@ export function VerifyEmail() {
 
         try {
             await verifyOTP({ email, otp: code });
+            setOtp('');
             setSuccess('Email verified successfully! Redirecting...');
             setTimeout(() => navigate('/'), 2000);
         } catch (err: any) {
+            setOtp('');
             setError(err.message || 'Verification failed');
         }
     }
@@ -909,6 +911,7 @@ export function VerifyEmail() {
         
         setError('');
         setSuccess('');
+        setOtp('');
         try {
             await resendOTP(email);
             setSuccess('A new code has been sent to your email.');
