@@ -180,23 +180,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('agent_status_update', (data: { participantId: string, status: 'connected' | 'disconnected', agentId?: string }) => {
+    socket.on('agent_status_update', (data: { participantId: string, ready: boolean }) => {
+      console.log(`[AGENT] agent_status_update: participant=${data.participantId}, ready=${data.ready}`);
       import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.status === 'connected');
-      });
-    });
-
-    socket.on('agent_connected', (data: { participantId: string, status: 'connected' | 'disconnected', agentId?: string }) => {
-      console.log('[AGENT] agent_connected received:', data);
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.status === 'connected');
-      });
-    });
-
-    socket.on('agent_status', (data: { participantId: string, connected: boolean, agentId: string }) => {
-      console.log('[AGENT] agent_status received:', data);
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.connected);
+        const ps = store.useParticipantsStore.getState();
+        ps.updateParticipantAgentStatus(data.participantId, data.ready);
+        
+        // Ensure UI re-renders if it's the local user
+        const localUserId = get().localUserId;
+        if (data.participantId === localUserId) {
+           console.log('[AGENT] Local agent status updated:', data.ready);
+        }
       });
     });
 
@@ -1156,15 +1150,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('force_media_state', { meetingId, participantId, type, state });
   },
 
-  requestControl: (targetParticipantId: string) => {
-    const { socket, localUserId, meetingId } = get();
-    if (!socket || !localUserId || !meetingId) return;
+  requestControl: (participantId: string) => {
+    const { socket, meetingId, localUserId } = get();
+    if (!socket || !meetingId) return;
 
     import('./useParticipantsStore').then((store) => {
       const me = store.useParticipantsStore.getState().participants.find(p => p.id === localUserId);
-      socket.emit('control_request', {
+      console.log(`[RemoteControl] Emitting request_control for participant: ${participantId}`);
+      socket.emit('request_control', {
         meetingId,
-        targetParticipantId,
+        participantId,
         hostId: socket.id,
         hostName: me?.name || 'Host'
       });
@@ -1204,23 +1199,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!socket || !meetingId || !localUserId || !pendingControlRequest) return;
     
     if (accepted) {
-      // Try to get local agent ID
-      let agentId = 'unknown';
-      try {
-        const res = await fetch('http://127.0.0.1:5701/status');
-        if (res.ok) {
-          const data = await res.json();
-          agentId = data.agentId || 'unknown';
-        }
-      } catch (err) {
-        console.warn('Could not fetch local agent ID for acceptance:', err);
-      }
-
       socket.emit('accept_control', {
         meetingId,
         participantId: localUserId,
         hostId: pendingControlRequest.hostId,
-        agentId: agentId
+        agentId: 'socket-agent'
       });
       set({ isControlling: true });
     } else {
@@ -1239,34 +1222,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  checkAndLinkAgent: async (meetingId, participantId) => {
+  checkAndLinkAgent: async (meetingId: string, participantId: string) => {
+    console.log('[AGENT-PROTOCOL] Triggering deep link for:', participantId);
     try {
-      // 1. Check if agent is running
-      const statusRes = await fetch('http://127.0.0.1:5701/status');
-      if (!statusRes.ok) return false;
-
-      const statusData = await statusRes.json();
-      console.log('Detected local agent status:', statusData);
-
-      // 2. Link the session
-      const linkRes = await fetch('http://127.0.0.1:5701/link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetingId, participantId })
-      });
-
-      if (linkRes.ok) {
-        set({ nativeAgentStatus: { status: 'connected' } });
-        return true;
-      }
-      return false;
+      // Pure socket-based identity link via custom protocol
+      // NO localhost, NO HTTP, NO polling
+      window.location.assign(`replica-agent://link/${meetingId}/${participantId}`);
+      return true;
     } catch (err) {
-      console.log('Local agent not found or error linking:', err);
+      console.error('[AGENT-PROTOCOL] Protocol link failed:', err);
       return false;
     }
   },
-
-
 
   sendControlEvent: (event: any) => {
     const { socket, nativeAgentStatus } = get();

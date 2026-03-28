@@ -35,7 +35,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -899,12 +899,12 @@ export function ParticipantsPanel() {
         <>
             <AnimatePresence>
                 {isParticipantsOpen && (
-                <motion.div
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="
+                    <motion.div
+                        initial={{ x: '100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '100%' }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                        className="
                         fixed top-0 right-0 bottom-20
                         w-full sm:w-[380px]
                         bg-[#1C1C1C]
@@ -915,324 +915,324 @@ export function ParticipantsPanel() {
                         overflow-hidden
                         shadow-2xl
                     "
-                >
-                    {/* HEADER */}
-                    <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
-                        <h3 className="text-lg font-semibold">
-                            Participants ({participants.length})
-                        </h3>
-                        {/* Close button moved to TopBar */}
-                    </div>
-
-                    {/* SEARCH & HOST CONTROLS */}
-                    <div className="p-4 border-b border-[#404040] flex flex-col gap-3 flex-shrink-0">
-
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-2">
-                            <div className="relative flex-[2.5] min-w-0">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                                <Input
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search"
-                                    className="pl-9 h-9 bg-[#232323] border-[#404040] text-sm"
-                                />
-                            </div>
-
-                            <div className="flex items-center gap-2 flex-none flex-wrap">
-                                {canControl && (
-                                    <Button
-                                        onClick={() => {
-                                            if (confirm('Mute all participants?')) {
-                                                useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
-                                            }
-                                        }}
-                                        variant="ghost"
-                                        className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-9 px-2 md:px-3 text-xs sm:text-sm"
-                                    >
-                                        <MicOff className="w-3.5 h-3.5 mr-1.5 text-red-500" />
-                                        Mute All
-                                    </Button>
-                                )}
-
-                                {canControl && (
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
-                                            >
-                                                <MoreVertical className="w-4 h-4 mr-1" />
-                                                More
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent className="bg-[#1C1C1C] border-[#333] z-[100] text-gray-200" align="end">
-                                            <DropdownMenuItem
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    const settings = useMeetingStore.getState().meeting?.settings || {};
-                                                    const isCameraAllowed = settings.cameraAllowed !== false;
-
-                                                    if (isCameraAllowed) {
-                                                        if (confirm('Stop all participant videos and restrict them?')) {
-                                                            const meetingId = useMeetingStore.getState().meeting?.id || '';
-                                                            useChatStore.getState().stopVideoAll(meetingId);
-                                                            useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: false });
-                                                            setVideoRestriction(true);
-                                                        }
-                                                    } else {
-                                                        if (confirm('Allow participants to start their video?')) {
-                                                            useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: true });
-                                                            setVideoRestriction(false);
-                                                        }
-                                                    }
-                                                }}
-                                                className={cn("cursor-pointer flex items-center justify-between", !(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300" : "hover:bg-[#333]")}
-                                            >
-                                                <div className="flex items-center">
-                                                    {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
-                                                    {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "Allow Participant Video" : "Disable All Video"}
-                                                </div>
-                                                {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 px-1.5 py-0.5 rounded">Restricted</span>}
-                                            </DropdownMenuItem>
-
-                                            <DropdownMenuItem
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
-                                                    if (!isSuspended) {
-                                                        if (confirm('Suspend all participant activities? This turns off video, audio, chat, and screen sharing.')) {
-                                                            const meetingId = useMeetingStore.getState().meeting?.id || '';
-                                                            useMeetingStore.getState().updateMeetingSettings({
-                                                                suspendParticipantActivities: true,
-                                                                micAllowed: false,
-                                                                cameraAllowed: false,
-                                                                screenShareAllowed: false,
-                                                                chatAllowed: false
-                                                            });
-                                                            setVideoRestriction(true);
-                                                            toast.success("Participant activities suspended.");
-                                                        }
-                                                    } else {
-                                                        if (confirm('Resume participant activities?')) {
-                                                            useMeetingStore.getState().updateMeetingSettings({
-                                                                suspendParticipantActivities: false,
-                                                                micAllowed: true,
-                                                                cameraAllowed: true,
-                                                                screenShareAllowed: true,
-                                                                chatAllowed: true
-                                                            });
-                                                            setVideoRestriction(false);
-                                                            toast.success("Participant activities resumed.");
-                                                        }
-                                                    }
-                                                }}
-                                                className={cn("cursor-pointer flex items-center justify-between", useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20 hover:text-zinc-300" : "hover:bg-zinc-500/10 text-zinc-300")}
-                                            >
-                                                <div className="flex items-center">
-                                                    {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? <Check className="w-4 h-4 mr-2 text-zinc-400" /> : <AlertCircle className="w-4 h-4 mr-2 text-zinc-400" />}
-                                                    {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "Resume Activities" : "Suspend Activities"}
-                                                </div>
-                                                {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-zinc-500/20 px-1.5 py-0.5 rounded">Suspended</span>}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onClick={() => {
-                                                    const currentLocked = useMeetingStore.getState().meeting?.settings?.isLocked;
-                                                    useMeetingStore.getState().updateMeetingSettings({ isLocked: !currentLocked });
-                                                    toast.success(!currentLocked ? "Meeting Locked. No new participants can join." : "Meeting Unlocked.");
-                                                }}
-                                                className="hover:bg-[#333] cursor-pointer"
-                                            >
-                                                {useMeetingStore.getState().meeting?.settings?.isLocked ? <LockIcon className="w-4 h-4 mr-2 text-green-400" /> : <LockIcon className="w-4 h-4 mr-2 text-red-400" />}
-                                                {useMeetingStore.getState().meeting?.settings?.isLocked ? "Unlock Meeting" : "Lock Meeting"}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onClick={() => {
-                                                    const msg = window.prompt("Enter host broadcast message:");
-                                                    if (msg?.trim()) {
-                                                        const { meetingId, sendHostBroadcast } = useChatStore.getState();
-                                                        if (meetingId) {
-                                                            sendHostBroadcast(meetingId, msg.trim());
-                                                        }
-                                                        toast.success("Broadcast sent!");
-                                                    }
-                                                }}
-                                                className="hover:bg-[#333] cursor-pointer"
-                                            >
-                                                <MessageSquare className="w-4 h-4 mr-2" />
-                                                Broadcast Message
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                )}
-                            </div>
+                    >
+                        {/* HEADER */}
+                        <div className="flex items-center justify-between p-4 border-b border-[#404040] flex-shrink-0">
+                            <h3 className="text-lg font-semibold">
+                                Participants ({participants.length})
+                            </h3>
+                            {/* Close button moved to TopBar */}
                         </div>
-                    </div>
 
-                    {/* MAIN SCROLLABLE CONTENT */}
-                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-4">
-                        {/* WAITING ROOM */}
-                        {waitingRoom.length > 0 && canControl && (
-                            <div className="border-b border-[#404040]">
-                                <div className="p-4 bg-[#232323]">
-                                    <h4 className="text-sm font-semibold mb-3">
-                                        Waiting Room ({waitingRoom.length})
-                                    </h4>
-                                    <div className="space-y-2 pr-1 custom-scrollbar">
-                                        {waitingRoom.map(person => (
-                                            <div
-                                                key={person.id}
-                                                className="flex items-center justify-between"
-                                            >
-                                                <span className="text-sm">{person.name}</span>
-                                                <div className="flex gap-4 items-center">
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => useChatStore.getState().admitParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
-                                                        className="bg-green-500 hover:bg-green-600 text-white font-bold h-8 px-4"
-                                                    >
-                                                        Admit
-                                                    </Button>
-                                                    <button
-                                                        onClick={() => useChatStore.getState().denyParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
-                                                        className="text-red-500 hover:text-red-400 text-sm font-bold transition-colors"
-                                                    >
-                                                        Deny
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                        {/* SEARCH & HOST CONTROLS */}
+                        <div className="p-4 border-b border-[#404040] flex flex-col gap-3 flex-shrink-0">
 
-                        {/* RAISED HANDS SUMMARY */}
-                        {participants.filter(p => p.isHandRaised).length > 0 && (
-                            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
-                                <div className="flex items-center gap-2">
-                                    <Hand className="w-4 h-4 text-yellow-500" />
-                                    <span className="text-sm font-bold text-yellow-500">
-                                        Raised Hands ({participants.filter(p => p.isHandRaised).length})
-                                    </span>
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-2">
+                                <div className="relative flex-[2.5] min-w-0">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <Input
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Search"
+                                        className="pl-9 h-9 bg-[#232323] border-[#404040] text-sm"
+                                    />
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    {participants.filter(p => p.isHandRaised).length >= 20 && (
-                                        <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
-                                            Priority List
-                                        </span>
-                                    )}
+
+                                <div className="flex items-center gap-2 flex-none flex-wrap">
                                     {canControl && (
                                         <Button
-                                            size="sm"
-                                            variant="ghost"
                                             onClick={() => {
-                                                if (confirm('Lower all hands?')) {
-                                                    const { meetingId, lowerAllHands } = useChatStore.getState();
-                                                    if (meetingId) lowerAllHands(meetingId);
+                                                if (confirm('Mute all participants?')) {
+                                                    useChatStore.getState().muteAll(useMeetingStore.getState().meeting?.id || '');
                                                 }
                                             }}
-                                            className="h-7 text-[10px] bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 font-bold px-2 py-0 border border-yellow-500/30 rounded"
+                                            variant="ghost"
+                                            className="bg-[#2A2A2A] hover:bg-[#333] text-white border-none h-9 px-2 md:px-3 text-xs sm:text-sm"
                                         >
-                                            Lower All
+                                            <MicOff className="w-3.5 h-3.5 mr-1.5 text-red-500" />
+                                            Mute All
                                         </Button>
+                                    )}
+
+                                    {canControl && (
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant="outline"
+                                                    className="h-9 px-2 border-[#404040] hover:bg-[#2D2D2D] text-xs sm:text-sm"
+                                                >
+                                                    <MoreVertical className="w-4 h-4 mr-1" />
+                                                    More
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent className="bg-[#1C1C1C] border-[#333] z-[100] text-gray-200" align="end">
+                                                <DropdownMenuItem
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        const settings = useMeetingStore.getState().meeting?.settings || {};
+                                                        const isCameraAllowed = settings.cameraAllowed !== false;
+
+                                                        if (isCameraAllowed) {
+                                                            if (confirm('Stop all participant videos and restrict them?')) {
+                                                                const meetingId = useMeetingStore.getState().meeting?.id || '';
+                                                                useChatStore.getState().stopVideoAll(meetingId);
+                                                                useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: false });
+                                                                setVideoRestriction(true);
+                                                            }
+                                                        } else {
+                                                            if (confirm('Allow participants to start their video?')) {
+                                                                useMeetingStore.getState().updateMeetingSettings({ cameraAllowed: true });
+                                                                setVideoRestriction(false);
+                                                            }
+                                                        }
+                                                    }}
+                                                    className={cn("cursor-pointer flex items-center justify-between", !(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300" : "hover:bg-[#333]")}
+                                                >
+                                                    <div className="flex items-center">
+                                                        {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
+                                                        {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) ? "Allow Participant Video" : "Disable All Video"}
+                                                    </div>
+                                                    {!(useMeetingStore.getState().meeting?.settings?.cameraAllowed !== false) && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 px-1.5 py-0.5 rounded">Restricted</span>}
+                                                </DropdownMenuItem>
+
+                                                <DropdownMenuItem
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        const isSuspended = useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities;
+                                                        if (!isSuspended) {
+                                                            if (confirm('Suspend all participant activities? This turns off video, audio, chat, and screen sharing.')) {
+                                                                const meetingId = useMeetingStore.getState().meeting?.id || '';
+                                                                useMeetingStore.getState().updateMeetingSettings({
+                                                                    suspendParticipantActivities: true,
+                                                                    micAllowed: false,
+                                                                    cameraAllowed: false,
+                                                                    screenShareAllowed: false,
+                                                                    chatAllowed: false
+                                                                });
+                                                                setVideoRestriction(true);
+                                                                toast.success("Participant activities suspended.");
+                                                            }
+                                                        } else {
+                                                            if (confirm('Resume participant activities?')) {
+                                                                useMeetingStore.getState().updateMeetingSettings({
+                                                                    suspendParticipantActivities: false,
+                                                                    micAllowed: true,
+                                                                    cameraAllowed: true,
+                                                                    screenShareAllowed: true,
+                                                                    chatAllowed: true
+                                                                });
+                                                                setVideoRestriction(false);
+                                                                toast.success("Participant activities resumed.");
+                                                            }
+                                                        }
+                                                    }}
+                                                    className={cn("cursor-pointer flex items-center justify-between", useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20 hover:text-zinc-300" : "hover:bg-zinc-500/10 text-zinc-300")}
+                                                >
+                                                    <div className="flex items-center">
+                                                        {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? <Check className="w-4 h-4 mr-2 text-zinc-400" /> : <AlertCircle className="w-4 h-4 mr-2 text-zinc-400" />}
+                                                        {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities ? "Resume Activities" : "Suspend Activities"}
+                                                    </div>
+                                                    {useMeetingStore.getState().meeting?.settings?.suspendParticipantActivities && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-zinc-500/20 px-1.5 py-0.5 rounded">Suspended</span>}
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() => {
+                                                        const currentLocked = useMeetingStore.getState().meeting?.settings?.isLocked;
+                                                        useMeetingStore.getState().updateMeetingSettings({ isLocked: !currentLocked });
+                                                        toast.success(!currentLocked ? "Meeting Locked. No new participants can join." : "Meeting Unlocked.");
+                                                    }}
+                                                    className="hover:bg-[#333] cursor-pointer"
+                                                >
+                                                    {useMeetingStore.getState().meeting?.settings?.isLocked ? <LockIcon className="w-4 h-4 mr-2 text-green-400" /> : <LockIcon className="w-4 h-4 mr-2 text-red-400" />}
+                                                    {useMeetingStore.getState().meeting?.settings?.isLocked ? "Unlock Meeting" : "Lock Meeting"}
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() => {
+                                                        const msg = window.prompt("Enter host broadcast message:");
+                                                        if (msg?.trim()) {
+                                                            const { meetingId, sendHostBroadcast } = useChatStore.getState();
+                                                            if (meetingId) {
+                                                                sendHostBroadcast(meetingId, msg.trim());
+                                                            }
+                                                            toast.success("Broadcast sent!");
+                                                        }
+                                                    }}
+                                                    className="hover:bg-[#333] cursor-pointer"
+                                                >
+                                                    <MessageSquare className="w-4 h-4 mr-2" />
+                                                    Broadcast Message
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     )}
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* PARTICIPANTS LIST */}
-                        {filteredParticipants.map(participant => {
-                            const displayedRole = transientRoles[participant.id] || participant.role;
-                            const coHostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'co-host').length;
-                            const hostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'host').length;
-
-                            const isCurrentUser =
-                                participant.id === user?.id ||
-                                participant.id === `participant-${user?.id}` ||
-                                participant.id === localUserId;
-
-                            return (
-                                <ParticipantItem
-                                    key={participant.id}
-                                    participant={participant}
-                                    isCurrentUser={isCurrentUser}
-                                    canControl={canControl}
-                                    canChangeRoles={canChangeRoles}
-                                    isViewerOriginalHost={isOriginalHost}
-                                    isViewerHost={isHost}
-                                    isViewerCoHost={isCoHost}
-                                    isTargetOriginalHost={meeting?.originalHostId === participant.id}
-                                    onToggleHand={() => toggleHandRaise(participant.id)}
-                                    onTakeControl={() => {
-                                        useChatStore.getState().requestControl(participant.id);
-                                    }}
-                                    onToggleMute={isCurrentUser ? handleAudioToggle : () => {
-                                        if (!participant.isAudioMuted) {
-                                            muteParticipant(participant.id);
-                                        }
-                                    }}
-                                    onMakeHost={() => makeHost(participant.id)}
-                                    onMakeCoHost={() => makeCoHost(participant.id)}
-                                    onRemove={() => removeParticipant(participant.id)}
-                                    onBan={() => {
-                                        const mId = meeting?.id;
-                                        if (mId) useChatStore.getState().banParticipant(mId, participant.id);
-                                    }}
-                                    onRevokeHost={() => revokeHost(participant.id)}
-                                    onRevokeCoHost={() => revokeCoHost(participant.id)}
-                                    onToggleVideoAllowed={() => {
-                                        if (!participant.isVideoOff) {
-                                            setVideoAllowed(participant.id, false);
-                                        }
-                                    }}
-                                    onRequestMedia={(userId, type) => {
-                                        if (meeting?.id) {
-                                            useChatStore.getState().requestMedia(meeting.id, userId, type);
-                                        }
-                                    }}
-                                    onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
-                                    onRename={isCurrentUser && (canControl || meeting?.settings?.allowRename !== false) ? () => {
-                                        const newName = window.prompt("Enter new name:", participant.name);
-                                        if (newName && newName.trim()) {
-                                            updateParticipant(participant.id, { name: newName.trim() });
-                                            if (meeting?.id) {
-                                                useChatStore.getState().emitParticipantUpdate(meeting.id, participant.id, { name: newName.trim() });
-                                            }
-                                        }
-                                    } : undefined}
-                                    displayedRole={displayedRole}
-                                    coHostCount={coHostCount}
-                                    hostCount={hostCount}
-                                    meeting={meeting}
-                                />
-                            );
-                        })}
-
-                        {/* FREQUENT QUESTION ASKERS SECTION */}
-                        {isHost && frequentQuestionUsers.length > 0 && (
-                            <div className="mt-3 border-t border-gray-700 pt-2 px-4 pb-4">
-                                <div className="text-sm font-semibold text-yellow-400">
-                                    Frequent Question Askers 🔥
+                        {/* MAIN SCROLLABLE CONTENT */}
+                        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-4">
+                            {/* WAITING ROOM */}
+                            {waitingRoom.length > 0 && canControl && (
+                                <div className="border-b border-[#404040]">
+                                    <div className="p-4 bg-[#232323]">
+                                        <h4 className="text-sm font-semibold mb-3">
+                                            Waiting Room ({waitingRoom.length})
+                                        </h4>
+                                        <div className="space-y-2 pr-1 custom-scrollbar">
+                                            {waitingRoom.map(person => (
+                                                <div
+                                                    key={person.id}
+                                                    className="flex items-center justify-between"
+                                                >
+                                                    <span className="text-sm">{person.name}</span>
+                                                    <div className="flex gap-4 items-center">
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => useChatStore.getState().admitParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
+                                                            className="bg-green-500 hover:bg-green-600 text-white font-bold h-8 px-4"
+                                                        >
+                                                            Admit
+                                                        </Button>
+                                                        <button
+                                                            onClick={() => useChatStore.getState().denyParticipant(useMeetingStore.getState().meeting?.id || '', person.socketId)}
+                                                            className="text-red-500 hover:text-red-400 text-sm font-bold transition-colors"
+                                                        >
+                                                            Deny
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
+                            )}
 
-                                {frequentQuestionUsers.map((fqUser) => (
-                                    <div key={fqUser.participantId} className="flex justify-between text-sm mt-1">
-                                        <span className="text-gray-200">{fqUser.name}</span>
-                                        <span className="bg-yellow-500 text-black px-2 rounded text-xs">
-                                            {fqUser.count}
+                            {/* RAISED HANDS SUMMARY */}
+                            {participants.filter(p => p.isHandRaised).length > 0 && (
+                                <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
+                                    <div className="flex items-center gap-2">
+                                        <Hand className="w-4 h-4 text-yellow-500" />
+                                        <span className="text-sm font-bold text-yellow-500">
+                                            Raised Hands ({participants.filter(p => p.isHandRaised).length})
                                         </span>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {participants.filter(p => p.isHandRaised).length >= 20 && (
+                                            <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
+                                                Priority List
+                                            </span>
+                                        )}
+                                        {canControl && (
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => {
+                                                    if (confirm('Lower all hands?')) {
+                                                        const { meetingId, lowerAllHands } = useChatStore.getState();
+                                                        if (meetingId) lowerAllHands(meetingId);
+                                                    }
+                                                }}
+                                                className="h-7 text-[10px] bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 font-bold px-2 py-0 border border-yellow-500/30 rounded"
+                                            >
+                                                Lower All
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* PARTICIPANTS LIST */}
+                            {filteredParticipants.map(participant => {
+                                const displayedRole = transientRoles[participant.id] || participant.role;
+                                const coHostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'co-host').length;
+                                const hostCount = participants.filter(p => (transientRoles[p.id] || p.role) === 'host').length;
+
+                                const isCurrentUser =
+                                    participant.id === user?.id ||
+                                    participant.id === `participant-${user?.id}` ||
+                                    participant.id === localUserId;
+
+                                return (
+                                    <ParticipantItem
+                                        key={participant.id}
+                                        participant={participant}
+                                        isCurrentUser={isCurrentUser}
+                                        canControl={canControl}
+                                        canChangeRoles={canChangeRoles}
+                                        isViewerOriginalHost={isOriginalHost}
+                                        isViewerHost={isHost}
+                                        isViewerCoHost={isCoHost}
+                                        isTargetOriginalHost={meeting?.originalHostId === participant.id}
+                                        onToggleHand={() => toggleHandRaise(participant.id)}
+                                        onTakeControl={() => {
+                                            useChatStore.getState().requestControl(participant.id);
+                                        }}
+                                        onToggleMute={isCurrentUser ? handleAudioToggle : () => {
+                                            if (!participant.isAudioMuted) {
+                                                muteParticipant(participant.id);
+                                            }
+                                        }}
+                                        onMakeHost={() => makeHost(participant.id)}
+                                        onMakeCoHost={() => makeCoHost(participant.id)}
+                                        onRemove={() => removeParticipant(participant.id)}
+                                        onBan={() => {
+                                            const mId = meeting?.id;
+                                            if (mId) useChatStore.getState().banParticipant(mId, participant.id);
+                                        }}
+                                        onRevokeHost={() => revokeHost(participant.id)}
+                                        onRevokeCoHost={() => revokeCoHost(participant.id)}
+                                        onToggleVideoAllowed={() => {
+                                            if (!participant.isVideoOff) {
+                                                setVideoAllowed(participant.id, false);
+                                            }
+                                        }}
+                                        onRequestMedia={(userId, type) => {
+                                            if (meeting?.id) {
+                                                useChatStore.getState().requestMedia(meeting.id, userId, type);
+                                            }
+                                        }}
+                                        onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
+                                        onRename={isCurrentUser && (canControl || meeting?.settings?.allowRename !== false) ? () => {
+                                            const newName = window.prompt("Enter new name:", participant.name);
+                                            if (newName && newName.trim()) {
+                                                updateParticipant(participant.id, { name: newName.trim() });
+                                                if (meeting?.id) {
+                                                    useChatStore.getState().emitParticipantUpdate(meeting.id, participant.id, { name: newName.trim() });
+                                                }
+                                            }
+                                        } : undefined}
+                                        displayedRole={displayedRole}
+                                        coHostCount={coHostCount}
+                                        hostCount={hostCount}
+                                        meeting={meeting}
+                                    />
+                                );
+                            })}
+
+                            {/* FREQUENT QUESTION ASKERS SECTION */}
+                            {isHost && frequentQuestionUsers.length > 0 && (
+                                <div className="mt-3 border-t border-gray-700 pt-2 px-4 pb-4">
+                                    <div className="text-sm font-semibold text-yellow-400">
+                                        Frequent Question Askers 🔥
+                                    </div>
+
+                                    {frequentQuestionUsers.map((fqUser) => (
+                                        <div key={fqUser.participantId} className="flex justify-between text-sm mt-1">
+                                            <span className="text-gray-200">{fqUser.name}</span>
+                                            <span className="bg-yellow-500 text-black px-2 rounded text-xs">
+                                                {fqUser.count}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
 
 
 
-                    {/* Participant Side: Remote Control Approval Dialog */}
-                </motion.div>
-            )}
-        </AnimatePresence>
+                        {/* Participant Side: Remote Control Approval Dialog */}
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <ControlApprovalDialog />
         </>
     );
@@ -1247,71 +1247,21 @@ function ControlApprovalDialog() {
     const meetingId = useChatStore(state => state.meetingId);
     const socket = useChatStore(state => state.socket);
     const { participants } = useParticipantsStore();
-    
+
     const me = participants.find(p => p.id === localUserId);
-    const [agentConnected, setAgentConnected] = useState(me?.agentConnected || false);
+    const agentConnected = me?.agentConnected || false;
     const hasAgent = me?.hasAgent || false;
 
-    // Sync local state when participant store changes
+    // Initial check when popup opens
     useEffect(() => {
-        if (me?.agentConnected !== undefined) {
-            setAgentConnected(me.agentConnected);
-        }
-    }, [me?.agentConnected]);
-
-    // Initial check and listeners when popup opens
-    useEffect(() => {
-        let intervalId: any = null;
-
         if (pendingRequest && meetingId && localUserId) {
-            console.log('[AGENT] Popup opened, starting discovery...');
+            console.log('[AGENT] Popup opened, checking for existing agent...');
             getAgentStatus(meetingId, localUserId);
             
-            const attemptLink = () => {
-                if (agentConnected) {
-                    if (intervalId) clearInterval(intervalId);
-                    return;
-                }
-                
-                checkAndLinkAgent(meetingId, localUserId).then(linked => {
-                    if (linked) {
-                        console.log('[AGENT] Auto-linked local agent via discovery');
-                        setAgentConnected(true);
-                        if (intervalId) clearInterval(intervalId);
-                    }
-                });
-            };
-
-            // Run immediately
-            attemptLink();
-
-            // Then poll every 1.5s if not connected
-            if (!agentConnected) {
-                intervalId = setInterval(attemptLink, 1500);
-            }
-
-            // Specific listener for instant update from backend
-            if (socket) {
-                const handleAgentConnected = (data: any) => {
-                    if (data.participantId === localUserId) {
-                        console.log('[AGENT] Received agent_connected via socket in popup');
-                        setAgentConnected(true);
-                        if (intervalId) clearInterval(intervalId);
-                    }
-                };
-                socket.on('agent_connected', handleAgentConnected);
-                
-                return () => {
-                    if (intervalId) clearInterval(intervalId);
-                    socket.off('agent_connected', handleAgentConnected);
-                };
-            }
-            
-            return () => {
-                if (intervalId) clearInterval(intervalId);
-            };
+            // Note: Instant socket updates (agent_status_update) 
+            // will automatically update me.agentConnected in the store.
         }
-    }, [!!pendingRequest, meetingId, localUserId, socket, agentConnected]);
+    }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
 
@@ -1320,10 +1270,10 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=1LSt1SH4sKqe674z0YVn0tkGE23swUzg1",
+            "https://drive.google.com/file/d/19Kzs77X22N43LHtcKfbuFuRFGDnKxsXK/view?usp=sharing",
             "_blank"
         );
-        
+
         if (meetingId && localUserId) {
             useChatStore.getState().install_agent_trigger(meetingId, localUserId);
         }
@@ -1336,15 +1286,15 @@ function ControlApprovalDialog() {
             });
             return;
         }
-        
+
         respondToControl(true);
 
         // Transition to active state entirely from the first popup 
-        useMeetingStore.getState().setRemoteControlState({ 
-            status: 'active', 
-            role: 'controlled', 
-            targetId: pendingRequest.hostId, 
-            targetName: pendingRequest.hostName 
+        useMeetingStore.getState().setRemoteControlState({
+            status: 'active',
+            role: 'controlled',
+            targetId: pendingRequest.hostId,
+            targetName: pendingRequest.hostName
         });
 
         // NATIVE ELECTRON CAPTURE REPLACES WRAPPER:
@@ -1361,33 +1311,45 @@ function ControlApprovalDialog() {
                         Remote Control Request
                     </DialogTitle>
                 </DialogHeader>
-                
+
                 <div className="py-6 space-y-4">
                     <p className="text-gray-300">
                         <span className="font-bold text-white">{pendingRequest.hostName}</span> wants to take control of your system.
                     </p>
 
-                    {!agentConnected && !hasAgent && (
-                        <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
-                            <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    Please start or install the Remote Control Agent to allow the host to control your screen.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {!agentConnected && hasAgent && (
-                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
-                            <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
-                                </p>
-                            </div>
+                    {!agentConnected && (
+                        <div className="flex flex-col gap-2">
+                            {!hasAgent ? (
+                                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
+                                    <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Please start or install the Remote Control Agent to allow the host to control your screen.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+                                    <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="w-full border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                                onClick={() => meetingId && localUserId && checkAndLinkAgent(meetingId, localUserId)}
+                            >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Link & Start Agent
+                            </Button>
                         </div>
                     )}
 
@@ -1405,26 +1367,26 @@ function ControlApprovalDialog() {
                 </div>
 
                 <DialogFooter className="flex flex-col sm:flex-row gap-2">
-                    <Button 
-                        variant="ghost" 
-                        onClick={() => respondToControl(false)} 
+                    <Button
+                        variant="ghost"
+                        onClick={() => respondToControl(false)}
                         className="flex-1 hover:bg-white/5 border border-white/10 order-3 sm:order-1"
                     >
                         Reject
                     </Button>
-                    <Button 
+                    <Button
                         onClick={handleInstallAgent}
                         className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 order-2"
                     >
                         <Download className="w-4 h-4 mr-2" />
                         Install Agent
                     </Button>
-                    <Button 
+                    <Button
                         onClick={handleAccept}
                         className={cn(
                             "flex-1 font-bold order-1 sm:order-3",
                             agentConnected
-                                ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                                ? "bg-blue-600 hover:bg-blue-700 text-white"
                                 : "bg-blue-600/50 cursor-not-allowed text-white/50"
                         )}
                     >
@@ -1573,18 +1535,18 @@ function ParticipantItem({
                             )}
                         </button>
                         {participant.isHandRaised && (
-                            <motion.div 
+                            <motion.div
                                 initial={{ scale: 0, x: 10 }}
                                 animate={{ scale: 1, x: 0 }}
                                 className="flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 shadow-[0_0_10px_rgba(234,179,8,0.1)]"
                             >
                                 <motion.div
-                                    animate={{ 
+                                    animate={{
                                         rotate: [0, -10, 10, -10, 0],
                                         scale: [1, 1.1, 1]
                                     }}
-                                    transition={{ 
-                                        duration: 2, 
+                                    transition={{
+                                        duration: 2,
                                         repeat: Infinity,
                                         repeatDelay: 3
                                     }}

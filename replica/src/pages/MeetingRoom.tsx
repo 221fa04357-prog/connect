@@ -271,7 +271,7 @@ export default function MeetingRoom() {
       if (hasHydrated) {
         initSocket(meeting.id, identity, initialState);
         
-        // AUTO-DETECT LOCAL AGENT on join
+        // Pure socket-based identity link via custom protocol
         checkAndLinkAgent(meeting.id, identity.id);
       }
 
