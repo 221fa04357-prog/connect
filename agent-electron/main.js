@@ -225,44 +225,72 @@ app.whenReady().then(() => {
         rejectUnauthorized: false
     });
 
-    socket.on('connect', () => {
-        console.log('Connected to signaling server');
-        
-        // NEW: Socket-based status detection (Robust fix)
-        if (global.participantId && global.meetingId) {
-            console.log("agent_status sent", global.participantId);
-            socket.emit("agent_status", {
-                participantId: global.participantId,
-                meetingId: global.meetingId,
-                ready: true
-            });
-        }
+  socket.on('connect', () => {
+    console.log('Connected to signaling server');
 
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
-        }
+    socket.emit('agent_register', {
+        agentId: AGENT_ID,
+        name: 'Electron Agent',
+        meetingId: global.meetingId,
+        participantId: global.participantId
     });
 
-    socket.on('control_started', (data) => {
-        console.log('[AGENT] Control session started by host:', data.hostId);
-        global.currentRequestId = data.hostId;
-        startStreaming(data.hostId);
+    if (global.participantId && global.meetingId) {
+        console.log("agent_status sent", global.participantId);
 
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Controlled by ' + data.hostName,
-                agentId: AGENT_ID
-            });
-        }
-    });
+        socket.emit("agent_status", {
+            participantId: global.participantId,
+            meetingId: global.meetingId,
+            ready: true
+        });
+    }
 
-    socket.on('host_input_event', (event) => {
-        handleInputEvent(event);
-    });
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
 
-    socket.on('stop_control', () => {
-        stopStreaming();
-    });
+
+// ✅ CONTROL START
+socket.on('control_started', (data) => {
+    console.log('[AGENT] Control session started by host:', data.hostId);
+
+    global.currentRequestId = data.hostId;
+
+    startStreaming(data.hostId);
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Controlled by ' + data.hostName,
+            agentId: AGENT_ID
+        });
+    }
+});
+
+
+// ✅ HOST INPUT (mouse/keyboard)
+socket.on('host_input_event', (event) => {
+    handleInputEvent(event);
+});
+
+
+socket.on('control_stopped', () => {
+    console.log('[AGENT] Control stopped');
+
+    global.currentRequestId = null;
+
+    stopStreaming();
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
 
 
 

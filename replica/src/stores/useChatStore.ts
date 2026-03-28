@@ -1216,7 +1216,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   checkAndLinkAgent: async (meetingId, participantId) => {
-    // No-op: Linking is now handled automatically by the agent's socket connection
     return true;
   },
 
