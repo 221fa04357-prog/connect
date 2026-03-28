@@ -1320,7 +1320,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=1LSt1SH4sKqe674z0YVn0tkGE23swUzg1",
+            "https://drive.google.com/file/d/19Kzs77X22N43LHtcKfbuFuRFGDnKxsXK/view?usp=sharing",
             "_blank"
         );
         
