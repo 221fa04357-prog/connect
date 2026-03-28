@@ -1259,59 +1259,16 @@ function ControlApprovalDialog() {
         }
     }, [me?.agentConnected]);
 
-    // Initial check and listeners when popup opens
+    // Initial check when popup opens
     useEffect(() => {
-        let intervalId: any = null;
-
         if (pendingRequest && meetingId && localUserId) {
-            console.log('[AGENT] Popup opened, starting discovery...');
+            console.log('[AGENT] Popup opened, checking for existing agent...');
             getAgentStatus(meetingId, localUserId);
-
-            const attemptLink = () => {
-                if (agentConnected) {
-                    if (intervalId) clearInterval(intervalId);
-                    return;
-                }
-
-                checkAndLinkAgent(meetingId, localUserId).then(linked => {
-                    if (linked) {
-                        console.log('[AGENT] Auto-linked local agent via discovery');
-                        setAgentConnected(true);
-                        if (intervalId) clearInterval(intervalId);
-                    }
-                });
-            };
-
-            // Run immediately
-            attemptLink();
-
-            // Then poll every 1.5s if not connected
-            if (!agentConnected) {
-                intervalId = setInterval(attemptLink, 1500);
-            }
-
-            // Specific listener for instant update from backend
-            if (socket) {
-                const handleAgentConnected = (data: any) => {
-                    if (data.participantId === localUserId) {
-                        console.log('[AGENT] Received agent_connected via socket in popup');
-                        setAgentConnected(true);
-                        if (intervalId) clearInterval(intervalId);
-                    }
-                };
-                socket.on('agent_connected', handleAgentConnected);
-
-                return () => {
-                    if (intervalId) clearInterval(intervalId);
-                    socket.off('agent_connected', handleAgentConnected);
-                };
-            }
-
-            return () => {
-                if (intervalId) clearInterval(intervalId);
-            };
+            
+            // Note: Instant socket updates (agent_status_update) 
+            // will automatically update me.agentConnected in the store.
         }
-    }, [!!pendingRequest, meetingId, localUserId, socket, agentConnected]);
+    }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
 

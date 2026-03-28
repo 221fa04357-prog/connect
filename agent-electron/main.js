@@ -173,20 +173,13 @@ function startLocalServer() {
 
                     console.log('Linked to session:', data);
 
-                    // Re-register with the new session info
+                    // NEW: Socket-based status detection (Robust fix)
                     if (socket && socket.connected) {
-                        socket.emit('agent_register', {
-                            agentId: AGENT_ID,
-                            name: 'Electron Agent',
-                            meetingId: global.meetingId,
-                            participantId: global.participantId
-                        });
-
-                        // NEW: Emit agent_ready for instant UI update
-                        socket.emit('agent_ready', {
-                            agentId: AGENT_ID,
+                        console.log("agent_status sent", global.participantId);
+                        socket.emit("agent_status", {
                             participantId: global.participantId,
-                            meetingId: global.meetingId
+                            meetingId: global.meetingId,
+                            ready: true
                         });
 
                         if (mainWindow) {
@@ -232,49 +225,72 @@ app.whenReady().then(() => {
         rejectUnauthorized: false
     });
 
-    socket.on('connect', () => {
-        console.log('Connected to signaling server');
-        socket.emit('agent_register', {
-            agentId: AGENT_ID,
-            name: 'Electron Agent',
+  socket.on('connect', () => {
+    console.log('Connected to signaling server');
+
+    socket.emit('agent_register', {
+        agentId: AGENT_ID,
+        name: 'Electron Agent',
+        meetingId: global.meetingId,
+        participantId: global.participantId
+    });
+
+    if (global.participantId && global.meetingId) {
+        console.log("agent_status sent", global.participantId);
+
+        socket.emit("agent_status", {
+            participantId: global.participantId,
             meetingId: global.meetingId,
-            participantId: global.participantId
+            ready: true
         });
+    }
 
-        // NEW: If already linked, signal readiness immediately on reconnect
-        if (global.meetingId && global.participantId) {
-            socket.emit('agent_ready', {
-                agentId: AGENT_ID,
-                participantId: global.participantId,
-                meetingId: global.meetingId
-            });
-        }
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
 
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
-        }
-    });
 
-    socket.on('control_started', (data) => {
-        console.log('[AGENT] Control session started by host:', data.hostId);
-        global.currentRequestId = data.hostId;
-        startStreaming(data.hostId);
+// ✅ CONTROL START
+socket.on('control_started', (data) => {
+    console.log('[AGENT] Control session started by host:', data.hostId);
 
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Controlled by ' + data.hostName,
-                agentId: AGENT_ID
-            });
-        }
-    });
+    global.currentRequestId = data.hostId;
 
-    socket.on('host_input_event', (event) => {
-        handleInputEvent(event);
-    });
+    startStreaming(data.hostId);
 
-    socket.on('stop_control', () => {
-        stopStreaming();
-    });
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Controlled by ' + data.hostName,
+            agentId: AGENT_ID
+        });
+    }
+});
+
+
+// ✅ HOST INPUT (mouse/keyboard)
+socket.on('host_input_event', (event) => {
+    handleInputEvent(event);
+});
+
+
+socket.on('control_stopped', () => {
+    console.log('[AGENT] Control stopped');
+
+    global.currentRequestId = null;
+
+    stopStreaming();
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
 
 
 

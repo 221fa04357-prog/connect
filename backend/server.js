@@ -190,12 +190,13 @@ const server = http.createServer(app);
 
 // CORS Configuration
 const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
-app.use(cors({
-    origin: allowedOrigin,
+const corsOptions = {
+    origin: [allowedOrigin, "http://localhost:5173", "https://your-vercel-app.vercel.app"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
-}));
+};
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
@@ -594,7 +595,7 @@ async function finalizeAnalytics(meetingId) {
 
 const io = new Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL,
+        origin: [process.env.FRONTEND_URL, "http://localhost:5173", "https://your-vercel-app.vercel.app"],
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -637,6 +638,7 @@ const analyticsTracker = new Map(); // meetingId -> { startTime, participants: {
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
 const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const userSocketMap = {}; // userId -> socketId
+const agentStatusMap = {}; // participantId -> { socketId, meetingId, ready }
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -646,6 +648,16 @@ io.on('connection', (socket) => {
         const { meetingId, user, initialState } = typeof data === 'string' ? { meetingId: data, user: null, initialState: {} } : data;
 
         if (!meetingId) return;
+
+        // SYNC EXISTING AGENTS for the new joiner
+        for (const [pid, agent] of Object.entries(agentStatusMap)) {
+            if (agent.meetingId === meetingId && agent.ready) {
+                socket.emit("agent_status_update", {
+                    participantId: pid,
+                    ready: true
+                });
+            }
+        }
 
         // Check if banned
         if (bannedUsers.has(meetingId)) {
@@ -2027,6 +2039,20 @@ io.on('connection', (socket) => {
                 break;
             }
         }
+
+        // --- agentStatusMap Cleanup ---
+        for (const [participantId, agent] of Object.entries(agentStatusMap)) {
+            if (agent.socketId === socket.id) {
+                const mid = agent.meetingId;
+                console.log(`[AGENT] Agent offline for participant ${participantId}`);
+                delete agentStatusMap[participantId];
+
+                io.to(mid).emit("agent_status_update", {
+                    participantId,
+                    ready: false
+                });
+            }
+        }
     });
 
     socket.on("request_control", (data) => {
@@ -2061,12 +2087,20 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('agent_ready', (data) => {
-        const { participantId, meetingId, agentId } = data;
-        console.log(`[AGENT] agent_ready received from participant ${participantId} in meeting ${meetingId} (Agent: ${agentId})`);
-        if (meetingId) {
-            io.to(meetingId).emit('agent_ready', { participantId, agentId });
-        }
+    socket.on('agent_status', (data) => {
+        const { participantId, meetingId, ready } = data;
+        console.log(`[AGENT] agent registered: ${participantId} in ${meetingId} (ready: ${ready})`);
+        
+        agentStatusMap[participantId] = {
+            socketId: socket.id,
+            meetingId,
+            ready: !!ready
+        };
+
+        io.to(meetingId).emit("agent_status_update", {
+            participantId,
+            ready: !!ready
+        });
     });
 });
 
