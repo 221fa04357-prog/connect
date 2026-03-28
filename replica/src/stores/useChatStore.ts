@@ -79,7 +79,7 @@ interface ChatState {
   connectToAgent: (agentId: string, targetParticipantId?: string) => void;
   sendControlEvent: (event: any) => void;
   install_agent_trigger: (meetingId: string, targetId: string) => void;
-  checkAndLinkAgent: (meetingId: string, participantId: string) => Promise<boolean>;
+  pairAgent: (agentId: string) => void;
   getAgentStatus: (meetingId: string, participantId: string) => void;
 
   setFrequentQuestionUsers: (users: any[]) => void;
@@ -1212,17 +1212,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!socket || !meetingId || !localUserId || !pendingControlRequest) return;
     
     if (accepted) {
-      // Try to get local agent ID
-      let agentId = 'unknown';
-      try {
-        const res = await fetch('http://127.0.0.1:5701/status');
-        if (res.ok) {
-          const data = await res.json();
-          agentId = data.agentId || 'unknown';
-        }
-      } catch (err) {
-        console.warn('Could not fetch local agent ID for acceptance:', err);
-      }
+      const { nativeAgentStatus } = get();
+      const agentId = nativeAgentStatus.agentId || 'unknown';
 
       socket.emit('accept_control', {
         meetingId,
@@ -1247,31 +1238,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  checkAndLinkAgent: async (meetingId, participantId) => {
-    try {
-      // 1. Check if agent is running
-      const statusRes = await fetch('http://127.0.0.1:5701/status');
-      if (!statusRes.ok) return false;
+  pairAgent: (agentId: string) => {
+    const { socket, meetingId, localUserId } = get();
+    if (!socket || !meetingId || !localUserId) return;
 
-      const statusData = await statusRes.json();
-      console.log('Detected local agent status:', statusData);
-
-      // 2. Link the session
-      const linkRes = await fetch('http://127.0.0.1:5701/link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetingId, participantId })
-      });
-
-      if (linkRes.ok) {
-        set({ nativeAgentStatus: { status: 'connected' } });
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.log('Local agent not found or error linking:', err);
-      return false;
-    }
+    console.log('[AGENT] Emitting pair_agent via socket:', { agentId, meetingId, participantId: localUserId });
+    socket.emit('pair_agent', { 
+      agentId, 
+      meetingId, 
+      participantId: localUserId 
+    });
   },
 
 
