@@ -193,6 +193,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on('agent_ready', (data: { participantId: string, agentId: string }) => {
+      console.log('[AGENT] agent_ready received:', data);
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, true);
+      });
+    });
+
     socket.on('agent_status', (data: { participantId: string, connected: boolean, agentId: string }) => {
       console.log('[AGENT] agent_status received:', data);
       import('./useParticipantsStore').then((store) => {

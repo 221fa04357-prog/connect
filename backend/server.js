@@ -2060,6 +2060,14 @@ io.on('connection', (socket) => {
             }
         }
     });
+
+    socket.on('agent_ready', (data) => {
+        const { participantId, meetingId, agentId } = data;
+        console.log(`[AGENT] agent_ready received from participant ${participantId} in meeting ${meetingId} (Agent: ${agentId})`);
+        if (meetingId) {
+            io.to(meetingId).emit('agent_ready', { participantId, agentId });
+        }
+    });
 });
 
 // Auth Endpoints
