@@ -284,34 +284,76 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('[AGENT-SOCKET] Connected to signaling server');
-        emitStatus(true); // Attempt to register if identity is already known
+        console.log('[AGENT] Connected to signaling server');
 
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
+        // ✅ Register agent (optional but useful)
+        socket.emit('agent_register', {
+            agentId: AGENT_ID,
+            name: 'Electron Agent',
+            meetingId: global.meetingId,
+            participantId: global.participantId
+        });
+
+        // ✅ Send status ONLY if identity exists
+        if (global.participantId && global.meetingId) {
+            console.log('[AGENT] Sending agent_status:', global.participantId);
+
+            socket.emit("agent_status", {
+                participantId: global.participantId,
+                meetingId: global.meetingId,
+                ready: true
+            });
+        } else {
+            console.log('[AGENT] Waiting for identity (deep link)...');
         }
-    });
-
-    socket.on('control_started', (data) => {
-        console.log('[AGENT] Control session started by host:', data.hostId);
-        global.currentRequestId = data.hostId;
-        startStreaming(data.hostId);
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', {
-                status: 'Controlled by ' + data.hostName,
+                status: 'Connected',
                 agentId: AGENT_ID
             });
         }
     });
+});
 
-    socket.on('host_input_event', (event) => {
-        handleInputEvent(event);
-    });
 
-    socket.on('stop_control', () => {
-        stopStreaming();
-    });
+// ✅ CONTROL START
+socket.on('control_started', (data) => {
+    console.log('[AGENT] Control session started by host:', data.hostId);
+
+    global.currentRequestId = data.hostId;
+
+    startStreaming(data.hostId);
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Controlled by ' + data.hostName,
+            agentId: AGENT_ID
+        });
+    }
+});
+
+
+// ✅ HOST INPUT (mouse/keyboard)
+socket.on('host_input_event', (event) => {
+    handleInputEvent(event);
+});
+
+
+socket.on('control_stopped', () => {
+    console.log('[AGENT] Control stopped');
+
+    global.currentRequestId = null;
+
+    stopStreaming();
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
 
 
 

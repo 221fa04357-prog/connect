@@ -1235,8 +1235,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-
-
   sendControlEvent: (event: any) => {
     const { socket, nativeAgentStatus } = get();
     if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
