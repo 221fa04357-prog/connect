@@ -17,7 +17,7 @@ interface AuthState {
     setAuth: (user: User) => void;
     setPassword: (credentials: { email: string; password?: string }) => Promise<void>;
     verifyOTP: (data: { email: string; otp: string }) => Promise<void>;
-    sendNewOTP: (email: string) => Promise<void>;
+    resendOTP: (email: string) => Promise<void>;
 }
 
 // Helpers for localStorage
@@ -336,17 +336,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
         },
 
-        sendNewOTP: async (email) => {
+        resendOTP: async (email) => {
             set({ isLoading: true });
             try {
-                const response = await fetch(`${API}/api/auth/send-new-otp`, {
+                const response = await fetch(`${API}/api/auth/resend-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
 
                 if (!response.ok) {
-                    let errMsg = 'Failed to send new code';
+                    let errMsg = 'Failed to resend code';
                     try {
                         const err = await response.json();
                         errMsg = err.error || errMsg;

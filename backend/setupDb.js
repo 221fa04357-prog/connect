@@ -76,17 +76,6 @@ async function setup() {
         updated_at TIMESTAMP DEFAULT NOW(),
         PRIMARY KEY (meeting_id, user_id)
       );
-      
-      CREATE TABLE IF NOT EXISTS otps (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        otp_code VARCHAR(10) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        attempts INTEGER DEFAULT 0,
-        name VARCHAR(255),
-        password_hash TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      );
     `);
 
     // Seed initial data if table is empty (disabled mock seeds for real data flow)
