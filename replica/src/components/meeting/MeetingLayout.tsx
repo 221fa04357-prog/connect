@@ -1242,6 +1242,7 @@ function ControlApprovalDialog() {
     const pendingRequest = useChatStore(state => state.pendingControlRequest);
     const respondToControl = useChatStore(state => state.respondToControl);
     const getAgentStatus = useChatStore(state => state.getAgentStatus);
+    const checkAndLinkAgent = useChatStore(state => state.checkAndLinkAgent);
     const localUserId = useChatStore(state => state.localUserId);
     const meetingId = useChatStore(state => state.meetingId);
     const socket = useChatStore(state => state.socket);
@@ -1258,46 +1259,59 @@ function ControlApprovalDialog() {
         }
     }, [me?.agentConnected]);
 
-    const pairAgent = useChatStore(state => state.pairAgent);
-    const [agentIdInput, setAgentIdInput] = useState('');
-    const [isPairing, setIsPairing] = useState(false);
-
-    // Specific listener for instant update from backend (Socket Bridge)
+    // Initial check and listeners when popup opens
     useEffect(() => {
-        if (!socket || !pendingRequest || !localUserId) return;
+        let intervalId: any = null;
 
-        const handleAgentReady = (data: any) => {
-            if (data.participantId === localUserId) {
-                console.log('[AGENT] Received agent_ready via socket in popup');
-                setAgentConnected(true);
-                setIsPairing(false);
-                toast.success("Agent Paired Successfully!");
+        if (pendingRequest && meetingId && localUserId) {
+            console.log('[AGENT] Popup opened, starting discovery...');
+            getAgentStatus(meetingId, localUserId);
+
+            const attemptLink = () => {
+                if (agentConnected) {
+                    if (intervalId) clearInterval(intervalId);
+                    return;
+                }
+
+                checkAndLinkAgent(meetingId, localUserId).then(linked => {
+                    if (linked) {
+                        console.log('[AGENT] Auto-linked local agent via discovery');
+                        setAgentConnected(true);
+                        if (intervalId) clearInterval(intervalId);
+                    }
+                });
+            };
+
+            // Run immediately
+            attemptLink();
+
+            // Then poll every 1.5s if not connected
+            if (!agentConnected) {
+                intervalId = setInterval(attemptLink, 1500);
             }
-        };
 
-        const handleAgentError = (data: any) => {
-            console.error('[AGENT] Error received:', data.message);
-            toast.error(data.message || "Failed to pair agent");
-            setIsPairing(false);
-        };
+            // Specific listener for instant update from backend
+            if (socket) {
+                const handleAgentConnected = (data: any) => {
+                    if (data.participantId === localUserId) {
+                        console.log('[AGENT] Received agent_connected via socket in popup');
+                        setAgentConnected(true);
+                        if (intervalId) clearInterval(intervalId);
+                    }
+                };
+                socket.on('agent_connected', handleAgentConnected);
 
-        socket.on('agent_ready', handleAgentReady);
-        socket.on('agent_error', handleAgentError);
+                return () => {
+                    if (intervalId) clearInterval(intervalId);
+                    socket.off('agent_connected', handleAgentConnected);
+                };
+            }
 
-        return () => {
-            socket.off('agent_ready', handleAgentReady);
-            socket.off('agent_error', handleAgentError);
-        };
-    }, [socket, !!pendingRequest, localUserId]);
-
-    const handlePair = () => {
-        if (!agentIdInput.trim()) {
-            toast.error("Please enter an Agent ID");
-            return;
+            return () => {
+                if (intervalId) clearInterval(intervalId);
+            };
         }
-        setIsPairing(true);
-        pairAgent(agentIdInput.trim());
-    };
+    }, [!!pendingRequest, meetingId, localUserId, socket, agentConnected]);
 
     if (!pendingRequest) return null;
 
@@ -1353,32 +1367,26 @@ function ControlApprovalDialog() {
                         <span className="font-bold text-white">{pendingRequest.hostName}</span> wants to take control of your system.
                     </p>
 
-                    {!agentConnected && (
-                        <div className="space-y-3">
-                            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
-                                <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="text-sm font-semibold text-yellow-500">Pair Your Agent</p>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        Open the <b>Replica Agent</b> app on your computer and enter the <b>Agent ID</b> shown there.
-                                    </p>
-                                </div>
+                    {!agentConnected && !hasAgent && (
+                        <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Please start or install the Remote Control Agent to allow the host to control your screen.
+                                </p>
                             </div>
-                            
-                            <div className="flex gap-2">
-                                <Input 
-                                    placeholder="e.g. AGENT-X123" 
-                                    value={agentIdInput}
-                                    onChange={(e) => setAgentIdInput(e.target.value)}
-                                    className="bg-black/50 border-[#333] text-white"
-                                />
-                                <Button 
-                                    onClick={handlePair}
-                                    disabled={isPairing || agentConnected}
-                                    className="bg-blue-600 hover:bg-blue-700 shrink-0"
-                                >
-                                    {isPairing ? "Pairing..." : "Pair"}
-                                </Button>
+                        </div>
+                    )}
+
+                    {!agentConnected && hasAgent && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+                            <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
+                                </p>
                             </div>
                         </div>
                     )}

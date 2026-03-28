@@ -637,7 +637,6 @@ const analyticsTracker = new Map(); // meetingId -> { startTime, participants: {
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
 const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const userSocketMap = {}; // userId -> socketId
-const agentSocketMap = new Map(); // agentId -> socketId
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -2062,30 +2061,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('agent_register', (data) => {
-        const { agentId } = data;
-        if (agentId) {
-            agentSocketMap.set(agentId, socket.id);
-            console.log(`[AGENT] Registered agent ${agentId} on socket ${socket.id}`);
-        }
-    });
-
-    socket.on('pair_agent', (data) => {
-        const { agentId, participantId, meetingId } = data;
-        console.log(`[AGENT] Pairing request: Agent ${agentId} with Participant ${participantId} in meeting ${meetingId}`);
-        const agentSocketId = agentSocketMap.get(agentId);
-        if (agentSocketId) {
-            io.to(agentSocketId).emit('link_session', { participantId, meetingId });
-            console.log(`[AGENT] Pairing signal sent to agent ${agentId}`);
-        } else {
-            console.warn(`[AGENT] Failed to pair: Agent ${agentId} not found in map`);
-            socket.emit('agent_error', { message: 'Agent with this ID is not online.' });
-        }
-    });
-
     socket.on('agent_ready', (data) => {
         const { participantId, meetingId, agentId } = data;
-        console.log(`[AGENT] agent_ready (Socket Bridge) from participant ${participantId} in meeting ${meetingId} (Agent: ${agentId})`);
+        console.log(`[AGENT] agent_ready received from participant ${participantId} in meeting ${meetingId} (Agent: ${agentId})`);
         if (meetingId) {
             io.to(meetingId).emit('agent_ready', { participantId, agentId });
         }
