@@ -1156,15 +1156,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('force_media_state', { meetingId, participantId, type, state });
   },
 
-  requestControl: (targetParticipantId: string) => {
-    const { socket, localUserId, meetingId } = get();
-    if (!socket || !localUserId || !meetingId) return;
+  requestControl: (participantId: string) => {
+    const { socket, meetingId, localUserId } = get();
+    if (!socket || !meetingId) return;
 
     import('./useParticipantsStore').then((store) => {
       const me = store.useParticipantsStore.getState().participants.find(p => p.id === localUserId);
-      socket.emit('control_request', {
+      console.log(`[RemoteControl] Emitting request_control for participant: ${participantId}`);
+      socket.emit('request_control', {
         meetingId,
-        targetParticipantId,
+        participantId,
         hostId: socket.id,
         hostName: me?.name || 'Host'
       });

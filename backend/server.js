@@ -238,7 +238,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
         let text = await groqService.transcribeAudio(req.file.path, language);
 
         // Remove temp file
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        try { fs.unlinkSync(req.file.path); } catch (e) { }
 
         if (text && text.trim().length > 0) {
 
@@ -307,18 +307,18 @@ app.post('/api/ai/smart-replies', async (req, res) => {
 
     try {
         let finalContext = chatContext || [];
-        
+
         // If we have a meetingId, fetch transcripts to give context to smart replies
         if (meetingId && meetingTranscripts.has(meetingId)) {
             const transcripts = meetingTranscripts.get(meetingId) || [];
             // Take last 10 transcripts for recent speech context
             const recentSpeech = transcripts.slice(-10).map(t => ({ role: t.participantName + ' (Speech)', content: t.text }));
-            
+
             if (Array.isArray(finalContext)) {
-                 finalContext = [...recentSpeech, ...finalContext];
+                finalContext = [...recentSpeech, ...finalContext];
             }
         }
-        
+
         if (!finalContext || (Array.isArray(finalContext) && finalContext.length === 0)) {
             return res.status(400).json({ error: 'Chat context is required' });
         }
@@ -636,6 +636,7 @@ const whiteboardInitiators = new Map(); // meetingId -> userId
 const analyticsTracker = new Map(); // meetingId -> { startTime, participants: { userId: { joinTime, leaveTime, isPresent } } }
 const questionTracker = new Map(); // meetingId -> { participantId: { count, name } }
 const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
+const userSocketMap = {}; // userId -> socketId
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -798,6 +799,8 @@ io.on('connection', (socket) => {
 
         const room = rooms.get(meetingId);
         const userId = user?.id || `guest-${socket.id}`;
+        userSocketMap[userId] = socket.id;
+        console.log(`[RemoteControl] Mapping userId ${userId} to socketId ${socket.id}`);
 
         // Cleanup: remove any existing entries for this user in this room (prevent duplicates on refresh)
         for (const [existingSocketId, existingParticipant] of room.entries()) {
@@ -1048,7 +1051,7 @@ io.on('connection', (socket) => {
         const { meeting_id, rooms } = data;
         // rooms is [{ id, name, participants: [userIds] }]
         breakoutRooms.set(meeting_id, rooms);
-        
+
         rooms.forEach(room => {
             room.participants.forEach(userId => {
                 // We need to find the socket associated with this userId
@@ -1056,7 +1059,7 @@ io.on('connection', (socket) => {
                 // We'll broadcast the assignment and let clients join the sub-rooms
             });
         });
-        
+
         io.to(meeting_id).emit('breakout_rooms_created', { rooms });
     });
 
@@ -1101,7 +1104,7 @@ io.on('connection', (socket) => {
                 'INSERT INTO poll_votes (poll_id, user_id, option_index) VALUES ($1, $2, $3) ON CONFLICT (poll_id, user_id) DO UPDATE SET option_index = $3',
                 [poll_id, user_id, option_index]
             );
-            
+
             // Fetch all votes for this poll
             const votesResult = await db.query('SELECT user_id, option_index FROM poll_votes WHERE poll_id = $1', [poll_id]);
             io.to(meeting_id).emit('poll_voted', { poll_id, votes: votesResult.rows });
@@ -1125,12 +1128,12 @@ io.on('connection', (socket) => {
         try {
             const pollsResult = await db.query('SELECT * FROM polls WHERE meeting_id = $1', [meeting_id]);
             const polls = pollsResult.rows;
-            
+
             for (const poll of polls) {
                 const votesResult = await db.query('SELECT user_id, option_index FROM poll_votes WHERE poll_id = $1', [poll.id]);
                 poll.votes = votesResult.rows;
             }
-            
+
             socket.emit('polls_fetched', polls);
         } catch (err) {
             console.error('Error fetching polls:', err);
@@ -1275,7 +1278,7 @@ io.on('connection', (socket) => {
                 const participantsWithHands = Array.from(room.values())
                     .filter(p => p.isHandRaised)
                     .sort((a, b) => (a.handRaiseTimestamp || 0) - (b.handRaiseTimestamp || 0));
-                
+
                 participantsWithHands.forEach((p, index) => {
                     const newNumber = index + 1;
                     // Update all sockets for this participant
@@ -2015,6 +2018,47 @@ io.on('connection', (socket) => {
                 }
             }
         });
+
+        // --- userSocketMap Cleanup ---
+        for (const uid in userSocketMap) {
+            if (userSocketMap[uid] === socket.id) {
+                console.log(`[RemoteControl] Removing userId ${uid} from socket map`);
+                delete userSocketMap[uid];
+                break;
+            }
+        }
+    });
+
+    socket.on("request_control", (data) => {
+        const { participantId, meetingId, hostId, hostName } = data;
+        console.log(`[RemoteControl] Request from ${hostName || socket.id} to ${participantId} for meeting ${meetingId}`);
+        const targetSocket = userSocketMap[participantId];
+        if (targetSocket) {
+            console.log(`[RemoteControl] Mapped participantId ${participantId} to socketId ${targetSocket}`);
+            io.to(targetSocket).emit("control_request", { 
+                hostId: hostId || socket.id, 
+                hostName: hostName || 'A Participant' 
+            });
+            console.log(`[RemoteControl] Event "control_request" emitted to ${targetSocket}`);
+        } else {
+            console.log(`[RemoteControl] Target socket not found for participantId ${participantId}`);
+            // Fallback: search rooms for the socket if map missed it
+            let found = false;
+            rooms.forEach((participants, mId) => {
+                if (mId === meetingId) {
+                    participants.forEach((p, sId) => {
+                        if (p.id === participantId) {
+                            console.log(`[RemoteControl] Found participantId ${participantId} in room ${mId} with socketId ${sId}`);
+                            io.to(sId).emit("control_request", { hostId: socket.id });
+                            found = true;
+                        }
+                    });
+                }
+            });
+            if (!found) {
+                socket.emit('control_error', { message: 'Participant not found or offline.' });
+            }
+        }
     });
 });
 
@@ -2044,7 +2088,7 @@ app.post('/api/auth/social', async (req, res) => {
         if (result.rows.length === 0) {
             const newId = `user-${provider}-${id || Date.now()}`;
             const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
-            
+
             const insertResult = await db.query(
                 'INSERT INTO users (id, name, email, password_hash, avatar, provider, is_password_set, is_verified) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name, email, avatar, subscription_plan, provider, is_password_set, is_verified',
                 [newId, name, normalizedEmail, passwordHash, avatar, provider, false, true]
@@ -2086,10 +2130,10 @@ app.post('/api/auth/register', async (req, res) => {
 
         // Use a client from the pool for transactions
         const client = await db.pool.connect();
-        
+
         try {
             await client.query('BEGIN');
-            
+
             const userResult = await client.query(
                 'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
                 [id, name, normalizedEmail, passwordHash, false]
@@ -2159,7 +2203,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         const client = await db.pool.connect();
         try {
             await client.query('BEGIN');
-            
+
             // Mark user as verified
             const userUpdate = await client.query(
                 'UPDATE users SET is_verified = TRUE WHERE LOWER(email) = LOWER($1) RETURNING id, name, email, avatar, subscription_plan, is_verified',
@@ -2246,10 +2290,10 @@ app.post('/api/auth/login', async (req, res) => {
         // Check if verified
         if (user.provider === 'local' && user.is_verified === false) {
             console.log(`Login blocked: ${normalizedEmail} is not verified`);
-            return res.status(403).json({ 
-                error: 'email_not_verified', 
+            return res.status(403).json({
+                error: 'email_not_verified',
                 message: 'Please verify your email address to log in.',
-                email: user.email 
+                email: user.email
             });
         }
 
@@ -2257,8 +2301,8 @@ app.post('/api/auth/login', async (req, res) => {
         if (!isMatch) {
             if (user.is_password_set === false) {
                 console.log(`Login failed: Google user ${normalizedEmail} has no app password set`);
-                return res.status(400).json({ 
-                    error: 'oauth_no_password', 
+                return res.status(400).json({
+                    error: 'oauth_no_password',
                     message: `You originally signed in with ${user.provider || 'Google'}. Please set an app password to log in with an email and password.`,
                     provider: user.provider
                 });
@@ -2306,17 +2350,17 @@ app.post('/api/auth/set-password', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
         const user = result.rows[0];
         // For security, in a real app we'd verify a token, but here we fulfill the requirement:
         // "Add a Set Password / Reset Password option for users who originally signed in with Google"
-        
+
         const passwordHash = await bcrypt.hash(password, 10);
         await db.query(
             'UPDATE users SET password_hash = $1, is_password_set = true, updated_at = NOW() WHERE id = $2',
             [passwordHash, user.id]
         );
-        
+
         console.log(`Password set successfully for user: ${normalizedEmail}`);
         res.json({ message: 'Password set successfully. You can now log in with your email and password.' });
     } catch (err) {
@@ -2441,7 +2485,7 @@ app.post('/api/recaps', async (req, res) => {
             (async () => {
                 try {
                     const fullTranscriptLog = transcript.map(m => `${m.speaker}: ${m.text}`).join('\n');
-                    
+
                     const aiRecap = await groqService.generateRecapContent(fullTranscriptLog);
 
                     if (aiRecap && (aiRecap.summary?.length > 0 || aiRecap.actionItems?.length > 0)) {
@@ -2755,7 +2799,7 @@ app.post('/api/ai/summarize', async (req, res) => {
 
     try {
         let combinedContext = `Spoken Transcription:\n${transcript || 'None'}`;
-        
+
         // Also fetch recent chat history if meetingId is provided
         if (meetingId) {
             const chatResult = await db.query('SELECT * FROM messages WHERE meeting_id = $1 ORDER BY timestamp ASC', [meetingId]);
