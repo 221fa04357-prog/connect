@@ -1249,15 +1249,8 @@ function ControlApprovalDialog() {
     const { participants } = useParticipantsStore();
 
     const me = participants.find(p => p.id === localUserId);
-    const [agentConnected, setAgentConnected] = useState(me?.agentConnected || false);
+    const agentConnected = me?.agentConnected || false;
     const hasAgent = me?.hasAgent || false;
-
-    // Sync local state when participant store changes
-    useEffect(() => {
-        if (me?.agentConnected !== undefined) {
-            setAgentConnected(me.agentConnected);
-        }
-    }, [me?.agentConnected]);
 
     // Initial check when popup opens
     useEffect(() => {

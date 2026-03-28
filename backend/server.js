@@ -2102,6 +2102,24 @@ io.on('connection', (socket) => {
             ready: !!ready
         });
     });
+
+    socket.on('get_agent_status', (data) => {
+        const { participantId, meetingId } = data;
+        const agent = agentStatusMap[participantId];
+        console.log(`[AGENT] Status request for ${participantId} in ${meetingId}. Found: ${!!agent?.ready}`);
+        
+        if (agent && agent.ready) {
+            socket.emit("agent_status_update", {
+                participantId,
+                ready: true
+            });
+        } else {
+            socket.emit("agent_status_update", {
+                participantId,
+                ready: false
+            });
+        }
+    });
 });
 
 // Auth Endpoints

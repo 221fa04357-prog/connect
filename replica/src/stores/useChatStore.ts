@@ -181,9 +181,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('agent_status_update', (data: { participantId: string, ready: boolean }) => {
-      console.log('[AGENT] agent_status_update received:', data);
+      console.log(`[AGENT] agent_status_update: participant=${data.participantId}, ready=${data.ready}`);
       import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.ready);
+        const ps = store.useParticipantsStore.getState();
+        ps.updateParticipantAgentStatus(data.participantId, data.ready);
+        
+        // Ensure UI re-renders if it's the local user
+        const localUserId = get().localUserId;
+        if (data.participantId === localUserId) {
+           console.log('[AGENT] Local agent status updated:', data.ready);
+        }
       });
     });
 
