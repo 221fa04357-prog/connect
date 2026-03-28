@@ -252,10 +252,10 @@ export function VideoTile({
                 {/* Hand Raised Indicator - top right, next to pin */}
                 <AnimatePresence>
                     {participant.isHandRaised && (
-                        <motion.div 
+                        <motion.div
                             initial={{ scale: 0, opacity: 0 }}
-                            animate={{ 
-                                scale: 1, 
+                            animate={{
+                                scale: 1,
                                 opacity: 1,
                                 transition: { type: 'spring', stiffness: 300, damping: 20 }
                             }}
@@ -263,12 +263,12 @@ export function VideoTile({
                             className="absolute top-2 right-2 mr-10 p-1.5 bg-yellow-500 rounded-md z-10 flex items-center justify-center shadow gap-1.5"
                         >
                             <motion.div
-                                animate={{ 
+                                animate={{
                                     scale: [1, 1.2, 1],
                                     rotate: [0, 10, -10, 0]
                                 }}
-                                transition={{ 
-                                    duration: 2, 
+                                transition={{
+                                    duration: 2,
                                     repeat: Infinity,
                                     repeatType: 'loop'
                                 }}
@@ -396,11 +396,11 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                 const el = document.elementFromPoint(x, y) as HTMLElement;
                 if (el) {
                     const buttons = button === 0 ? 1 : (button === 2 ? 2 : (button === 1 ? 4 : 0));
-                    const opt = { 
-                        bubbles: true, 
-                        cancelable: true, 
-                        view: window, 
-                        clientX: x, 
+                    const opt = {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: x,
                         clientY: y,
                         button: button,
                         buttons: buttons,
@@ -433,13 +433,13 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                 dispatchMouseEvent('contextmenu', 2);
             } else if (event.type === 'remote_key_down' || event.type === 'remote_key_press') {
                 const el = document.activeElement as HTMLElement;
-                
+
                 // Dispatch KeyboardEvent first
-                const keyOpt = { 
-                    key: event.key, 
-                    code: event.code, 
-                    bubbles: true, 
-                    cancelable: true, 
+                const keyOpt = {
+                    key: event.key,
+                    code: event.code,
+                    bubbles: true,
+                    cancelable: true,
                     keyCode: event.keyCode,
                     which: event.keyCode
                 };
@@ -452,7 +452,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                         const start = inputEl.selectionStart || 0;
                         const end = inputEl.selectionEnd || 0;
                         const val = inputEl.value;
-                        
+
                         if (event.key === 'Backspace') {
                             inputEl.value = val.slice(0, Math.max(0, start - (start === end ? 1 : 0))) + val.slice(end);
                             inputEl.selectionStart = inputEl.selectionEnd = Math.max(0, start - 1);
@@ -470,7 +470,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                             inputEl.value = val.slice(0, start) + event.key + val.slice(end);
                             inputEl.selectionStart = inputEl.selectionEnd = start + 1;
                         }
-                        
+
                         inputEl.dispatchEvent(new Event('input', { bubbles: true }));
                         inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                     }
@@ -512,12 +512,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_mouse_down', 
-                x, y, 
-                button: e.button 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_mouse_down',
+                x, y,
+                button: e.button
             });
         }
     };
@@ -532,12 +532,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_mouse_up', 
-                x, y, 
-                button: e.button 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_mouse_up',
+                x, y,
+                button: e.button
             });
         }
     };
@@ -552,12 +552,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_mouse_click', 
-                x, y, 
-                button: e.button 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_mouse_click',
+                x, y,
+                button: e.button
             });
         }
     };
@@ -572,12 +572,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_mouse_double_click', 
-                x, y, 
-                button: e.button 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_mouse_double_click',
+                x, y,
+                button: e.button
             });
         }
     };
@@ -593,11 +593,11 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_mouse_context_menu', 
-                x, y 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_mouse_context_menu',
+                x, y
             });
         }
     };
@@ -607,10 +607,10 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_key_down', 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_key_down',
                 key: e.key,
                 code: e.code,
                 keyCode: e.keyCode,
@@ -627,11 +627,11 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_key_up', 
-                key: e.key 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_key_up',
+                key: e.key
             });
         }
     };
@@ -641,17 +641,17 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent({ 
-                meetingId: meeting.id, 
-                participantId: participant.id, 
-                type: 'remote_scroll', 
-                deltaY: e.deltaY 
+            sendControlEvent({
+                meetingId: meeting.id,
+                participantId: participant.id,
+                type: 'remote_scroll',
+                deltaY: e.deltaY
             });
         }
     };
 
     return (
-        <div 
+        <div
             ref={containerRef}
             className="relative w-full h-full bg-black rounded-xl overflow-hidden group outline-none"
             onMouseMove={handleMouseMove}
@@ -749,7 +749,7 @@ export function VideoGrid() {
     if (isBreakoutActive && currentRoomId) {
         const currentRoom = rooms.find(r => r.id === currentRoomId);
         if (currentRoom) {
-            visibleParticipants = visibleParticipants.filter(p => 
+            visibleParticipants = visibleParticipants.filter(p =>
                 currentRoom.participants.includes(p.id) || p.role === 'host'
             );
         }

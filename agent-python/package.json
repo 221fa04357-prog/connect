@@ -1,0 +1,12 @@
+{
+  "name": "connect-agent-python",
+  "version": "1.0.0",
+  "description": "Python System Control Agent",
+  "main": "agent.py",
+  "scripts": {
+    "start": "python agent.py"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
