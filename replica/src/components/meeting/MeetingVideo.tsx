@@ -374,7 +374,7 @@ interface ScreenShareViewProps {
 export function ScreenShareView({ participant, stream, isLocal }: ScreenShareViewProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const { remoteControlState, remoteCursor, setRemoteCursor, meeting } = useMeetingStore();
+    const { remoteControlState, meeting } = useMeetingStore();
     const { sendControlEvent, stopControl } = useChatStore();
 
     useEffect(() => {
@@ -420,13 +420,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
             };
 
             if (event.type === 'remote_mouse_move') {
-                setRemoteCursor({ x: event.x, y: event.y });
+                // cursor position not stored
             } else if (event.type === 'remote_mouse_down') {
                 dispatchMouseEvent('mousedown', event.button);
             } else if (event.type === 'remote_mouse_up') {
                 dispatchMouseEvent('mouseup', event.button);
             } else if (event.type === 'remote_mouse_click') {
-                setRemoteCursor({ x: event.x, y: event.y });
                 dispatchMouseEvent('click', event.button);
             } else if (event.type === 'remote_mouse_double_click') {
                 dispatchMouseEvent('dblclick', event.button);
@@ -486,7 +485,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
 
         window.addEventListener('remote_control_event', handleRemoteEvent);
         return () => window.removeEventListener('remote_control_event', handleRemoteEvent);
-    }, [remoteControlState.status, remoteControlState.role, setRemoteCursor]);
+    }, [remoteControlState.status, remoteControlState.role]);
 
     // Capture events (for the controller)
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -499,7 +498,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { type: 'remote_mouse_move', x, y });
+            sendControlEvent({ meetingId: meeting.id, participantId: participant.id, type: 'remote_mouse_move', x, y });
         }
     };
 
@@ -513,7 +512,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_mouse_down', 
                 x, y, 
                 button: e.button 
@@ -531,7 +532,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_mouse_up', 
                 x, y, 
                 button: e.button 
@@ -549,7 +552,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_mouse_click', 
                 x, y, 
                 button: e.button 
@@ -567,7 +572,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_mouse_double_click', 
                 x, y, 
                 button: e.button 
@@ -586,7 +593,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         const y = (e.clientY - rect.top) / rect.height;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_mouse_context_menu', 
                 x, y 
             });
@@ -598,7 +607,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_key_down', 
                 key: e.key,
                 code: e.code,
@@ -616,7 +627,9 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { 
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
                 type: 'remote_key_up', 
                 key: e.key 
             });
@@ -628,7 +641,12 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
         if (remoteControlState.targetId !== participant.id) return;
 
         if (meeting?.id) {
-            sendControlEvent(meeting.id, participant.id, { type: 'remote_scroll', deltaY: e.deltaY });
+            sendControlEvent({ 
+                meetingId: meeting.id, 
+                participantId: participant.id, 
+                type: 'remote_scroll', 
+                deltaY: e.deltaY 
+            });
         }
     };
 
@@ -656,22 +674,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                 className="w-full h-full object-contain pointer-events-none"
             />
 
-            {/* Remote Cursor (visible for the controlled user) */}
-            {remoteControlState.status === 'active' && remoteControlState.role === 'controlled' && remoteCursor && (
-                <div 
-                    className="absolute pointer-events-none z-50 transition-all duration-75"
-                    style={{ 
-                        left: `${remoteCursor.x * 100}%`, 
-                        top: `${remoteCursor.y * 100}%`,
-                        transform: 'translate(-50%, -50%)'
-                    }}
-                >
-                    <MousePointer2 className="w-6 h-6 text-blue-500 fill-blue-500/20" />
-                    <div className="bg-blue-500 text-white text-[10px] px-1 rounded absolute left-4 top-4 whitespace-nowrap">
-                        {remoteControlState.targetName}
-                    </div>
-                </div>
-            )}
+            {/* Remote Cursor display removed - cursor position not stored */}
 
             {/* Controller Instructions Overlay */}
             {remoteControlState.status === 'active' && remoteControlState.role === 'controller' && remoteControlState.targetId === participant.id && (
