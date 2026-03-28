@@ -182,6 +182,13 @@ function startLocalServer() {
                             participantId: global.participantId
                         });
 
+                        // NEW: Emit agent_ready for instant UI update
+                        socket.emit('agent_ready', {
+                            agentId: AGENT_ID,
+                            participantId: global.participantId,
+                            meetingId: global.meetingId
+                        });
+
                         if (mainWindow) {
                             mainWindow.webContents.send('status-update', {
                                 status: 'Linked & Connected',
@@ -233,6 +240,16 @@ app.whenReady().then(() => {
             meetingId: global.meetingId,
             participantId: global.participantId
         });
+
+        // NEW: If already linked, signal readiness immediately on reconnect
+        if (global.meetingId && global.participantId) {
+            socket.emit('agent_ready', {
+                agentId: AGENT_ID,
+                participantId: global.participantId,
+                meetingId: global.meetingId
+            });
+        }
+
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
         }
