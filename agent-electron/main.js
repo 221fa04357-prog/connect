@@ -173,20 +173,13 @@ function startLocalServer() {
 
                     console.log('Linked to session:', data);
 
-                    // Re-register with the new session info
+                    // NEW: Socket-based status detection (Robust fix)
                     if (socket && socket.connected) {
-                        socket.emit('agent_register', {
-                            agentId: AGENT_ID,
-                            name: 'Electron Agent',
-                            meetingId: global.meetingId,
-                            participantId: global.participantId
-                        });
-
-                        // NEW: Emit agent_ready for instant UI update
-                        socket.emit('agent_ready', {
-                            agentId: AGENT_ID,
+                        console.log("agent_status sent", global.participantId);
+                        socket.emit("agent_status", {
                             participantId: global.participantId,
-                            meetingId: global.meetingId
+                            meetingId: global.meetingId,
+                            ready: true
                         });
 
                         if (mainWindow) {
@@ -233,51 +226,20 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('[AGENT] Connected to signaling server');
-        socket.emit('agent_register', {
-            agentId: AGENT_ID,
-            name: 'Electron Agent',
-            meetingId: global.meetingId,
-            participantId: global.participantId
-        });
-
-        // NEW: If already linked, signal readiness immediately on reconnect
-        if (global.meetingId && global.participantId) {
-            socket.emit('agent_ready', {
-                agentId: AGENT_ID,
+        console.log('Connected to signaling server');
+        
+        // NEW: Socket-based status detection (Robust fix)
+        if (global.participantId && global.meetingId) {
+            console.log("agent_status sent", global.participantId);
+            socket.emit("agent_status", {
                 participantId: global.participantId,
-                meetingId: global.meetingId
+                meetingId: global.meetingId,
+                ready: true
             });
         }
 
         if (mainWindow) {
-            mainWindow.webContents.send('status-update', { 
-                status: 'Connected', 
-                agentId: AGENT_ID,
-                serverUrl: SERVER_URL 
-            });
-        }
-    });
-
-    // NEW: Listen for pairing/link signals from the backend (Socket Bridge)
-    socket.on('link_session', (data) => {
-        const { meetingId, participantId } = data;
-        console.log('[AGENT] Received link_session via socket:', data);
-        global.meetingId = meetingId;
-        global.participantId = participantId;
-
-        socket.emit('agent_ready', {
-            agentId: AGENT_ID,
-            participantId: global.participantId,
-            meetingId: global.meetingId
-        });
-
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Linked & Ready',
-                agentId: AGENT_ID,
-                meetingId: global.meetingId
-            });
+            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
         }
     });
 

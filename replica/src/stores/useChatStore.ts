@@ -79,7 +79,7 @@ interface ChatState {
   connectToAgent: (agentId: string, targetParticipantId?: string) => void;
   sendControlEvent: (event: any) => void;
   install_agent_trigger: (meetingId: string, targetId: string) => void;
-  pairAgent: (agentId: string) => void;
+  checkAndLinkAgent: (meetingId: string, participantId: string) => Promise<boolean>;
   getAgentStatus: (meetingId: string, participantId: string) => void;
 
   setFrequentQuestionUsers: (users: any[]) => void;
@@ -180,30 +180,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('agent_status_update', (data: { participantId: string, status: 'connected' | 'disconnected', agentId?: string }) => {
+    socket.on('agent_status_update', (data: { participantId: string, ready: boolean }) => {
+      console.log('[AGENT] agent_status_update received:', data);
       import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.status === 'connected');
-      });
-    });
-
-    socket.on('agent_connected', (data: { participantId: string, status: 'connected' | 'disconnected', agentId?: string }) => {
-      console.log('[AGENT] agent_connected received:', data);
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.status === 'connected');
-      });
-    });
-
-    socket.on('agent_ready', (data: { participantId: string, agentId: string }) => {
-      console.log('[AGENT] agent_ready received:', data);
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, true);
-      });
-    });
-
-    socket.on('agent_status', (data: { participantId: string, connected: boolean, agentId: string }) => {
-      console.log('[AGENT] agent_status received:', data);
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.connected);
+        store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId, data.ready);
       });
     });
 
@@ -1212,14 +1192,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!socket || !meetingId || !localUserId || !pendingControlRequest) return;
     
     if (accepted) {
-      const { nativeAgentStatus } = get();
-      const agentId = nativeAgentStatus.agentId || 'unknown';
-
       socket.emit('accept_control', {
         meetingId,
         participantId: localUserId,
         hostId: pendingControlRequest.hostId,
-        agentId: agentId
+        agentId: 'socket-agent'
       });
       set({ isControlling: true });
     } else {
@@ -1238,16 +1215,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  pairAgent: (agentId: string) => {
-    const { socket, meetingId, localUserId } = get();
-    if (!socket || !meetingId || !localUserId) return;
-
-    console.log('[AGENT] Emitting pair_agent via socket:', { agentId, meetingId, participantId: localUserId });
-    socket.emit('pair_agent', { 
-      agentId, 
-      meetingId, 
-      participantId: localUserId 
-    });
+  checkAndLinkAgent: async (meetingId, participantId) => {
+    // No-op: Linking is now handled automatically by the agent's socket connection
+    return true;
   },
 
 

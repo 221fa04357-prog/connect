@@ -58,7 +58,7 @@ export default function MeetingRoom() {
     remoteControlState
   } = useMeetingStore();
 
-  const { initSocket, emitParticipantUpdate, emitReaction, nativeAgentStatus } = useChatStore();
+  const { initSocket, emitParticipantUpdate, emitReaction, nativeAgentStatus, checkAndLinkAgent } = useChatStore();
   const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, removeRemoteScreenStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   /* ---------------- SIGNALING STATE ---------------- */
@@ -270,6 +270,9 @@ export default function MeetingRoom() {
 
       if (hasHydrated) {
         initSocket(meeting.id, identity, initialState);
+        
+        // AUTO-DETECT LOCAL AGENT on join
+        checkAndLinkAgent(meeting.id, identity.id);
       }
 
       const socket = useChatStore.getState().socket;
