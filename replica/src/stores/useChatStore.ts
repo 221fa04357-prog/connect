@@ -116,7 +116,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = io(API, {
       path: '/socket.io',
       transports: ["websocket"],
-      secure: true
+      secure: true,
+      extraHeaders: {
+        "ngrok-skip-browser-warning": "true"
+      }
     });
 
     // Option 2: Make socket global 
@@ -847,35 +850,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('agent_status_update', (data: { agentId: string, participantId?: string, status: 'connected' | 'disconnected' | 'not_found' }) => {
-      console.log('[Frontend] Agent status update received:', data);
-
-      // Update Host's local agent status tracking
-      const currentStatus = get().nativeAgentStatus;
-      if (currentStatus.agentId === data.agentId) {
-        set({
-          nativeAgentStatus: {
-            ...currentStatus,
-            status: data.status === 'connected' ? 'connected' : 'idle'
-          }
-        });
-      }
-
-      // Update Participant's status in the participants store
-      if (data.participantId) {
-        import('./useParticipantsStore').then((store) => {
-          store.useParticipantsStore.getState().updateParticipantAgentStatus(data.participantId!, data.status === 'connected');
-        });
-      }
-      
-      if (data.status === 'not_found') {
-        import('sonner').then(({ toast }) => toast.error('Agent ID not found or offline.'));
-        set({ nativeAgentStatus: { status: 'idle' } });
-      }
-    });
-
+    // Removed conflicting 'agent_status_update' listener
+    // This listener was overwriting the correct 'ready' state with 'false'
+    // because data.status was undefined in the new flow.
+    
     socket.on('control_connected', (data: { agentId: string, agentSocketId: string }) => {
-      import('sonner').then(({ toast }) => toast.success('Connected to remote agent successfully!'));
       const targetId = get().nativeAgentStatus.targetParticipantId;
       set({ 
         nativeAgentStatus: { 
@@ -1222,15 +1201,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  checkAndLinkAgent: async (meetingId: string, participantId: string) => {
-    console.log('[AGENT-PROTOCOL] Triggering deep link for:', participantId);
+  checkAndLinkAgent: async (meetingId, participantId) => {
     try {
-      // Pure socket-based identity link via custom protocol
-      // NO localhost, NO HTTP, NO polling
-      window.location.assign(`replica-agent://link/${meetingId}/${participantId}`);
-      return true;
-    } catch (err) {
-      console.error('[AGENT-PROTOCOL] Protocol link failed:', err);
+      const serverUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const response = await fetch('http://127.0.0.1:5701/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meetingId, participantId, serverUrl })
+      });
+      return response.ok;
+    } catch (error) {
+      console.log('[AGENT] Failed to link local agent:', error);
       return false;
     }
   },

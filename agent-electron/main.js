@@ -7,7 +7,7 @@ const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-const SERVER_URL = 'https://3b65-117-192-9-245.ngrok-free.app';
+let SERVER_URL = 'https://5154-117-192-9-245.ngrok-free.app';
 let socket;
 let mainWindow;
 let captureInterval;
@@ -170,11 +170,43 @@ function startLocalServer() {
                     const data = JSON.parse(body);
                     global.meetingId = data.meetingId;
                     global.participantId = data.participantId;
-
-                    console.log('Linked to session:', data);
-
-                    // NEW: Socket-based status detection (Robust fix)
-                    if (socket && socket.connected) {
+                    
+                    if (data.serverUrl && data.serverUrl !== SERVER_URL) {
+                        console.log('Updating SERVER_URL to:', data.serverUrl);
+                        SERVER_URL = data.serverUrl;
+                        if (socket) {
+                            socket.disconnect();
+                        }
+                        
+                        // Re-initialize socket with the new URL
+                        socket = io(SERVER_URL, {
+                            transports: ["websocket"],
+                            secure: true,
+                            rejectUnauthorized: false
+                        });
+                        
+                        socket.on('connect', () => {
+                            console.log('Re-connected to signaling server at', SERVER_URL);
+                            if (global.participantId && global.meetingId) {
+                                console.log("agent_status sent", global.participantId);
+                                socket.emit("agent_status", {
+                                    participantId: global.participantId,
+                                    meetingId: global.meetingId,
+                                    ready: true
+                                });
+                            }
+                            if (mainWindow) {
+                                mainWindow.webContents.send('status-update', { 
+                                    status: 'Linked & Connected', 
+                                    agentId: AGENT_ID,
+                                    meetingId: global.meetingId
+                                });
+                            }
+                        });
+                        
+                        // Re-attach other listeners
+                        setupSocketListeners(socket);
+                    } else if (socket && socket.connected) {
                         console.log("agent_status sent", global.participantId);
                         socket.emit("agent_status", {
                             participantId: global.participantId,
@@ -211,68 +243,10 @@ function startLocalServer() {
         }
     });
 
-    server.listen(LOCAL_PORT, '127.0.0.1', () => {
-        console.log(`Local agent server running on http://127.0.0.1:${LOCAL_PORT}`);
+    server.listen(LOCAL_PORT, () => {
+        console.log(`Local agent server running on port ${LOCAL_PORT}`);
     });
 }
-
-// Protocol Registration
-const PROTOCOL = 'replica-agent';
-if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-    }
-} else {
-    app.setAsDefaultProtocolClient(PROTOCOL);
-}
-
-function handleProtocolUrl(url) {
-    console.log('[AGENT-RECV] Received protocol URL:', url);
-    try {
-        // Expected format: replica-agent://link/MEETING_ID/PARTICIPANT_ID
-        const parsedUrl = new URL(url);
-        if (parsedUrl.host === 'link') {
-            const parts = parsedUrl.pathname.split('/').filter(Boolean);
-            if (parts.length >= 2) {
-                global.meetingId = parts[0];
-                global.participantId = parts[1];
-                console.log(`[AGENT-ID] Identity parsed: Meet=${global.meetingId}, Part=${global.participantId}`);
-                
-                if (socket && socket.connected) {
-                    emitStatus(true);
-                }
-            }
-        }
-    } catch (err) {
-        console.error('[AGENT-ERR] Failed to parse protocol URL:', err);
-    }
-}
-
-function emitStatus(ready) {
-    if (global.participantId && global.meetingId) {
-        console.log(`[AGENT-EMIT] agent_status: partId=${global.participantId}, ready=${ready}`);
-        socket.emit("agent_status", {
-            participantId: global.participantId,
-            meetingId: global.meetingId,
-            ready: !!ready
-        });
-    }
-}
-
-app.on('second-instance', (event, commandLine) => {
-    if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-    }
-    // Protocol handler for Windows
-    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
-    if (url) handleProtocolUrl(url);
-});
-
-app.on('open-url', (event, url) => {
-    event.preventDefault();
-    handleProtocolUrl(url);
-});
 
 app.whenReady().then(() => {
     createWindow();
@@ -284,36 +258,24 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('[AGENT-SOCKET] Connected to signaling server');
-        emitStatus(true); // Attempt to register if identity is already known
+        console.log('Connected to signaling server');
+
+        // NEW: Socket-based status detection (Robust fix)
+        if (global.participantId && global.meetingId) {
+            console.log("agent_status sent", global.participantId);
+            socket.emit("agent_status", {
+                participantId: global.participantId,
+                meetingId: global.meetingId,
+                ready: true
+            });
+        }
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
         }
     });
 
-    socket.on('control_started', (data) => {
-        console.log('[AGENT] Control session started by host:', data.hostId);
-        global.currentRequestId = data.hostId;
-        startStreaming(data.hostId);
-
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Controlled by ' + data.hostName,
-                agentId: AGENT_ID
-            });
-        }
-    });
-
-    socket.on('host_input_event', (event) => {
-        handleInputEvent(event);
-    });
-
-    socket.on('stop_control', () => {
-        stopStreaming();
-    });
-
-
+    setupSocketListeners(socket);
 
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);
