@@ -1446,7 +1446,8 @@ function ControlBar() {
         emitWhiteboardRedo,
         requestRecordingPermission,
         grantRecordingPermission,
-        denyRecordingPermission
+        denyRecordingPermission,
+        emitReaction
     } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
@@ -1857,13 +1858,20 @@ function ControlBar() {
 
     // Handlers
     const handleReaction = (emoji: string) => {
+        const reactionId = `reaction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const reaction: Reaction = {
-            id: `reaction-${Date.now()}`,
-            participantId: user?.id || 'unknown',
+            id: reactionId,
+            participantId: user?.id || localUserId || 'anonymous',
             emoji,
             timestamp: new Date()
         };
-        addReaction(reaction);
+        
+        // Emit to server - the server will broadcast back to everyone including us
+        // useMeetingStore will then pick it up in receive_reaction listener
+        if (meeting?.id) {
+            emitReaction(meeting.id, reaction);
+        }
+        
         toggleReactions();
     };
 
