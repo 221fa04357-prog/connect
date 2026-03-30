@@ -35,7 +35,7 @@ import {
     Hand, MoreVertical, Crown, Shield, Sparkles, Copy, ThumbsUp,
     ThumbsDown, Bot, ListTodo, FileText, MessageSquare, Check,
     Plus, AlertCircle, Download, Lock as LockIcon, ChevronDown,
-    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor, RefreshCw
+    Pin, Reply, Trash2, Circle, Paperclip, Edit2, Ban, Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -1247,13 +1247,31 @@ function ControlApprovalDialog() {
 
     // Initial check when popup opens
     useEffect(() => {
-        if (pendingRequest && meetingId && localUserId) {
-            console.log('[AGENT] Popup opened, checking for existing agent...');
-            getAgentStatus(meetingId, localUserId);
-            
-            // Note: Instant socket updates (agent_status_update) 
-            // will automatically update me.agentConnected in the store.
-        }
+        if (!pendingRequest || !meetingId || !localUserId) return;
+
+        console.log('[AGENT] Popup opened, checking for existing agent (and polling)...');
+        
+        const tryLink = async () => {
+            const success = await checkAndLinkAgent(meetingId, localUserId);
+            if (success) {
+                getAgentStatus(meetingId, localUserId);
+            }
+        };
+        
+        // Initial try
+        tryLink();
+        
+        // Poll every 3 seconds as long as we are not connected
+        const intervalId = setInterval(() => {
+            const me = useParticipantsStore.getState().participants.find(p => p.id === localUserId);
+            if (!me?.agentConnected) {
+                tryLink();
+            }
+        }, 3000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
     }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
@@ -1263,8 +1281,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/file/d/19Kzs77X22N43LHtcKfbuFuRFGDnKxsXK/view?usp=sharing",
-            "_blank"
+            "https://drive.google.com/uc?export=download&id=1uMZuCf2NjYrPPfGfl9dJ0LjDniudBPS7"
         );
 
         if (meetingId && localUserId) {
@@ -1310,39 +1327,27 @@ function ControlApprovalDialog() {
                         <span className="font-bold text-white">{pendingRequest.hostName}</span> wants to take control of your system.
                     </p>
 
-                    {!agentConnected && (
-                        <div className="flex flex-col gap-2">
-                            {!hasAgent ? (
-                                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
-                                    <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            Please start or install the Remote Control Agent to allow the host to control your screen.
-                                        </p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
-                                    <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="w-full border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-                                onClick={() => meetingId && localUserId && checkAndLinkAgent(meetingId, localUserId)}
-                            >
-                                <RefreshCw className="w-4 h-4 mr-2" />
-                                Link & Start Agent
-                            </Button>
+                    {!agentConnected && !hasAgent && (
+                        <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-yellow-500">Agent Not Running/Installed</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Please start or install the Remote Control Agent to allow the host to control your screen.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!agentConnected && hasAgent && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+                            <Bot className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-blue-500">Agent Not Connected</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    The agent is installed but not connected. Please open the "Replica Agent" app on your computer.
+                                </p>
+                            </div>
                         </div>
                     )}
 

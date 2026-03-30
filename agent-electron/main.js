@@ -170,11 +170,43 @@ function startLocalServer() {
                     const data = JSON.parse(body);
                     global.meetingId = data.meetingId;
                     global.participantId = data.participantId;
-
-                    console.log('Linked to session:', data);
-
-                    // NEW: Socket-based status detection (Robust fix)
-                    if (socket && socket.connected) {
+                    
+                    if (data.serverUrl && data.serverUrl !== SERVER_URL) {
+                        console.log('Updating SERVER_URL to:', data.serverUrl);
+                        SERVER_URL = data.serverUrl;
+                        if (socket) {
+                            socket.disconnect();
+                        }
+                        
+                        // Re-initialize socket with the new URL
+                        socket = io(SERVER_URL, {
+                            transports: ["websocket"],
+                            secure: true,
+                            rejectUnauthorized: false
+                        });
+                        
+                        socket.on('connect', () => {
+                            console.log('Re-connected to signaling server at', SERVER_URL);
+                            if (global.participantId && global.meetingId) {
+                                console.log("agent_status sent", global.participantId);
+                                socket.emit("agent_status", {
+                                    participantId: global.participantId,
+                                    meetingId: global.meetingId,
+                                    ready: true
+                                });
+                            }
+                            if (mainWindow) {
+                                mainWindow.webContents.send('status-update', { 
+                                    status: 'Linked & Connected', 
+                                    agentId: AGENT_ID,
+                                    meetingId: global.meetingId
+                                });
+                            }
+                        });
+                        
+                        // Re-attach other listeners
+                        setupSocketListeners(socket);
+                    } else if (socket && socket.connected) {
                         console.log("agent_status sent", global.participantId);
                         socket.emit("agent_status", {
                             participantId: global.participantId,
@@ -211,8 +243,8 @@ function startLocalServer() {
         }
     });
 
-    server.listen(LOCAL_PORT, '127.0.0.1', () => {
-        console.log(`Local agent server running on http://127.0.0.1:${LOCAL_PORT}`);
+    server.listen(LOCAL_PORT, () => {
+        console.log(`Local agent server running on port ${LOCAL_PORT}`);
     });
 }
 
@@ -284,15 +316,29 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('[AGENT] Connected to signaling server');
+    console.log('[AGENT] Connected to signaling server');
 
-        // ✅ Register agent (optional but useful)
-        socket.emit('agent_register', {
-            agentId: AGENT_ID,
-            name: 'Electron Agent',
+    // ✅ Register agent (optional but useful)
+    socket.emit('agent_register', {
+        agentId: AGENT_ID,
+        name: 'Electron Agent',
+        meetingId: global.meetingId,
+        participantId: global.participantId
+    });
+
+    // ✅ Send status ONLY if identity exists
+    if (global.participantId && global.meetingId) {
+        console.log('[AGENT] Sending agent_status:', global.participantId);
+
+        socket.emit("agent_status", {
+            agentId: AGENT_ID, 
+            participantId: global.participantId,
             meetingId: global.meetingId,
-            participantId: global.participantId
+            ready: true
         });
+    } else {
+        console.log('[AGENT] Waiting for identity (deep link)...');
+    }
 
         // ✅ Send status ONLY if identity exists
         if (global.participantId && global.meetingId) {
@@ -314,6 +360,29 @@ app.whenReady().then(() => {
             });
         }
     });
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
+
+ // ✅ CONTROL START
+socket.on('control_started', (data) => {
+    console.log('[AGENT] Control session started by host:', data.hostId);
+
+    global.currentRequestId = data.hostId;
+
+    startStreaming(data.hostId);
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Controlled by ' + data.hostName,
+            agentId: AGENT_ID
+        });
+    }
+});
 
     // ✅ CONTROL START
     socket.on('control_started', (data) => {
@@ -345,6 +414,27 @@ app.whenReady().then(() => {
         }
     });
 
+// ✅ HOST INPUT (mouse/keyboard)
+socket.on('host_input_event', (event) => {
+    handleInputEvent(event);
+});
+
+
+// ✅ CONTROL STOP
+socket.on('control_stopped', () => {
+    console.log('[AGENT] Control stopped');
+
+    global.currentRequestId = null;
+
+    stopStreaming();
+
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', {
+            status: 'Connected',
+            agentId: AGENT_ID
+        });
+    }
+});
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);
         if (mainWindow) {

@@ -191,10 +191,10 @@ const server = http.createServer(app);
 // CORS Configuration
 const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "*";
 const corsOptions = {
-    origin: [allowedOrigin, "http://localhost:5173", "https://your-vercel-app.vercel.app"],
+    origin: [allowedOrigin, "http://localhost:5173", "https://your-vercel-app.vercel.app", "*"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"]
 };
 app.use(cors(corsOptions));
 
@@ -2061,7 +2061,7 @@ io.on('connection', (socket) => {
                     participants.forEach((p, sId) => {
                         if (p.id === participantId) {
                             console.log(`[RemoteControl] Found participantId ${participantId} in room ${mId} with socketId ${sId}`);
-                            io.to(sId).emit("control_request", { hostId: socket.id });
+                            io.to(sId).emit("control_request", { hostId: socket.id, hostName: hostName || 'A Participant' });
                             found = true;
                         }
                     });
@@ -2073,38 +2073,89 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('agent_status', (data) => {
-        const { participantId, meetingId, ready } = data;
-        console.log(`[BACKEND-RECV] agent_status received: partId=${participantId}, meetId=${meetingId}, ready=${ready}`);
-        
-        if (!participantId || !meetingId) {
-           console.log(`[BACKEND-WARN] agent_status missing IDs for socket ${socket.id}`);
-           return;
+    const getSocketIdFallback = (meetingId, userId) => {
+        let sid = userSocketMap[userId];
+        if (!sid) {
+            rooms.forEach((participants, mId) => {
+                if (mId === meetingId) {
+                    participants.forEach((p, sId) => {
+                        if (p.id === userId) sid = sId;
+                    });
+                }
+            });
+        }
+        return sid;
+    };
+
+    socket.on('accept_control', (data) => {
+        const { meetingId, participantId, hostId } = data;
+        console.log(`[RemoteControl] Participant ${participantId} accepted control request from ${hostId}`);
+
+        const agent = agentStatusMap[participantId];
+        const hostSocketId = getSocketIdFallback(meetingId, hostId);
+
+        if (!agent || !agent.ready) {
+            console.log(`[RemoteControl] Agent not found or not ready for ${participantId}`);
+            if (hostSocketId) {
+                io.to(hostSocketId).emit('control_response', { accepted: false, reason: 'agent_not_ready' });
+            }
+            return;
         }
 
+        const agentSocketId = agent.socketId;
+        console.log(`[RemoteControl] Linking Host ${hostId} to Agent ${agentSocketId}`);
+
+        io.to(agentSocketId).emit('control_started', { hostId, hostName: 'Host' });
+
+        if (hostSocketId) {
+            io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
+            io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
+        } else {
+            console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
+        }
+    });
+
+    socket.on('control_rejected', (data) => {
+        const { meetingId, hostId } = data;
+        console.log(`[RemoteControl] Control rejected by participant for host ${hostId}`);
+        const hostSocketId = getSocketIdFallback(meetingId, hostId);
+        if (hostSocketId) {
+            io.to(hostSocketId).emit('control_response', { accepted: false, reason: 'rejected' });
+        }
+    });
+
+    socket.on('agent_status', (data) => {
+        const { participantId, meetingId, ready } = data;
+        console.log(`[AGENT] agent registered: ${participantId} in ${meetingId} (ready: ${ready})`);
+        
         agentStatusMap[participantId] = {
             socketId: socket.id,
             meetingId,
             ready: !!ready
         };
-        console.log(`[BACKEND-MAP] Updated agentStatusMap for ${participantId}: ready=${ready}`);
 
         io.to(meetingId).emit("agent_status_update", {
             participantId,
             ready: !!ready
         });
-        console.log(`[BACKEND-EMIT] Broadscasted agent_status_update to room ${meetingId}`);
     });
 
     socket.on('get_agent_status', (data) => {
         const { participantId, meetingId } = data;
         const agent = agentStatusMap[participantId];
-        console.log(`[BACKEND-REQ] Status request for ${participantId} in ${meetingId}. Found in map: ${!!agent?.ready}`);
+        console.log(`[AGENT] Status request for ${participantId} in ${meetingId}. Found: ${!!agent?.ready}`);
         
-        socket.emit("agent_status_update", {
-            participantId,
-            ready: !!agent?.ready
-        });
+        if (agent && agent.ready) {
+            socket.emit("agent_status_update", {
+                participantId,
+                ready: true
+            });
+        } else {
+            socket.emit("agent_status_update", {
+                participantId,
+                ready: false
+            });
+        }
     });
 });
 
