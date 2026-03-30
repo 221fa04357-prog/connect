@@ -9,7 +9,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { Clock } from 'lucide-react';
+
 
 export function PollPanel() {
     const { 
@@ -33,37 +33,7 @@ export function PollPanel() {
                            currentParticipant?.role === 'host' || 
                            currentParticipant?.role === 'co-host';
     
-    const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!meeting) return;
-        if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
-
-        const updateTimer = () => {
-            let endTime = 0;
-            if (meeting.endTime) {
-                endTime = Number(meeting.endTime);
-            } else if (meeting.startTime && meeting.duration) {
-                const start = new Date(meeting.startTime).getTime();
-                endTime = start + (meeting.duration * 60 * 1000);
-            }
-
-            const now = Date.now();
-            const diff = endTime - now;
-
-            if (diff <= 0) {
-                setTimeLeft("00:00");
-            } else {
-                const m = Math.floor(diff / 60000);
-                const s = Math.floor((diff % 60000) / 1000);
-                setTimeLeft(`${m}:${s.toString().padStart(2, '0')}`);
-            }
-        };
-
-        updateTimer();
-        const interval = setInterval(updateTimer, 1000);
-        return () => clearInterval(interval);
-    }, [meeting]);
     
     const [isCreating, setIsCreating] = useState(false);
     const [question, setQuestion] = useState('');
@@ -141,20 +111,6 @@ export function PollPanel() {
                         <div className="flex items-center gap-2">
                             <ListTodo className="w-5 h-5 text-blue-400" />
                             <h3 className="text-lg font-semibold">Polls & Quizzes</h3>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {timeLeft && (
-                                <div className="bg-black/40 backdrop-blur px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                                    <span className="text-[11px] font-mono font-medium text-white/90">{timeLeft}</span>
-                                </div>
-                            )}
-                            <button 
-                                onClick={() => setPollPanelOpen(false)}
-                                className="p-1.5 hover:bg-white/5 rounded-full transition-colors text-gray-400 hover:text-white"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
                         </div>
                     </div>
 

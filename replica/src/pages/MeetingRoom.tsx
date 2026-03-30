@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
 import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
@@ -684,10 +685,8 @@ export default function MeetingRoom() {
                 facingMode: 'user'
               },
               audio: {
-                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                ...ENHANCED_AUDIO_CONSTRAINTS,
+                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
               }
             });
 
@@ -711,10 +710,8 @@ export default function MeetingRoom() {
               const { selectedAudioId, isAudioMuted } = useMeetingStore.getState();
               const audioStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
-                  echoCancellation: true,
-                  noiseSuppression: true,
-                  autoGainControl: true
+                  ...ENHANCED_AUDIO_CONSTRAINTS,
+                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
                 }
               });
 
