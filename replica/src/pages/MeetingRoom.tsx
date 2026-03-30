@@ -994,6 +994,7 @@ export default function MeetingRoom() {
       <AICompanionPanel />
       <TranscriptPanel />
       <ResourceHubPanel />
+      <PollPanel />
       <VideoStartRequestPopup />
 
 

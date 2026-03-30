@@ -72,6 +72,7 @@ export function VideoTile({
     const currentUserParticipant = participants.find(p => p.id === localUserId || p.id === user?.id || p.id === `participant-${user?.id}`);
     const currentUserRole = currentUserParticipant?.role || user?.role || 'participant';
     const isHostOrCoHost = isJoinedAsHost || currentUserRole === 'host' || currentUserRole === 'co-host';
+    const canSeeHandQueue = isHostOrCoHost || !!currentUserParticipant?.isHandRaised;
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -275,7 +276,7 @@ export function VideoTile({
                             >
                                 <Hand className="w-4 h-4 text-white" />
                             </motion.div>
-                            {participant.handRaiseNumber && (
+                            {participant.handRaiseNumber && canSeeHandQueue && (
                                 <span className="text-xs font-bold text-white leading-none">
                                     {participant.handRaiseNumber}
                                 </span>
@@ -713,10 +714,15 @@ export function VideoGrid() {
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
     }, [focusedParticipantId]);
-    const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing, meeting } = useMeetingStore();
+    const { viewMode, showSelfView, screenShareStream, isScreenSharing: isLocalScreenSharing, meeting, isJoinedAsHost } = useMeetingStore();
     const { remoteScreenStreams } = useMediaStore();
     const { user } = useAuthStore();
     const { currentRoomId, rooms, isBreakoutActive } = useBreakoutStore();
+
+    const currentUserParticipant = participants.find(p => p.id === user?.id || p.id === `participant-${user?.id}` || p.id === useChatStore.getState().localUserId);
+    const currentUserRole = currentUserParticipant?.role || user?.role || 'participant';
+    const isHostOrCoHost = isJoinedAsHost || currentUserRole === 'host' || currentUserRole === 'co-host';
+    const canSeeHandQueue = isHostOrCoHost || !!currentUserParticipant?.isHandRaised;
 
     const handlePin = (participantId: string) => {
         if (pinnedParticipantId === participantId) {
@@ -762,10 +768,12 @@ export function VideoGrid() {
         if (b.id === pinnedParticipantId) return 1;
 
         // 2. Hand Raised
-        if (a.isHandRaised && !b.isHandRaised) return -1;
-        if (!a.isHandRaised && b.isHandRaised) return 1;
-        if (a.isHandRaised && b.isHandRaised) {
-            return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+        if (canSeeHandQueue) {
+            if (a.isHandRaised && !b.isHandRaised) return -1;
+            if (!a.isHandRaised && b.isHandRaised) return 1;
+            if (a.isHandRaised && b.isHandRaised) {
+                return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+            }
         }
 
         // 3. Role (Host first)

@@ -7,7 +7,7 @@ const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-let SERVER_URL = 'https://5154-117-192-9-245.ngrok-free.app';
+const SERVER_URL = 'https://connect-pupt.onrender.com';
 let socket;
 let mainWindow;
 let captureInterval;
@@ -248,6 +248,64 @@ function startLocalServer() {
     });
 }
 
+// Protocol Registration
+const PROTOCOL = 'replica-agent';
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    }
+} else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+function handleProtocolUrl(url) {
+    console.log('[AGENT-RECV] Received protocol URL:', url);
+    try {
+        // Expected format: replica-agent://link/MEETING_ID/PARTICIPANT_ID
+        const parsedUrl = new URL(url);
+        if (parsedUrl.host === 'link') {
+            const parts = parsedUrl.pathname.split('/').filter(Boolean);
+            if (parts.length >= 2) {
+                global.meetingId = parts[0];
+                global.participantId = parts[1];
+                console.log(`[AGENT-ID] Identity parsed: Meet=${global.meetingId}, Part=${global.participantId}`);
+
+                if (socket && socket.connected) {
+                    emitStatus(true);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[AGENT-ERR] Failed to parse protocol URL:', err);
+    }
+}
+
+function emitStatus(ready) {
+    if (global.participantId && global.meetingId) {
+        console.log(`[AGENT-EMIT] agent_status: partId=${global.participantId}, ready=${ready}`);
+        socket.emit("agent_status", {
+            participantId: global.participantId,
+            meetingId: global.meetingId,
+            ready: !!ready
+        });
+    }
+}
+
+app.on('second-instance', (event, commandLine) => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+    }
+    // Protocol handler for Windows
+    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (url) handleProtocolUrl(url);
+});
+
+app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleProtocolUrl(url);
+});
+
 app.whenReady().then(() => {
     createWindow();
 
@@ -282,6 +340,26 @@ app.whenReady().then(() => {
         console.log('[AGENT] Waiting for identity (deep link)...');
     }
 
+        // ✅ Send status ONLY if identity exists
+        if (global.participantId && global.meetingId) {
+            console.log('[AGENT] Sending agent_status:', global.participantId);
+
+            socket.emit("agent_status", {
+                participantId: global.participantId,
+                meetingId: global.meetingId,
+                ready: true
+            });
+        } else {
+            console.log('[AGENT] Waiting for identity (deep link)...');
+        }
+
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Connected',
+                agentId: AGENT_ID
+            });
+        }
+    });
     if (mainWindow) {
         mainWindow.webContents.send('status-update', {
             status: 'Connected',
@@ -306,6 +384,35 @@ socket.on('control_started', (data) => {
     }
 });
 
+    // ✅ CONTROL START
+    socket.on('control_started', (data) => {
+        console.log('[AGENT] Control session started by host:', data.hostId);
+        global.currentRequestId = data.hostId;
+        startStreaming(data.hostId);
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Controlled by ' + data.hostName,
+                agentId: AGENT_ID
+            });
+        }
+    });
+
+    // ✅ HOST INPUT (mouse/keyboard)
+    socket.on('host_input_event', (event) => {
+        handleInputEvent(event);
+    });
+
+    socket.on('control_stopped', () => {
+        console.log('[AGENT] Control stopped');
+        global.currentRequestId = null;
+        stopStreaming();
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Connected',
+                agentId: AGENT_ID
+            });
+        }
+    });
 
 // ✅ HOST INPUT (mouse/keyboard)
 socket.on('host_input_event', (event) => {
@@ -347,24 +454,27 @@ socket.on('control_stopped', () => {
             });
         }
     });
+});
 
-    startLocalServer();
 
-    // Spawn Python Agent Executable
-    const isDev = !app.isPackaged;
-    const agentPath = isDev
-        ? path.join(__dirname, 'resources', 'agent.exe')
-        : path.join(process.resourcesPath, 'agent.exe');
 
-    console.log('Starting Python Agent from:', agentPath);
 
-    execFile(agentPath, (err, stdout, stderr) => {
-        if (err) {
-            console.error('Failed to start agent:', err);
-            return;
-        }
-        console.log('Agent started successfully');
-    });
+startLocalServer();
+
+// Spawn Python Agent Executable
+const isDev = !app.isPackaged;
+const agentPath = isDev
+    ? path.join(__dirname, 'resources', 'agent.exe')
+    : path.join(process.resourcesPath, 'agent.exe');
+
+console.log('Starting Python Agent from:', agentPath);
+
+execFile(agentPath, (err, stdout, stderr) => {
+    if (err) {
+        console.error('Failed to start agent:', err);
+        return;
+    }
+    console.log('Agent started successfully');
 });
 
 app.on('window-all-closed', () => {
