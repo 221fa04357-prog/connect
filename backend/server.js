@@ -472,6 +472,17 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            -- Ensure name and password_hash exist in otps
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='otps' AND column_name='name') THEN
+                    ALTER TABLE otps ADD COLUMN name VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='otps' AND column_name='password_hash') THEN
+                    ALTER TABLE otps ADD COLUMN password_hash TEXT;
+                END IF;
+            END $$;
+
             CREATE TABLE IF NOT EXISTS meeting_participants (
                 meeting_id VARCHAR(255) NOT NULL,
                 user_id VARCHAR(255) NOT NULL,
@@ -2233,30 +2244,29 @@ app.post('/api/auth/register', async (req, res) => {
     try {
         const userCheck = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
         if (userCheck.rows.length > 0) {
-            return res.status(409).json({ error: 'Email already registered' });
+            const existingUser = userCheck.rows[0];
+            if (existingUser.is_verified) {
+                return res.status(409).json({ error: 'Email already registered' });
+            } else {
+                // If unverified legacy user exists, delete them to start fresh
+                await db.query('DELETE FROM users WHERE id = $1', [existingUser.id]);
+            }
         }
 
-        const id = `user-${Date.now()}`;
         const passwordHash = await bcrypt.hash(password, 10);
+        const otp = crypto.randomInt(100000, 1000000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-        // Use a client from the pool for transactions
         const client = await db.pool.connect();
-
         try {
             await client.query('BEGIN');
 
-            const userResult = await client.query(
-                'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, avatar, subscription_plan, is_verified',
-                [id, name, normalizedEmail, passwordHash, false]
-            );
-
-            // Generate 6-digit OTP
-            const otp = crypto.randomInt(100000, 1000000).toString();
-            const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+            // Delete existing unverified OTPs for this email
+            await client.query('DELETE FROM otps WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
 
             await client.query(
-                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otp, expiresAt]
+                'INSERT INTO otps (email, name, password_hash, otp_code, expires_at) VALUES ($1, $2, $3, $4, $5)',
+                [normalizedEmail, name, passwordHash, otp, expiresAt]
             );
 
             await client.query('COMMIT');
@@ -2264,8 +2274,8 @@ app.post('/api/auth/register', async (req, res) => {
             // Send Email
             await sendOTPEmail(normalizedEmail, otp);
 
-            console.log(`User registered (pending verification): ${normalizedEmail}`);
-            res.status(201).json(userResult.rows[0]);
+            console.log(`OTP sent (pending verification): ${normalizedEmail}`);
+            res.status(201).json({ message: 'OTP sent' });
         } catch (err) {
             await client.query('ROLLBACK');
             throw err;
@@ -2296,7 +2306,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
         // Check if expired
         if (new Date() > new Date(otpRecord.expires_at)) {
-            return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+            return res.status(400).json({ error: 'OTP expired' });
         }
 
         // Check attempts
@@ -2307,7 +2317,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         // Compare codes
         if (otpRecord.otp_code !== otp) {
             await db.query('UPDATE otps SET attempts = attempts + 1 WHERE id = $1', [otpRecord.id]);
-            return res.status(400).json({ error: 'Invalid verification code.' });
+            return res.status(400).json({ error: 'Invalid OTP' });
         }
 
         // Success!
@@ -2315,19 +2325,21 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            // Mark user as verified
-            const userUpdate = await client.query(
-                'UPDATE users SET is_verified = TRUE WHERE LOWER(email) = LOWER($1) RETURNING id, name, email, avatar, subscription_plan, is_verified',
-                [normalizedEmail]
+            const id = `user-${Date.now()}`;
+
+            // Create user
+            const userResult = await client.query(
+                'INSERT INTO users (id, name, email, password_hash, is_verified) VALUES ($1, $2, $3, $4, TRUE) RETURNING id, name, email, avatar, subscription_plan, is_verified',
+                [id, otpRecord.name, normalizedEmail, otpRecord.password_hash]
             );
 
             // Delete used OTP
-            await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
+            await client.query('DELETE FROM otps WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
 
             await client.query('COMMIT');
 
             console.log(`User verified successfully: ${normalizedEmail}`);
-            res.json(userUpdate.rows[0]);
+            res.json(userResult.rows[0]);
         } catch (err) {
             await client.query('ROLLBACK');
             throw err;
@@ -2346,31 +2358,19 @@ app.post('/api/auth/resend-otp', async (req, res) => {
     const normalizedEmail = email.toLowerCase();
 
     try {
-        const userCheck = await db.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
-        if (userCheck.rows.length === 0) {
-            return res.status(404).json({ error: 'Account not found' });
+        const pendingCheck = await db.query('SELECT * FROM otps WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+        if (pendingCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Pending registration not found' });
         }
 
         // Generate new OTP
         const otp = crypto.randomInt(100000, 1000000).toString();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-        // Delete old OTPs for this email and insert new one
-        const client = await db.pool.connect();
-        try {
-            await client.query('BEGIN');
-            await client.query('DELETE FROM otps WHERE email = $1', [normalizedEmail]);
-            await client.query(
-                'INSERT INTO otps (email, otp_code, expires_at) VALUES ($1, $2, $3)',
-                [normalizedEmail, otp, expiresAt]
-            );
-            await client.query('COMMIT');
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
-        }
+        await db.query(
+            'UPDATE otps SET otp_code = $1, expires_at = $2, attempts = 0 WHERE id = $3',
+            [otp, expiresAt, pendingCheck.rows[0].id]
+        );
 
         // Send Email
         await sendOTPEmail(normalizedEmail, otp);
