@@ -609,19 +609,7 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id, user?.id, meetingStoreAudioMuted, meetingStoreVideoOff, myParticipant?.isHandRaised]);
 
-  // Sync Reactions
-  const lastReactionIdForSync = useRef<string | null>(null);
-  useEffect(() => {
-    if (meeting?.id && reactions.length > 0) {
-      const latest = reactions[reactions.length - 1];
-      if (latest.id !== lastReactionIdForSync.current) {
-        lastReactionIdForSync.current = latest.id;
-        if (latest.participantId === user?.id) {
-          emitReaction(meeting.id, latest);
-        }
-      }
-    }
-  }, [meeting?.id, reactions, user?.id]);
+
 
   // No longer needed to sync preview state to participant store on mount, 
   // because we now use MeetingStore as the authoritative source for local user.

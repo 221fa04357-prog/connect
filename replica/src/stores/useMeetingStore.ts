@@ -445,9 +445,10 @@ export const useMeetingStore = create<MeetingState>()(
       setVideoConfirm: (show) => set({ showVideoConfirm: show }),
 
       addReaction: (reaction) =>
-        set((state) => ({
-          reactions: [...state.reactions, reaction],
-        })),
+        set((state) => {
+          if (state.reactions.some((r: any) => r.id === reaction.id)) return state;
+          return { reactions: [...state.reactions, reaction] };
+        }),
 
       removeReaction: (id) =>
         set((state) => ({
