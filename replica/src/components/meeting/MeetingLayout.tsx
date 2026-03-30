@@ -43,6 +43,7 @@ import { VideoStartRequestPopup } from './VideoStartRequestPopup';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useChatStore } from '@/stores/useChatStore';
+import { ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
 import { RemoteControlStream } from './RemoteControlStream';
 import { useAIStore } from '@/stores/useAIStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -814,7 +815,7 @@ export function ParticipantsPanel() {
             try {
                 const isVideoOff = useMeetingStore.getState().isVideoOff;
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: ENHANCED_AUDIO_CONSTRAINTS,
                     video: !isVideoOff
                 });
                 setLocalStream(stream);
@@ -850,7 +851,7 @@ export function ParticipantsPanel() {
                 const isAudioMuted = useMeetingStore.getState().isAudioMuted;
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
-                    audio: !isAudioMuted
+                    audio: ENHANCED_AUDIO_CONSTRAINTS
                 });
                 setLocalStream(stream);
             } catch (err) {
@@ -1608,12 +1609,7 @@ function ParticipantItem({
                                     </DropdownMenuItem>
                                 )}
 
-                                {onPin && (
-                                    <DropdownMenuItem onClick={onPin}>
-                                        <Pin className={cn("w-4 h-4 mr-2", isPinned && "text-blue-500 fill-blue-500/10")} />
-                                        {isPinned ? 'Unpin Video' : 'Pin Video'}
-                                    </DropdownMenuItem>
-                                )}
+
 
                                 {participant.isHandRaised && (canControl || isCurrentUser) && (
                                     <DropdownMenuItem onClick={onToggleHand}>

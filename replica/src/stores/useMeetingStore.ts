@@ -6,6 +6,9 @@ import { Meeting, ViewMode, Reaction } from '@/types';
 import { eventBus } from '@/lib/eventBus';
 import { useChatStore } from './useChatStore';
 import { useAIStore } from './useAIStore';
+import { AudioProcessor, ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
+
+const audioProcessor = new AudioProcessor();
 
 const INSTANCE_ID = eventBus.instanceId;
 const API = import.meta.env.VITE_API_URL || '';
@@ -263,15 +266,29 @@ export const useMeetingStore = create<MeetingState>()(
       // ================= ACTIONS =================
 
       setMeeting: (meeting) => set({ meeting }),
-      setLocalStream: (stream) => set((state) => {
-        if (state.localStream && state.localStream !== stream) {
+      setLocalStream: async (stream) => {
+        const state = get();
+        if (state.localStream === stream) return;
+        
+        if (state.localStream) {
           state.localStream.getTracks().forEach(track => {
             track.stop();
-            console.log(`MeetingStore: Stopped old track: ${track.kind}`);
           });
         }
-        return { localStream: stream };
-      }),
+
+        if (stream && stream.getAudioTracks().length > 0) {
+          try {
+            const processedStream = await audioProcessor.processStream(stream);
+            set({ localStream: processedStream });
+          } catch (err) {
+            console.error('AudioProcessor error:', err);
+            set({ localStream: stream });
+          }
+        } else {
+          audioProcessor.stop();
+          set({ localStream: stream });
+        }
+      },
 
       enumerateDevices: async () => {
         try {
@@ -295,7 +312,10 @@ export const useMeetingStore = create<MeetingState>()(
             const nextMuted = state.isAudioMuted;
 
             const newStream = await navigator.mediaDevices.getUserMedia({
-              audio: { deviceId: id !== 'default' ? { exact: id } : undefined }
+              audio: { 
+                ...ENHANCED_AUDIO_CONSTRAINTS,
+                deviceId: id !== 'default' ? { exact: id } : undefined 
+              }
             });
 
             const newAudioTrack = newStream.getAudioTracks()[0];
