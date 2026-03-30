@@ -10,20 +10,6 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui';
 
-function maskEmail(email: string) {
-    if (!email) return '';
-    const [name, domain] = email.split('@');
-    if (!domain) return email;
-    const maskedName = name.length > 3 
-        ? name.substring(0, 3) + '***'
-        : name.substring(0, 1) + '***';
-    const [domainName, domainExt] = domain.split('.');
-    const maskedDomain = domainName.length > 2
-        ? domainName.substring(0, 2) + '***'
-        : domainName.substring(0, 1) + '***';
-    return `${maskedName}@${maskedDomain}.${domainExt}`;
-}
-
 // Custom SVG for browser-native exclamation in orange box
 function NativeExclamationIcon() {
     return (
@@ -126,6 +112,7 @@ export function Login() {
         setTouched({ email: true, password: true });
 
         if (!newErrors.email && !newErrors.password) {
+            localStorage.removeItem('otp_timer_end'); // Start fresh on new login attempt
             try {
                 await login({
                     email: formData.email,
@@ -631,6 +618,7 @@ export function Register() {
             return;
         }
 
+        localStorage.removeItem('otp_timer_end'); // Start fresh on new registration
         try {
             await register({
                 name: formData.name,
@@ -864,11 +852,30 @@ export function VerifyEmail() {
     const [success, setSuccess] = useState('');
     const [cooldown, setCooldown] = useState(0);
 
+    const getRemainingCooldown = () => {
+        const timerEnd = localStorage.getItem('otp_timer_end');
+        if (!timerEnd) return 0;
+        const remaining = Math.ceil((parseInt(timerEnd) - Date.now()) / 1000);
+        return remaining > 0 ? remaining : 0;
+    };
+
+    const startCooldown = (seconds: number) => {
+        const end = Date.now() + seconds * 1000;
+        localStorage.setItem('otp_timer_end', end.toString());
+        setCooldown(seconds);
+    };
+
     useState(() => {
         const params = new URLSearchParams(location.search);
         const emailParam = params.get('email');
         if (emailParam) {
             setEmail(emailParam);
+            const remaining = getRemainingCooldown();
+            if (remaining > 0) {
+                setCooldown(remaining);
+            } else {
+                startCooldown(300); // Only start if no timer exists
+            }
         } else {
             navigate('/login');
         }
@@ -897,7 +904,8 @@ export function VerifyEmail() {
 
         try {
             await verifyOTP({ email, otp: code });
-            setOtp('');
+            setCooldown(0);
+            localStorage.removeItem('otp_timer_end'); // Clear timer on success
             setSuccess('Email verified successfully! Redirecting...');
             setTimeout(() => navigate('/'), 2000);
         } catch (err: any) {
@@ -915,7 +923,7 @@ export function VerifyEmail() {
         try {
             await resendOTP(email);
             setSuccess('A new code has been sent to your email.');
-            setCooldown(60); // 60s cooldown
+            startCooldown(300); // 300s (5 minutes) cooldown
         } catch (err: any) {
             setError(err.message || 'Failed to resend code');
         }
@@ -936,8 +944,8 @@ export function VerifyEmail() {
 
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Verify Your Email</h2>
                     <p className="text-gray-400 text-center mb-8">
-                        We've sent a 6-digit code to <br />
-                        <span className="text-white font-medium">{maskEmail(email)}</span>
+                        Enter the 6-digit code we sent to <br />
+                        <span className="text-white font-medium">{email}</span>
                     </p>
 
                     {error && (
@@ -952,50 +960,74 @@ export function VerifyEmail() {
                         </div>
                     )}
 
-                    <form onSubmit={handleVerify}>
-                        <div className="flex justify-center mb-8">
-                            <InputOTP
-                                maxLength={6}
-                                value={otp}
-                                onChange={(value) => setOtp(value)}
-                            >
-                                <InputOTPGroup className="gap-2">
-                                    {[0, 1, 2, 3, 4, 5].map((idx) => (
-                                        <InputOTPSlot 
-                                            key={idx} 
-                                            index={idx} 
-                                            className="w-12 h-14 text-xl font-bold bg-[#1C1C1C] border-[#404040] text-white focus:border-[#0B5CFF] focus:ring-1 focus:ring-[#0B5CFF] rounded-md border-l border-r border-t border-b data-[active=true]:border-[#0B5CFF] data-[active=true]:ring-1 data-[active=true]:ring-[#0B5CFF]"
-                                        />
-                                    ))}
-                                </InputOTPGroup>
-                            </InputOTP>
-                        </div>
+                    {!success && (
+                        <>
+                            <form onSubmit={handleVerify}>
+                                <div className="flex justify-center mb-8">
+                                    <InputOTP
+                                        maxLength={6}
+                                        value={otp}
+                                        onChange={(value) => !success && setOtp(value)}
+                                        disabled={!!success || isLoading}
+                                    >
+                                        <InputOTPGroup className="gap-2">
+                                            {[0, 1, 2, 3, 4, 5].map((idx) => (
+                                                <InputOTPSlot 
+                                                    key={idx} 
+                                                    index={idx} 
+                                                    className={cn(
+                                                        "w-12 h-14 text-xl font-bold bg-[#1C1C1C] border-[#404040] text-white focus:border-[#0B5CFF] focus:ring-1 focus:ring-[#0B5CFF] rounded-md border-l border-r border-t border-b data-[active=true]:border-[#0B5CFF] data-[active=true]:ring-1 data-[active=true]:ring-[#0B5CFF]",
+                                                        success && "border-green-500 bg-green-500/10 text-green-500 ring-1 ring-green-500"
+                                                    )}
+                                                />
+                                            ))}
+                                        </InputOTPGroup>
+                                    </InputOTP>
+                                </div>
 
-                        <Button
-                            type="submit"
-                            className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg mb-6"
-                            disabled={otp.length < 6 || isLoading}
-                        >
-                            {isLoading ? 'Verifying...' : 'Verify Email'}
-                        </Button>
-                    </form>
+                                <Button
+                                    type="submit"
+                                    className="w-full bg-[#0B5CFF] hover:bg-[#2D8CFF] text-white py-6 text-lg mb-6"
+                                    disabled={otp.length < 6 || isLoading}
+                                >
+                                    {isLoading ? 'Verifying...' : 'Verify Email'}
+                                </Button>
+                            </form>
 
-                    <div className="text-center">
-                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
-                        <button
-                            onClick={handleResend}
-                            disabled={cooldown > 0 || isLoading}
-                            className={cn(
-                                "font-semibold underline transition-colors",
-                                cooldown > 0 ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
-                            )}
-                        >
-                            {cooldown > 0 ? `Resend Code in ${cooldown}s` : 'Resend OTP'}
-                        </button>
-                    </div>
+                                {cooldown > 0 && !success && (
+                                    <div className="text-center mt-2">
+                                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
+                                        <button
+                                            disabled={true}
+                                            className="font-semibold text-gray-500 no-underline cursor-not-allowed"
+                                        >
+                                            Resend Code in {Math.floor(cooldown / 60)}:{(cooldown % 60).toString().padStart(2, '0')}s
+                                        </button>
+                                    </div>
+                                )}
+                                {(cooldown <= 0 || success) && (
+                                    <div className="text-center mt-2">
+                                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
+                                        <button
+                                            onClick={handleResend}
+                                            disabled={!!success || isLoading}
+                                            className={cn(
+                                                "font-semibold underline transition-colors",
+                                                (success || isLoading) ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
+                                            )}
+                                        >
+                                            Resend OTP
+                                        </button>
+                                    </div>
+                                )}
+                        </>
+                    )}
 
                     <div className="mt-8 pt-6 border-t border-white/5 text-center">
-                        <button onClick={() => navigate('/login')} className="text-gray-500 hover:text-white text-sm">
+                        <button onClick={() => {
+                            localStorage.removeItem('otp_timer_end');
+                            navigate('/login');
+                        }} className="text-gray-500 hover:text-white text-sm">
                             Back to Sign In
                         </button>
                     </div>

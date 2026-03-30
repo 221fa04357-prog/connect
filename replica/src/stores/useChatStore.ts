@@ -60,7 +60,6 @@ interface ChatState {
   banParticipant: (meetingId: string, participantId: string) => void;
   kickParticipant: (meetingId: string, participantId: string) => void;
   forceMediaState: (meetingId: string, participantId: string, type: 'audio' | 'video', state: boolean) => void;
-  lowerAllHands: (meetingId: string) => void;
 
   // Final Remote Control Methods
   nativeAgentStatus: {
@@ -249,13 +248,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           store.useMeetingStore.getState().setVideoPermission(data.userId, 'rejected');
         });
       }
-    });
-
-    socket.on('all_hands_lowered', () => {
-      import('./useParticipantsStore').then((store) => {
-        store.useParticipantsStore.getState().lowerAllHandsLocal();
-      });
-      import('sonner').then(({ toast }) => toast.info('Host lowered all hands.'));
     });
 
     socket.on('receive_reaction', (reaction: any) => {
@@ -1283,10 +1275,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } finally {
       set({ isFetchingSmartReplies: false });
     }
-  },
-
-  lowerAllHands: (meetingId) => {
-    get().socket?.emit('lower_all_hands', { meetingId });
   },
 
   reset: () => {

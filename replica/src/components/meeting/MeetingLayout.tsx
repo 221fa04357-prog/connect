@@ -770,6 +770,7 @@ export function ParticipantsPanel() {
     const isCoHost = currentRole === 'co-host';
     const canControl = isHost || isCoHost;
     const canChangeRoles = isHost;
+    const canSeeHandQueue = canControl || !!currentUserParticipant?.isHandRaised;
     // isOriginalHost: true if this user created the meeting.
     // Fallback: if originalHostId isn't set (old session), use isJoinedAsHost + hostId match.
     const isOriginalHost =
@@ -873,13 +874,15 @@ export function ParticipantsPanel() {
     const filteredParticipants = participants
         .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
         .sort((a, b) => {
-            // Put hand raised participants at the top
-            if (a.isHandRaised && !b.isHandRaised) return -1;
-            if (!a.isHandRaised && b.isHandRaised) return 1;
+            if (canSeeHandQueue) {
+                // Put hand raised participants at the top
+                if (a.isHandRaised && !b.isHandRaised) return -1;
+                if (!a.isHandRaised && b.isHandRaised) return 1;
 
-            // If both have hands raised, sort by number
-            if (a.isHandRaised && b.isHandRaised) {
-                return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+                // If both have hands raised, sort by number
+                if (a.isHandRaised && b.isHandRaised) {
+                    return (a.handRaiseNumber || 0) - (b.handRaiseNumber || 0);
+                }
             }
 
             // Otherwise maintain original order or sort by name/role if desired
@@ -1107,36 +1110,12 @@ export function ParticipantsPanel() {
                             )}
 
                             {/* RAISED HANDS SUMMARY */}
-                            {participants.filter(p => p.isHandRaised).length > 0 && (
-                                <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
-                                    <div className="flex items-center gap-2">
-                                        <Hand className="w-4 h-4 text-yellow-500" />
-                                        <span className="text-sm font-bold text-yellow-500">
-                                            Raised Hands ({participants.filter(p => p.isHandRaised).length})
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {participants.filter(p => p.isHandRaised).length >= 20 && (
-                                            <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
-                                                Priority List
-                                            </span>
-                                        )}
-                                        {canControl && (
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() => {
-                                                    if (confirm('Lower all hands?')) {
-                                                        const { meetingId, lowerAllHands } = useChatStore.getState();
-                                                        if (meetingId) lowerAllHands(meetingId);
-                                                    }
-                                                }}
-                                                className="h-7 text-[10px] bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 font-bold px-2 py-0 border border-yellow-500/30 rounded"
-                                            >
-                                                Lower All
-                                            </Button>
-                                        )}
-                                    </div>
+                            {canSeeHandQueue && participants.filter(p => p.isHandRaised).length > 0 && (
+                                <div className="mx-4 my-2 px-3 py-2 bg-[#2D2D2D]/80 border border-white/10 rounded-lg flex items-center gap-2 max-w-fit shadow-sm backdrop-blur-md">
+                                    <Hand className="w-4 h-4 text-yellow-500" />
+                                    <span className="text-xs font-medium text-white/90">
+                                        Raised Hands ({participants.filter(p => p.isHandRaised).length})
+                                    </span>
                                 </div>
                             )}
 
@@ -1161,7 +1140,7 @@ export function ParticipantsPanel() {
                                         isViewerOriginalHost={isOriginalHost}
                                         isViewerHost={isHost}
                                         isViewerCoHost={isCoHost}
-                                        isTargetOriginalHost={meeting?.originalHostId === participant.id}
+                                        isTargetOriginalHost={participant.id === (meeting?.hostId || meeting?.originalHostId)}
                                         onToggleHand={() => toggleHandRaise(participant.id)}
                                         onTakeControl={() => {
                                             useChatStore.getState().requestControl(participant.id);
@@ -1192,7 +1171,8 @@ export function ParticipantsPanel() {
                                         }}
                                         onToggleVideo={isCurrentUser ? handleVideoToggle : undefined}
                                         onRename={isCurrentUser && (canControl || meeting?.settings?.allowRename !== false) ? () => {
-                                            const newName = window.prompt("Enter new name:", participant.name);
+                                            const newPrompt = isCurrentUser ? "Enter new name:" : `Enter new name for ${participant.name}:`;
+                                            const newName = window.prompt(newPrompt, participant.name);
                                             if (newName && newName.trim()) {
                                                 updateParticipant(participant.id, { name: newName.trim() });
                                                 if (meeting?.id) {
@@ -1200,10 +1180,23 @@ export function ParticipantsPanel() {
                                                 }
                                             }
                                         } : undefined}
+                                        onPin={() => {
+                                            const { pinnedParticipantId, pinParticipant, unpinParticipant } = useParticipantsStore.getState();
+                                            if (pinnedParticipantId === participant.id) unpinParticipant();
+                                            else pinParticipant(participant.id);
+                                        }}
+                                        onSpotlight={() => {
+                                            const { spotlightedParticipantId, spotlightParticipant, unspotlightParticipant } = useParticipantsStore.getState();
+                                            if (spotlightedParticipantId === participant.id) unspotlightParticipant();
+                                            else spotlightParticipant(participant.id);
+                                        }}
+                                        isPinned={participant.isPinned}
+                                        isSpotlighted={participant.isSpotlighted}
                                         displayedRole={displayedRole}
                                         coHostCount={coHostCount}
                                         hostCount={hostCount}
                                         meeting={meeting}
+                                        canSeeHandQueue={canSeeHandQueue}
                                     />
                                 );
                             })}
@@ -1420,10 +1413,16 @@ interface ParticipantItemProps {
     onRequestMedia: (userId: string, type: 'audio' | 'video') => void;
     onToggleVideo?: () => void;
     onRename?: () => void;
+    onPin?: () => void;
+    onSpotlight?: () => void;
+    onChat?: () => void;
+    isPinned?: boolean;
+    isSpotlighted?: boolean;
     displayedRole?: Participant['role'];
     coHostCount: number;
     hostCount: number;
     meeting: Meeting | null;
+    canSeeHandQueue?: boolean;
 }
 
 function ParticipantItem({
@@ -1444,6 +1443,11 @@ function ParticipantItem({
     onRequestMedia,
     onToggleVideo,
     onRename,
+    onPin,
+    onSpotlight,
+    onChat,
+    isPinned = false,
+    isSpotlighted = false,
     isViewerOriginalHost = false,
     isViewerHost = false,
     isViewerCoHost = false,
@@ -1452,6 +1456,7 @@ function ParticipantItem({
     coHostCount,
     hostCount,
     meeting,
+    canSeeHandQueue = true,
 }: ParticipantItemProps) {
     const effectiveRole = displayedRole || participant.role;
     const isSuspended = useMeetingStore(state => state.meeting?.settings?.suspendParticipantActivities);
@@ -1472,7 +1477,7 @@ function ParticipantItem({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-medium truncate">
-                            {participant.name} {isCurrentUser && effectiveRole !== 'host' && '(You)'}
+                            {participant.name} {isCurrentUser && '(You)'}
                         </span>
                         {effectiveRole === 'host' && (
                             <div className="flex items-center gap-1.5">
@@ -1534,7 +1539,7 @@ function ParticipantItem({
                                 <Video className="w-4 h-4 text-green-500" />
                             )}
                         </button>
-                        {participant.isHandRaised && (
+                        {participant.isHandRaised && canSeeHandQueue && (
                             <motion.div
                                 initial={{ scale: 0, x: 10 }}
                                 animate={{ scale: 1, x: 0 }}
@@ -1581,11 +1586,11 @@ function ParticipantItem({
                     </Button>
                 )}
 
-                {!isCurrentUser && !isTargetOriginalHost && (
+                {(isCurrentUser || (!isTargetOriginalHost && (
                     (isViewerOriginalHost && isViewerHost && !isViewerCoHost) ||
                     (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') ||
                     (isViewerCoHost && effectiveRole === 'participant')
-                ) && (
+                ))) && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button size="sm" variant="ghost" className="hover:bg-[#2D2D2D]">
@@ -1596,10 +1601,17 @@ function ParticipantItem({
                                 align="end"
                                 className="bg-[#232323] border-[#404040]"
                             >
-                                {(isCurrentUser || isViewerHost || isViewerCoHost) && onRename && (
+                                {isCurrentUser && onRename && (
                                     <DropdownMenuItem onClick={onRename}>
                                         <Edit2 className="w-4 h-4 mr-2" />
                                         Rename
+                                    </DropdownMenuItem>
+                                )}
+
+                                {onPin && (
+                                    <DropdownMenuItem onClick={onPin}>
+                                        <Pin className={cn("w-4 h-4 mr-2", isPinned && "text-blue-500 fill-blue-500/10")} />
+                                        {isPinned ? 'Unpin Video' : 'Pin Video'}
                                     </DropdownMenuItem>
                                 )}
 
@@ -1702,7 +1714,7 @@ function ParticipantItem({
                                     </>
                                 )}
 
-                                {((isViewerOriginalHost && isViewerHost && !isViewerCoHost) || (isViewerHost && !isViewerCoHost && effectiveRole !== 'host') || (isViewerCoHost && effectiveRole === 'participant')) && !isCurrentUser && !isTargetOriginalHost && (
+                                {(canControl || isViewerOriginalHost) && !isCurrentUser && !isTargetOriginalHost && (
                                     <>
                                         <DropdownMenuItem
                                             onClick={onRemove}

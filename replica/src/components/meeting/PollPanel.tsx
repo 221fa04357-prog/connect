@@ -6,8 +6,10 @@ import { usePollStore, Poll } from '@/stores/usePollStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useChatStore } from '@/stores/useChatStore';
+import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Clock } from 'lucide-react';
 
 export function PollPanel() {
     const { 
@@ -22,6 +24,46 @@ export function PollPanel() {
     const { meeting, isJoinedAsHost } = useMeetingStore();
     const { user } = useAuthStore();
     const { localUserId } = useChatStore();
+    const { participants } = useParticipantsStore();
+    
+    // Robust host check
+    const currentUserId = user?.id || localUserId;
+    const currentParticipant = participants.find(p => p.id === currentUserId);
+    const isHostOrCoHost = isJoinedAsHost || 
+                           currentParticipant?.role === 'host' || 
+                           currentParticipant?.role === 'co-host';
+    
+    const [timeLeft, setTimeLeft] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!meeting) return;
+        if (!meeting.endTime && (!meeting.startTime || !meeting.duration)) return;
+
+        const updateTimer = () => {
+            let endTime = 0;
+            if (meeting.endTime) {
+                endTime = Number(meeting.endTime);
+            } else if (meeting.startTime && meeting.duration) {
+                const start = new Date(meeting.startTime).getTime();
+                endTime = start + (meeting.duration * 60 * 1000);
+            }
+
+            const now = Date.now();
+            const diff = endTime - now;
+
+            if (diff <= 0) {
+                setTimeLeft("00:00");
+            } else {
+                const m = Math.floor(diff / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                setTimeLeft(`${m}:${s.toString().padStart(2, '0')}`);
+            }
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [meeting]);
     
     const [isCreating, setIsCreating] = useState(false);
     const [question, setQuestion] = useState('');
@@ -100,9 +142,23 @@ export function PollPanel() {
                             <ListTodo className="w-5 h-5 text-blue-400" />
                             <h3 className="text-lg font-semibold">Polls & Quizzes</h3>
                         </div>
+                        <div className="flex items-center gap-3">
+                            {timeLeft && (
+                                <div className="bg-black/40 backdrop-blur px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                    <span className="text-[11px] font-mono font-medium text-white/90">{timeLeft}</span>
+                                </div>
+                            )}
+                            <button 
+                                onClick={() => setPollPanelOpen(false)}
+                                className="p-1.5 hover:bg-white/5 rounded-full transition-colors text-gray-400 hover:text-white"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
 
-                    {isJoinedAsHost && !isCreating && (
+                    {isHostOrCoHost && !isCreating && (
                         <div className="p-4 border-b border-[#404040] shrink-0">
                             <Button 
                                 onClick={() => setIsCreating(true)}
@@ -202,7 +258,7 @@ export function PollPanel() {
                                                 </span>
                                                 <h4 className="text-sm font-semibold">{poll.question}</h4>
                                             </div>
-                                            {isJoinedAsHost && poll.status === 'open' && (
+                                            {isHostOrCoHost && poll.status === 'open' && (
                                                 <Button size="sm" variant="ghost" className="text-red-400 h-7 px-2 hover:bg-red-500/10" onClick={() => meeting?.id && closePoll(meeting.id, poll.id)}>
                                                     End
                                                 </Button>

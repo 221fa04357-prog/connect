@@ -7,7 +7,7 @@ const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-const SERVER_URL = 'https://3b65-117-192-9-245.ngrok-free.app';
+const SERVER_URL = 'https://connect-pupt.onrender.com';
 let socket;
 let mainWindow;
 let captureInterval;
@@ -237,7 +237,7 @@ function handleProtocolUrl(url) {
                 global.meetingId = parts[0];
                 global.participantId = parts[1];
                 console.log(`[AGENT-ID] Identity parsed: Meet=${global.meetingId}, Part=${global.participantId}`);
-                
+
                 if (socket && socket.connected) {
                     emitStatus(true);
                 }
@@ -314,48 +314,36 @@ app.whenReady().then(() => {
             });
         }
     });
-});
 
+    // ✅ CONTROL START
+    socket.on('control_started', (data) => {
+        console.log('[AGENT] Control session started by host:', data.hostId);
+        global.currentRequestId = data.hostId;
+        startStreaming(data.hostId);
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Controlled by ' + data.hostName,
+                agentId: AGENT_ID
+            });
+        }
+    });
 
-// ✅ CONTROL START
-socket.on('control_started', (data) => {
-    console.log('[AGENT] Control session started by host:', data.hostId);
+    // ✅ HOST INPUT (mouse/keyboard)
+    socket.on('host_input_event', (event) => {
+        handleInputEvent(event);
+    });
 
-    global.currentRequestId = data.hostId;
-
-    startStreaming(data.hostId);
-
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Controlled by ' + data.hostName,
-            agentId: AGENT_ID
-        });
-    }
-});
-
-
-// ✅ HOST INPUT (mouse/keyboard)
-socket.on('host_input_event', (event) => {
-    handleInputEvent(event);
-});
-
-
-socket.on('control_stopped', () => {
-    console.log('[AGENT] Control stopped');
-
-    global.currentRequestId = null;
-
-    stopStreaming();
-
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Connected',
-            agentId: AGENT_ID
-        });
-    }
-});
-
-
+    socket.on('control_stopped', () => {
+        console.log('[AGENT] Control stopped');
+        global.currentRequestId = null;
+        stopStreaming();
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Connected',
+                agentId: AGENT_ID
+            });
+        }
+    });
 
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);
@@ -376,24 +364,27 @@ socket.on('control_stopped', () => {
             });
         }
     });
+});
 
-    startLocalServer();
 
-    // Spawn Python Agent Executable
-    const isDev = !app.isPackaged;
-    const agentPath = isDev
-        ? path.join(__dirname, 'resources', 'agent.exe')
-        : path.join(process.resourcesPath, 'agent.exe');
 
-    console.log('Starting Python Agent from:', agentPath);
 
-    execFile(agentPath, (err, stdout, stderr) => {
-        if (err) {
-            console.error('Failed to start agent:', err);
-            return;
-        }
-        console.log('Agent started successfully');
-    });
+startLocalServer();
+
+// Spawn Python Agent Executable
+const isDev = !app.isPackaged;
+const agentPath = isDev
+    ? path.join(__dirname, 'resources', 'agent.exe')
+    : path.join(process.resourcesPath, 'agent.exe');
+
+console.log('Starting Python Agent from:', agentPath);
+
+execFile(agentPath, (err, stdout, stderr) => {
+    if (err) {
+        console.error('Failed to start agent:', err);
+        return;
+    }
+    console.log('Agent started successfully');
 });
 
 app.on('window-all-closed', () => {

@@ -21,7 +21,7 @@ load_dotenv()
 # For production, set VITE_API_URL in .env to your signaling server address
 # Configuration
 
-SERVER_URL = "https://3b65-117-192-9-245.ngrok-free.app"
+SERVER_URL = "https://connect-pupt.onrender.com"
 SSL_VERIFY = False
 AGENT_ID = f"AGENT-{os.urandom(4).hex().upper()}"
 LOCAL_PORT = 5701

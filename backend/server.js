@@ -1322,31 +1322,6 @@ io.on('connection', (socket) => {
         socket.to(meeting_id).emit('participant_updated', { userId, updates });
     });
 
-    // Lower all hands in meeting
-    socket.on('lower_all_hands', ({ meetingId }) => {
-        const room = rooms.get(meetingId);
-        if (!room) return;
-
-        // Verify sender is host/co-host
-        const sender = room.get(socket.id);
-        if (!sender || (sender.role !== 'host' && sender.role !== 'co-host')) return;
-
-        // Update all participants in the room
-        for (const [sId, p] of room.entries()) {
-            if (p.isHandRaised) {
-                room.set(sId, { ...p, isHandRaised: false, handRaiseNumber: null, handRaiseTimestamp: null });
-            }
-        }
-
-        // Reset the counter
-        handRaiseCounters.set(meetingId, 0);
-
-        // Broadcast update
-        io.to(meetingId).emit('participants_update', Array.from(room.values()));
-        // Broadcast specifically that hands were lowered to all users to update their local states
-        io.to(meetingId).emit('all_hands_lowered');
-    });
-
     // Ban participant
     socket.on('ban_participant', ({ meetingId, participantId }) => {
         const room = rooms.get(meetingId);
