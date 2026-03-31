@@ -4,13 +4,12 @@ const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-let SERVER_URL = 'https://connect-pupt.onrender.com';
+const SERVER_URL = 'https://connect-pupt.onrender.com';
 let socket;
 let mainWindow;
 let captureInterval;
 let isControlled = false;
 const AGENT_ID = 'AGENT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-const LOCAL_PORT = 5701;
 
 // Single instance lock
 const gotLock = app.requestSingleInstanceLock();
@@ -129,7 +128,7 @@ async function handleInputEvent(event) {
                 await InputManager.moveMouse(x * width, y * height);
                 lastMouseMove = now;
             }
-        } else if (type === 'mouse_click') {
+        } else if (type === 'mouse_click' || type === 'mouse_down') {
             await InputManager.clickMouse(button || 'left', event.double || false);
         } else if (type === 'key_down' || type === 'key_press' || type === 'key_up') {
             await InputManager.typeKey(key);
@@ -150,7 +149,7 @@ app.whenReady().then(() => {
 
     socket.on('connect', () => {
         console.log('Connected to signaling server');
-        
+
         // --- NEW AUTO-LINK BEHAVIOR ---
         // Emit agent_idle_connect instead of agent_status on initial boot
         socket.emit("agent_idle_connect", { agentId: AGENT_ID });
@@ -159,7 +158,7 @@ app.whenReady().then(() => {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
         }
     });
-    
+
     // Listen for manual or auto link pairing from backend
     socket.on("manual_link_received", ({ meetingId, participantId }) => {
         console.log(`[LINK] Assigned to participant ${participantId} in meeting ${meetingId}`);
@@ -198,9 +197,9 @@ app.whenReady().then(() => {
     // ✅ HOST INPUT (mouse/keyboard)
     socket.on('host_input_event', (event) => {
         if (event && event.event) { // Backend wraps it, handle generic or wrapped
-             handleInputEvent(event.event);
+            handleInputEvent(event.event);
         } else {
-             handleInputEvent(event);
+            handleInputEvent(event);
         }
     });
 
