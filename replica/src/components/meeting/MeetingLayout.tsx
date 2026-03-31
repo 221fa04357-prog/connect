@@ -1262,7 +1262,7 @@ function ControlApprovalDialog() {
     // Initial check when popup opens
     useEffect(() => {
         if (!pendingRequest || !meetingId || !localUserId || !socket) return;
-        
+
         console.log('[AGENT] Popup opened, fetching latest agent status from backend...');
         getAgentStatus(meetingId, localUserId);
 
@@ -1291,7 +1291,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=1dK4K8G_BwTAhH58YO5WmptP4b2l4NMIR"
+            "https://drive.google.com/uc?export=download&id=1Oi6-Hr813_J1E_mDyOOcJQ9z-g_-SctX"
         );
 
         if (meetingId && localUserId) {
