@@ -601,7 +601,7 @@ const io = new Server(server, {
     }
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 
 // Environment Variable Safety Checks
 const requiredEnvVars = ['DATABASE_URL', 'RESEND_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
@@ -639,6 +639,10 @@ const questionTracker = new Map(); // meetingId -> { participantId: { count, nam
 const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const userSocketMap = {}; // userId -> socketId
 const agentStatusMap = {}; // participantId -> { socketId, meetingId, ready }
+const agentSocketMap = {}; // agentId -> socketId
+let availableAgents = []; // array of agentIds
+let unlinkedParticipants = []; // array of { meetingId, participantId }
+const activeSessions = {}; // participantId -> agentId
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -919,6 +923,28 @@ io.on('connection', (socket) => {
                 'INSERT INTO meeting_participants (meeting_id, user_id, status) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO NOTHING',
                 [meetingId, userId, 'admitted']
             ).catch(err => console.error('Error persisting participant join:', err));
+            
+            // --- AUTO-LINK SYSTEM: Participant Joins ---
+            if (!activeSessions[userId]) {
+                if (availableAgents.length > 0) {
+                    const agentId = availableAgents.shift();
+                    const agentSocketId = agentSocketMap[agentId];
+                    if (agentSocketId) {
+                        activeSessions[userId] = agentId;
+                        io.to(agentSocketId).emit("manual_link_received", {
+                            meetingId,
+                            participantId: userId
+                        });
+                        console.log(`[AUTO-LINK] Assigned available agent ${agentId} to participant ${userId}`);
+                    }
+                } else {
+                    unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== userId);
+                    unlinkedParticipants.push({ meetingId, participantId: userId });
+                    console.log(`[AUTO-LINK] Participant ${userId} added to waiting queue for an agent`);
+                }
+            } else {
+                console.log(`[AUTO-LINK] Participant ${userId} already has active session with agent ${activeSessions[userId]}`);
+            }
         }
     });
 
@@ -2031,13 +2057,19 @@ io.on('connection', (socket) => {
             }
         });
 
-        // --- userSocketMap Cleanup ---
+        // --- Participant Queue Cleanup ---
+        let disconnectedParticipantId = null;
         for (const uid in userSocketMap) {
             if (userSocketMap[uid] === socket.id) {
+                disconnectedParticipantId = uid;
                 console.log(`[RemoteControl] Removing userId ${uid} from socket map`);
                 delete userSocketMap[uid];
                 break;
             }
+        }
+        
+        if (disconnectedParticipantId) {
+            unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== disconnectedParticipantId);
         }
 
         // --- agentStatusMap Cleanup ---
@@ -2053,6 +2085,25 @@ io.on('connection', (socket) => {
                 });
             }
         }
+
+        // --- agentSocketMap & Queue Cleanup ---
+        for (const aid in agentSocketMap) {
+            if (agentSocketMap[aid] === socket.id) {
+                console.log(`[AGENT] Removing agentId ${aid} from socket map and queues`);
+                delete agentSocketMap[aid];
+                availableAgents = availableAgents.filter(a => a !== aid);
+                
+                // Clear active session to allow participant to reconnect later if agent crashes
+                for (const pid in activeSessions) {
+                    if (activeSessions[pid] === aid) {
+                        delete activeSessions[pid];
+                        console.log(`[AGENT] Cleared active session for participant ${pid}`);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
     });
 
     socket.on("request_control", (data) => {
@@ -2061,9 +2112,9 @@ io.on('connection', (socket) => {
         const targetSocket = userSocketMap[participantId];
         if (targetSocket) {
             console.log(`[RemoteControl] Mapped participantId ${participantId} to socketId ${targetSocket}`);
-            io.to(targetSocket).emit("control_request", { 
-                hostId: hostId || socket.id, 
-                hostName: hostName || 'A Participant' 
+            io.to(targetSocket).emit("control_request", {
+                hostId: hostId || socket.id,
+                hostName: hostName || 'A Participant'
             });
             console.log(`[RemoteControl] Event "control_request" emitted to ${targetSocket}`);
         } else {
@@ -2139,9 +2190,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('agent_status', (data) => {
+        if (!data) return;
         const { participantId, meetingId, ready } = data;
-        console.log(`[AGENT] agent registered: ${participantId} in ${meetingId} (ready: ${ready})`);
-        
+        if (!participantId || !meetingId) return;
+
+        console.log(`[AGENT] agent status update: ${participantId} in ${meetingId} (ready: ${ready})`);
+
         agentStatusMap[participantId] = {
             socketId: socket.id,
             meetingId,
@@ -2155,10 +2209,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('get_agent_status', (data) => {
+        if (!data) return;
         const { participantId, meetingId } = data;
         const agent = agentStatusMap[participantId];
         console.log(`[AGENT] Status request for ${participantId} in ${meetingId}. Found: ${!!agent?.ready}`);
-        
+
         if (agent && agent.ready) {
             socket.emit("agent_status_update", {
                 participantId,
@@ -2170,6 +2225,74 @@ io.on('connection', (socket) => {
                 ready: false
             });
         }
+    });
+
+    // --- AUTO-LINK SYSTEM: Agent Registers ---
+    socket.on('agent_idle_connect', (data) => {
+        if (!data) return;
+        const { agentId } = data;
+        if (!agentId) return;
+
+        agentSocketMap[agentId] = socket.id;
+        console.log(`[AGENT] agent_idle_connect registered: ${agentId} -> ${socket.id}`);
+
+        if (unlinkedParticipants.length > 0) {
+            const { meetingId, participantId } = unlinkedParticipants.shift();
+            activeSessions[participantId] = agentId;
+            console.log(`[AUTO-LINK] Auto-linking new agent ${agentId} to waiting participant ${participantId}`);
+            io.to(socket.id).emit("manual_link_received", {
+                meetingId,
+                participantId
+            });
+        } else {
+            if (!availableAgents.includes(agentId)) {
+                availableAgents.push(agentId);
+                console.log(`[AGENT] Added ${agentId} to available queue. Total available: ${availableAgents.length}`);
+            }
+        }
+    });
+
+    // --- MANUAL FALLBACK SYSTEM: Agent Link ---
+    socket.on('manual_link_agent', (data) => {
+        if (!data) return;
+        const { agentId, meetingId, participantId } = data;
+        if (!agentId || !meetingId || !participantId) return;
+
+        const agentSocketId = agentSocketMap[agentId];
+        if (!agentSocketId) {
+            console.log(`[AGENT] Agent ${agentId} not found for manual linking`);
+            return;
+        }
+
+        // Agent Already Linked Check
+        const isAgentBusy = Object.values(activeSessions).includes(agentId);
+        if (isAgentBusy && activeSessions[participantId] !== agentId) {
+            console.log(`[AGENT] Agent ${agentId} is already busy. Cannot manually link to ${participantId}`);
+            return;
+        }
+
+        availableAgents = availableAgents.filter(a => a !== agentId);
+        unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== participantId);
+        
+        activeSessions[participantId] = agentId;
+        
+        agentStatusMap[participantId] = {
+            socketId: agentSocketId,
+            meetingId,
+            ready: true
+        };
+
+        io.to(agentSocketId).emit("manual_link_received", {
+            meetingId,
+            participantId
+        });
+        
+        io.to(meetingId).emit("agent_status_update", {
+            participantId,
+            ready: true
+        });
+
+        console.log(`[AGENT] Manually linked agent ${agentId} to participant ${participantId}`);
     });
 });
 

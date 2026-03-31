@@ -79,7 +79,6 @@ interface ChatState {
   connectToAgent: (agentId: string, targetParticipantId?: string) => void;
   sendControlEvent: (event: any) => void;
   install_agent_trigger: (meetingId: string, targetId: string) => void;
-  checkAndLinkAgent: (meetingId: string, participantId: string) => Promise<boolean>;
   getAgentStatus: (meetingId: string, participantId: string) => void;
 
   setFrequentQuestionUsers: (users: any[]) => void;
@@ -1201,20 +1200,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  checkAndLinkAgent: async (meetingId, participantId) => {
-    try {
-      const serverUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const response = await fetch('http://127.0.0.1:5701/link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetingId, participantId, serverUrl })
-      });
-      return response.ok;
-    } catch (error) {
-      console.log('[AGENT] Failed to link local agent:', error);
-      return false;
-    }
-  },
+
 
 
 

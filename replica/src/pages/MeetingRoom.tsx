@@ -58,7 +58,7 @@ export default function MeetingRoom() {
     remoteControlState
   } = useMeetingStore();
 
-  const { initSocket, emitParticipantUpdate, emitReaction, nativeAgentStatus, checkAndLinkAgent } = useChatStore();
+  const { initSocket, emitParticipantUpdate, emitReaction, nativeAgentStatus } = useChatStore();
   const { addRemoteStream, addRemoteScreenStream, removeRemoteStream, removeRemoteScreenStream, clearRemoteStreams } = useMediaStore();
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   /* ---------------- SIGNALING STATE ---------------- */
