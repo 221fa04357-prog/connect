@@ -1236,7 +1236,6 @@ function ControlApprovalDialog() {
     const pendingRequest = useChatStore(state => state.pendingControlRequest);
     const respondToControl = useChatStore(state => state.respondToControl);
     const getAgentStatus = useChatStore(state => state.getAgentStatus);
-    const checkAndLinkAgent = useChatStore(state => state.checkAndLinkAgent);
     const localUserId = useChatStore(state => state.localUserId);
     const meetingId = useChatStore(state => state.meetingId);
     const socket = useChatStore(state => state.socket);
@@ -1246,33 +1245,29 @@ function ControlApprovalDialog() {
     const agentConnected = me?.agentConnected || false;
     const hasAgent = me?.hasAgent || false;
 
+    const [manualAgentId, setManualAgentId] = useState('');
+
+    const handleManualLink = () => {
+        if (!manualAgentId.trim() || !socket || !meetingId || !localUserId) return;
+        socket.emit('manual_link_agent', {
+            agentId: manualAgentId.trim().toUpperCase(),
+            participantId: localUserId,
+            meetingId
+        });
+        toast.info("Linking Agent...", {
+            description: "Attempting to link the agent manually."
+        });
+        setManualAgentId('');
+    };
+
     // Initial check when popup opens
     useEffect(() => {
-        if (!pendingRequest || !meetingId || !localUserId) return;
+        if (!pendingRequest || !meetingId || !localUserId || !socket) return;
+        
+        console.log('[AGENT] Popup opened, fetching latest agent status from backend...');
+        getAgentStatus(meetingId, localUserId);
 
-        console.log('[AGENT] Popup opened, checking for existing agent (and polling)...');
-        
-        const tryLink = async () => {
-            const success = await checkAndLinkAgent(meetingId, localUserId);
-            if (success) {
-                getAgentStatus(meetingId, localUserId);
-            }
-        };
-        
-        // Initial try
-        tryLink();
-        
-        // Poll every 3 seconds as long as we are not connected
-        const intervalId = setInterval(() => {
-            const me = useParticipantsStore.getState().participants.find(p => p.id === localUserId);
-            if (!me?.agentConnected) {
-                tryLink();
-            }
-        }, 3000);
-
-        return () => {
-            clearInterval(intervalId);
-        };
+        // No more polling since the backend auto-links using the queue and broadcasts updates.
     }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
@@ -1282,7 +1277,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=1uMZuCf2NjYrPPfGfl9dJ0LjDniudBPS7"
+            "https://drive.google.com/uc?export=download&id=1dK4K8G_BwTAhH58YO5WmptP4b2l4NMIR"
         );
 
         if (meetingId && localUserId) {
@@ -1360,6 +1355,30 @@ function ControlApprovalDialog() {
                                 <p className="text-xs text-gray-400 mt-1">
                                     The host will be able to see your screen and control your mouse/keyboard.
                                 </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!agentConnected && (
+                        <div className="p-3 bg-gray-500/10 border border-gray-500/20 rounded-lg">
+                            <p className="text-sm font-semibold text-gray-300 mb-2">Manual Agent Link</p>
+                            <p className="text-xs text-gray-400 mb-3">
+                                If automatic linking fails, enter your Agent ID (shown in the agent app) below:
+                            </p>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={manualAgentId}
+                                    onChange={(e) => setManualAgentId(e.target.value)}
+                                    placeholder="AGENT-XXXXXXXX"
+                                    className="flex-1 bg-black/20 border-gray-600 text-white placeholder-gray-500"
+                                />
+                                <Button
+                                    onClick={handleManualLink}
+                                    disabled={!manualAgentId.trim()}
+                                    className="bg-green-600 hover:bg-green-700"
+                                >
+                                    Link
+                                </Button>
                             </div>
                         </div>
                     )}

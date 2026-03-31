@@ -1,13 +1,10 @@
 const { app, BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron');
-const { execFile } = require('child_process');
 app.commandLine.appendSwitch('ignore-certificate-errors');
-const path = require('path');
-const http = require('http');
 const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-const SERVER_URL = 'https://connect-pupt.onrender.com';
+let SERVER_URL = 'https://connect-pupt.onrender.com';
 let socket;
 let mainWindow;
 let captureInterval;
@@ -142,170 +139,6 @@ async function handleInputEvent(event) {
     }
 }
 
-function startLocalServer() {
-    const server = http.createServer((req, res) => {
-        // CORS
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-        if (req.method === 'OPTIONS') {
-            res.writeHead(204);
-            res.end();
-            return;
-        }
-
-        if (req.url === '/status' && req.method === 'GET') {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                status: 'running',
-                agentId: AGENT_ID,
-                linked: !!(global.meetingId && global.participantId)
-            }));
-        } else if (req.url === '/link' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk.toString());
-            req.on('end', () => {
-                try {
-                    const data = JSON.parse(body);
-                    global.meetingId = data.meetingId;
-                    global.participantId = data.participantId;
-                    
-                    if (data.serverUrl && data.serverUrl !== SERVER_URL) {
-                        console.log('Updating SERVER_URL to:', data.serverUrl);
-                        SERVER_URL = data.serverUrl;
-                        if (socket) {
-                            socket.disconnect();
-                        }
-                        
-                        // Re-initialize socket with the new URL
-                        socket = io(SERVER_URL, {
-                            transports: ["websocket"],
-                            secure: true,
-                            rejectUnauthorized: false
-                        });
-                        
-                        socket.on('connect', () => {
-                            console.log('Re-connected to signaling server at', SERVER_URL);
-                            if (global.participantId && global.meetingId) {
-                                console.log("agent_status sent", global.participantId);
-                                socket.emit("agent_status", {
-                                    participantId: global.participantId,
-                                    meetingId: global.meetingId,
-                                    ready: true
-                                });
-                            }
-                            if (mainWindow) {
-                                mainWindow.webContents.send('status-update', { 
-                                    status: 'Linked & Connected', 
-                                    agentId: AGENT_ID,
-                                    meetingId: global.meetingId
-                                });
-                            }
-                        });
-                        
-                        // Re-attach other listeners
-                        setupSocketListeners(socket);
-                    } else if (socket && socket.connected) {
-                        console.log("agent_status sent", global.participantId);
-                        socket.emit("agent_status", {
-                            participantId: global.participantId,
-                            meetingId: global.meetingId,
-                            ready: true
-                        });
-
-                        if (mainWindow) {
-                            mainWindow.webContents.send('status-update', {
-                                status: 'Linked & Connected',
-                                agentId: AGENT_ID,
-                                meetingId: global.meetingId
-                            });
-                        }
-                    }
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true }));
-                } catch (e) {
-                    res.writeHead(400);
-                    res.end('Invalid JSON');
-                }
-            });
-        } else {
-            res.writeHead(404);
-        }
-    });
-
-    server.on('error', (e) => {
-        if (e.code === 'EADDRINUSE') {
-            console.log(`Port ${LOCAL_PORT} already in use, skipping local server start.`);
-        } else {
-            console.error('Local server error:', e);
-        }
-    });
-
-    server.listen(LOCAL_PORT, () => {
-        console.log(`Local agent server running on port ${LOCAL_PORT}`);
-    });
-}
-
-// Protocol Registration
-const PROTOCOL = 'replica-agent';
-if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-    }
-} else {
-    app.setAsDefaultProtocolClient(PROTOCOL);
-}
-
-function handleProtocolUrl(url) {
-    console.log('[AGENT-RECV] Received protocol URL:', url);
-    try {
-        // Expected format: replica-agent://link/MEETING_ID/PARTICIPANT_ID
-        const parsedUrl = new URL(url);
-        if (parsedUrl.host === 'link') {
-            const parts = parsedUrl.pathname.split('/').filter(Boolean);
-            if (parts.length >= 2) {
-                global.meetingId = parts[0];
-                global.participantId = parts[1];
-                console.log(`[AGENT-ID] Identity parsed: Meet=${global.meetingId}, Part=${global.participantId}`);
-
-                if (socket && socket.connected) {
-                    emitStatus(true);
-                }
-            }
-        }
-    } catch (err) {
-        console.error('[AGENT-ERR] Failed to parse protocol URL:', err);
-    }
-}
-
-function emitStatus(ready) {
-    if (global.participantId && global.meetingId) {
-        console.log(`[AGENT-EMIT] agent_status: partId=${global.participantId}, ready=${ready}`);
-        socket.emit("agent_status", {
-            participantId: global.participantId,
-            meetingId: global.meetingId,
-            ready: !!ready
-        });
-    }
-}
-
-app.on('second-instance', (event, commandLine) => {
-    if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-    }
-    // Protocol handler for Windows
-    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
-    if (url) handleProtocolUrl(url);
-});
-
-app.on('open-url', (event, url) => {
-    event.preventDefault();
-    handleProtocolUrl(url);
-});
-
 app.whenReady().then(() => {
     createWindow();
 
@@ -316,82 +149,47 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-    console.log('[AGENT] Connected to signaling server');
+        console.log('Connected to signaling server');
+        
+        // --- NEW AUTO-LINK BEHAVIOR ---
+        // Emit agent_idle_connect instead of agent_status on initial boot
+        socket.emit("agent_idle_connect", { agentId: AGENT_ID });
 
-    // ✅ Register agent (optional but useful)
-    socket.emit('agent_register', {
-        agentId: AGENT_ID,
-        name: 'Electron Agent',
-        meetingId: global.meetingId,
-        participantId: global.participantId
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
+        }
     });
-
-    // ✅ Send status ONLY if identity exists
-    if (global.participantId && global.meetingId) {
-        console.log('[AGENT] Sending agent_status:', global.participantId);
+    
+    // Listen for manual or auto link pairing from backend
+    socket.on("manual_link_received", ({ meetingId, participantId }) => {
+        console.log(`[LINK] Assigned to participant ${participantId} in meeting ${meetingId}`);
+        global.meetingId = meetingId;
+        global.participantId = participantId;
 
         socket.emit("agent_status", {
-            agentId: AGENT_ID, 
-            participantId: global.participantId,
-            meetingId: global.meetingId,
+            agentId: AGENT_ID,
+            meetingId,
+            participantId,
             ready: true
         });
-    } else {
-        console.log('[AGENT] Waiting for identity (deep link)...');
-    }
-
-        // ✅ Send status ONLY if identity exists
-        if (global.participantId && global.meetingId) {
-            console.log('[AGENT] Sending agent_status:', global.participantId);
-
-            socket.emit("agent_status", {
-                participantId: global.participantId,
-                meetingId: global.meetingId,
-                ready: true
-            });
-        } else {
-            console.log('[AGENT] Waiting for identity (deep link)...');
-        }
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', {
-                status: 'Connected',
-                agentId: AGENT_ID
+                status: 'Linked & Connected',
+                agentId: AGENT_ID,
+                meetingId: global.meetingId
             });
         }
     });
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Connected',
-            agentId: AGENT_ID
-        });
-    }
-});
-
- // ✅ CONTROL START
-socket.on('control_started', (data) => {
-    console.log('[AGENT] Control session started by host:', data.hostId);
-
-    global.currentRequestId = data.hostId;
-
-    startStreaming(data.hostId);
-
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Controlled by ' + data.hostName,
-            agentId: AGENT_ID
-        });
-    }
-});
 
     // ✅ CONTROL START
     socket.on('control_started', (data) => {
-        console.log('[AGENT] Control session started by host:', data.hostId);
-        global.currentRequestId = data.hostId;
-        startStreaming(data.hostId);
+        const hostId = data?.hostId;
+        if (!hostId) return;
+        startStreaming(hostId);
         if (mainWindow) {
             mainWindow.webContents.send('status-update', {
-                status: 'Controlled by ' + data.hostName,
+                status: 'Controlled by Host',
                 agentId: AGENT_ID
             });
         }
@@ -399,42 +197,28 @@ socket.on('control_started', (data) => {
 
     // ✅ HOST INPUT (mouse/keyboard)
     socket.on('host_input_event', (event) => {
-        handleInputEvent(event);
+        if (event && event.event) { // Backend wraps it, handle generic or wrapped
+             handleInputEvent(event.event);
+        } else {
+             handleInputEvent(event);
+        }
     });
 
+    // ✅ CONTROL STOP
     socket.on('control_stopped', () => {
         console.log('[AGENT] Control stopped');
         global.currentRequestId = null;
         stopStreaming();
+
         if (mainWindow) {
             mainWindow.webContents.send('status-update', {
-                status: 'Connected',
-                agentId: AGENT_ID
+                status: 'Linked & Connected',
+                agentId: AGENT_ID,
+                meetingId: global.meetingId
             });
         }
     });
 
-// ✅ HOST INPUT (mouse/keyboard)
-socket.on('host_input_event', (event) => {
-    handleInputEvent(event);
-});
-
-
-// ✅ CONTROL STOP
-socket.on('control_stopped', () => {
-    console.log('[AGENT] Control stopped');
-
-    global.currentRequestId = null;
-
-    stopStreaming();
-
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', {
-            status: 'Connected',
-            agentId: AGENT_ID
-        });
-    }
-});
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);
         if (mainWindow) {
@@ -454,27 +238,6 @@ socket.on('control_stopped', () => {
             });
         }
     });
-});
-
-
-
-
-startLocalServer();
-
-// Spawn Python Agent Executable
-const isDev = !app.isPackaged;
-const agentPath = isDev
-    ? path.join(__dirname, 'resources', 'agent.exe')
-    : path.join(process.resourcesPath, 'agent.exe');
-
-console.log('Starting Python Agent from:', agentPath);
-
-execFile(agentPath, (err, stdout, stderr) => {
-    if (err) {
-        console.error('Failed to start agent:', err);
-        return;
-    }
-    console.log('Agent started successfully');
 });
 
 app.on('window-all-closed', () => {
