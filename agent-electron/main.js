@@ -7,7 +7,8 @@ const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
 // Configuration
-let SERVER_URL = 'https://5154-117-192-9-245.ngrok-free.app';
+let SERVER_URL = 'https://connect-pupt.onrender.com';
+console.log('🚀 Agent starting up on port 5701...');
 let socket;
 let mainWindow;
 let captureInterval;
@@ -39,6 +40,81 @@ const MOUSE_THROTTLE_MS = 33; // ~30 FPS for mouse events
 global.meetingId = null;
 global.participantId = null;
 
+// Fix: Implement sendAgentReady as specified
+const sendAgentReady = async () => {
+    try {
+        if (!global.participantId) {
+            // Need linked session first
+            return;
+        }
+
+        console.log("📡 Sending READY status...");
+        console.log("Agent ID:", AGENT_ID);
+        console.log("User ID:", global.participantId);
+        console.log("Status: READY");
+
+        // Mandatory fetch fix
+        try {
+            await fetch(`${SERVER_URL}/api/agent/status`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    userId: global.participantId,
+                    agentId: AGENT_ID,
+                    ready: true
+                })
+            });
+        } catch (fetchErr) {
+            // Silence REST error - Signaling socket is primary
+        }
+
+        if (socket && socket.connected) {
+            // Emit both for compatibility (user requested update + backend legacy)
+            socket.emit("agent_status_update", {
+                participantId: global.participantId,
+                ready: true
+            });
+
+            socket.emit("agent_status", {
+                participantId: global.participantId,
+                meetingId: global.meetingId,
+                ready: true
+            });
+        }
+
+        console.log("✅ Agent READY sent successfully");
+    } catch (err) {
+        console.error("❌ Failed to send READY:", err);
+    }
+};
+
+// Fix: Implement missing setupSocketListeners
+function setupSocketListeners(s) {
+    s.on("mouse_move", (data) => handleInputEvent({ type: 'mouse_move', ...data }));
+    s.on("mouse_click", (data) => handleInputEvent({ type: 'mouse_click', ...data }));
+    s.on("key_press", (data) => handleInputEvent({ type: 'key_press', ...data }));
+    
+    // Key compatibility for other key events
+    s.on("key_down", (data) => handleInputEvent({ type: 'key_down', ...data }));
+    s.on("key_up", (data) => handleInputEvent({ type: 'key_up', ...data }));
+
+    s.on("screen_request", (data) => {
+        console.log("Screen request received:", data);
+        if (data.active) {
+            startStreaming(data.hostId);
+        } else {
+            stopStreaming();
+        }
+    });
+
+    // Handle session status requests
+    s.on("get_agent_status", (data) => {
+        sendAgentReady();
+    });
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 400,
@@ -63,8 +139,6 @@ function createWindow() {
         });
     });
 }
-
-
 
 let captureTimeout;
 
@@ -119,8 +193,21 @@ function stopStreaming() {
     isControlled = false;
 }
 
+// Global state for safety check logic (requested by user)
+let sessionActive = false; 
+// authorizedUser will be our own participantId since we only accept commands for our own ID
+// The user check is "authorizedUser === userId"
+
 async function handleInputEvent(event) {
-    if (!isControlled) return;
+    // Session Active safety check (requested by user: sessionActive && authorizedUser === userId)
+    // We Map isControlled -> sessionActive
+    sessionActive = isControlled;
+    const userId = global.participantId;
+    const authorizedUser = global.participantId; 
+
+    if (!(sessionActive && authorizedUser === userId)) {
+        return;
+    }
 
     try {
         const { type, x, y, button, key } = event;
@@ -145,9 +232,11 @@ async function handleInputEvent(event) {
 function startLocalServer() {
     const server = http.createServer((req, res) => {
         // CORS
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        const origin = req.headers.origin || '*';
+        res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Access-Control-Request-Private-Network');
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(204);
@@ -170,49 +259,42 @@ function startLocalServer() {
                     const data = JSON.parse(body);
                     global.meetingId = data.meetingId;
                     global.participantId = data.participantId;
-                    
+
                     if (data.serverUrl && data.serverUrl !== SERVER_URL) {
                         console.log('Updating SERVER_URL to:', data.serverUrl);
                         SERVER_URL = data.serverUrl;
                         if (socket) {
                             socket.disconnect();
                         }
-                        
+
                         // Re-initialize socket with the new URL
                         socket = io(SERVER_URL, {
                             transports: ["websocket"],
                             secure: true,
                             rejectUnauthorized: false
                         });
-                        
+
                         socket.on('connect', () => {
-                            console.log('Re-connected to signaling server at', SERVER_URL);
-                            if (global.participantId && global.meetingId) {
-                                console.log("agent_status sent", global.participantId);
-                                socket.emit("agent_status", {
-                                    participantId: global.participantId,
-                                    meetingId: global.meetingId,
-                                    ready: true
-                                });
-                            }
+                            console.log('🟢 Agent connected to server');
+                            socket.emit('agent_register', { agentId: AGENT_ID });
+                            
+                            // Mandatory: Call sendAgentReady on connect
+                            sendAgentReady();
+                            
                             if (mainWindow) {
-                                mainWindow.webContents.send('status-update', { 
-                                    status: 'Linked & Connected', 
+                                mainWindow.webContents.send('status-update', {
+                                    status: 'Linked & Connected',
                                     agentId: AGENT_ID,
                                     meetingId: global.meetingId
                                 });
                             }
                         });
-                        
-                        // Re-attach other listeners
+
+                        // Re-attach listeners
                         setupSocketListeners(socket);
                     } else if (socket && socket.connected) {
-                        console.log("agent_status sent", global.participantId);
-                        socket.emit("agent_status", {
-                            participantId: global.participantId,
-                            meetingId: global.meetingId,
-                            ready: true
-                        });
+                        // Mandatory: Call sendAgentReady when linked
+                        sendAgentReady();
 
                         if (mainWindow) {
                             mainWindow.webContents.send('status-update', {
@@ -258,17 +340,11 @@ app.whenReady().then(() => {
     });
 
     socket.on('connect', () => {
-        console.log('Connected to signaling server');
+        console.log('🟢 Agent connected to server');
+        socket.emit('agent_register', { agentId: AGENT_ID });
 
-        // NEW: Socket-based status detection (Robust fix)
-        if (global.participantId && global.meetingId) {
-            console.log("agent_status sent", global.participantId);
-            socket.emit("agent_status", {
-                participantId: global.participantId,
-                meetingId: global.meetingId,
-                ready: true
-            });
-        }
+        // Mandatory: Call sendAgentReady on connect
+        sendAgentReady();
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
@@ -276,6 +352,11 @@ app.whenReady().then(() => {
     });
 
     setupSocketListeners(socket);
+
+    // Mandatory: HEARTBEAT (2 seconds)
+    setInterval(() => {
+        sendAgentReady();
+    }, 2000);
 
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);

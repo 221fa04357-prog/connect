@@ -601,7 +601,7 @@ const io = new Server(server, {
     }
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 
 // Environment Variable Safety Checks
 const requiredEnvVars = ['DATABASE_URL', 'RESEND_API_KEY', 'FRONTEND_URL', 'GROQ_API_KEY'];
@@ -639,6 +639,7 @@ const questionTracker = new Map(); // meetingId -> { participantId: { count, nam
 const handRaiseCounters = new Map(); // meetingId -> currentCounter (last assigned number)
 const userSocketMap = {}; // userId -> socketId
 const agentStatusMap = {}; // participantId -> { socketId, meetingId, ready }
+const agentSocketMap = {}; // agentId -> socketId
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
 io.on('connection', (socket) => {
@@ -2053,6 +2054,15 @@ io.on('connection', (socket) => {
                 });
             }
         }
+
+        // --- agentSocketMap Cleanup ---
+        for (const aid in agentSocketMap) {
+            if (agentSocketMap[aid] === socket.id) {
+                console.log(`[AGENT] Removing agentId ${aid} from socket map`);
+                delete agentSocketMap[aid];
+                break;
+            }
+        }
     });
 
     socket.on("request_control", (data) => {
@@ -2061,9 +2071,9 @@ io.on('connection', (socket) => {
         const targetSocket = userSocketMap[participantId];
         if (targetSocket) {
             console.log(`[RemoteControl] Mapped participantId ${participantId} to socketId ${targetSocket}`);
-            io.to(targetSocket).emit("control_request", { 
-                hostId: hostId || socket.id, 
-                hostName: hostName || 'A Participant' 
+            io.to(targetSocket).emit("control_request", {
+                hostId: hostId || socket.id,
+                hostName: hostName || 'A Participant'
             });
             console.log(`[RemoteControl] Event "control_request" emitted to ${targetSocket}`);
         } else {
@@ -2138,27 +2148,50 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('agent_status', (data) => {
-        const { participantId, meetingId, ready } = data;
-        console.log(`[AGENT] agent registered: ${participantId} in ${meetingId} (ready: ${ready})`);
+    const handleAgentStatusUpdate = (data) => {
+        const { participantId, meetingId, ready, agentId } = data;
         
-        agentStatusMap[participantId] = {
-            socketId: socket.id,
-            meetingId,
-            ready: !!ready
-        };
+        // Use provided meetingId or try to find it from existing participants
+        let finalMeetingId = meetingId;
+        if (!finalMeetingId) {
+            for (const [mId, participants] of rooms.entries()) {
+                for (const [sid, p] of participants.entries()) {
+                    if (p.id === participantId) {
+                        finalMeetingId = mId;
+                        break;
+                    }
+                }
+                if (finalMeetingId) break;
+            }
+        }
 
-        io.to(meetingId).emit("agent_status_update", {
-            participantId,
-            ready: !!ready
-        });
-    });
+        console.log(`[AGENT] Registry Update: user=${participantId} in meeting=${finalMeetingId} (ready=${ready})`);
+
+        if (participantId) {
+            agentStatusMap[participantId] = {
+                socketId: socket.id,
+                meetingId: finalMeetingId,
+                ready: !!ready,
+                agentId: agentId || agentStatusMap[participantId]?.agentId
+            };
+
+            if (finalMeetingId) {
+                io.to(finalMeetingId).emit("agent_status_update", {
+                    participantId,
+                    ready: !!ready
+                });
+            }
+        }
+    };
+
+    socket.on('agent_status', handleAgentStatusUpdate);
+    socket.on('agent_status_update', handleAgentStatusUpdate);
 
     socket.on('get_agent_status', (data) => {
         const { participantId, meetingId } = data;
         const agent = agentStatusMap[participantId];
         console.log(`[AGENT] Status request for ${participantId} in ${meetingId}. Found: ${!!agent?.ready}`);
-        
+
         if (agent && agent.ready) {
             socket.emit("agent_status_update", {
                 participantId,
@@ -2171,6 +2204,76 @@ io.on('connection', (socket) => {
             });
         }
     });
+
+    socket.on('agent_register', (data) => {
+        const { agentId } = data;
+        agentSocketMap[agentId] = socket.id;
+        console.log(`[AGENT] Agent registered: ${agentId} -> ${socket.id}`);
+    });
+
+    socket.on('link_agent', (data) => {
+        const { agentId, participantId, meetingId } = data;
+        const agentSocketId = agentSocketMap[agentId];
+        
+        console.log(`[LINK] Linking Request: Agent=${agentId}, User=${participantId}`);
+
+        if (agentSocketId) {
+            agentStatusMap[participantId] = {
+                socketId: agentSocketId,
+                meetingId,
+                ready: true,
+                hasAgent: true
+            };
+
+            const updateData = { participantId, ready: true, hasAgent: true, agentId };
+            
+            // Broadcast to whole room
+            io.to(meetingId).emit("agent_status_update", updateData);
+            
+            // CRITICAL: Direct reply to the user who requested the link
+            socket.emit("agent_status_update", updateData); 
+            
+            console.log(`[LINK] Link Successful for ${participantId}`);
+        } else {
+            console.log(`[LINK] Failed: Agent ID ${agentId} not found in registry.`);
+            socket.emit("agent_status_error", { message: "Agent ID not found. Is the app open?" });
+        }
+    });
+});
+
+// --- Agent Status REST API ---
+app.post('/api/agent/status', (req, res) => {
+    const { userId, agentId, ready } = req.body;
+    console.log(`[AGENT API] Status Update: user=${userId} agent=${agentId} ready=${ready}`);
+
+    if (userId) {
+        // Try to find the meeting room for this user to broadcast status
+        let roomFound = null;
+        for (const [meetingId, participants] of rooms.entries()) {
+            for (const [sid, p] of participants.entries()) {
+                if (p.id === userId) {
+                    roomFound = meetingId;
+                    break;
+                }
+            }
+            if (roomFound) break;
+        }
+
+        agentStatusMap[userId] = {
+            ...agentStatusMap[userId],
+            ready: !!ready,
+            agentId: agentId,
+            meetingId: roomFound || agentStatusMap[userId]?.meetingId
+        };
+
+        if (roomFound) {
+            io.to(roomFound).emit("agent_status_update", {
+                participantId: userId,
+                ready: !!ready
+            });
+        }
+    }
+    res.json({ success: true });
 });
 
 // Auth Endpoints

@@ -185,14 +185,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on('agent_status_update', (data: { participantId: string, ready: boolean }) => {
       console.log(`[AGENT] agent_status_update: participant=${data.participantId}, ready=${data.ready}`);
+      const localId = get().localUserId;
+
       import('./useParticipantsStore').then((store) => {
         const ps = store.useParticipantsStore.getState();
         ps.updateParticipantAgentStatus(data.participantId, data.ready);
         
-        // Ensure UI re-renders if it's the local user
-        const localUserId = get().localUserId;
-        if (data.participantId === localUserId) {
-           console.log('[AGENT] Local agent status updated:', data.ready);
+        // Ensure global native agent status is in sync for local user
+        if (data.participantId === localId) {
+          set({ 
+            nativeAgentStatus: { 
+              ...get().nativeAgentStatus, 
+              status: data.ready ? 'connected' : 'idle',
+              agentId: (data as any).agentId 
+            } 
+          });
         }
       });
     });
@@ -853,16 +860,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Removed conflicting 'agent_status_update' listener
     // This listener was overwriting the correct 'ready' state with 'false'
     // because data.status was undefined in the new flow.
-    
+
     socket.on('control_connected', (data: { agentId: string, agentSocketId: string }) => {
       const targetId = get().nativeAgentStatus.targetParticipantId;
-      set({ 
-        nativeAgentStatus: { 
-          status: 'connected', 
+      set({
+        nativeAgentStatus: {
+          status: 'connected',
           agentId: data.agentId,
           agentSocketId: data.agentSocketId,
           targetParticipantId: targetId
-        } 
+        }
       });
 
       if (targetId) {
@@ -887,25 +894,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
       console.log('[Frontend] Remote control STARTED:', data);
       const hostIsMe = data.hostId === get().socket?.id;
-      
+
       if (hostIsMe) {
         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
-        set({ 
-            isControlling: true,
-            nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
+        set({
+          isControlling: true,
+          nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
         });
-        
+
         import('./useParticipantsStore').then((pStore) => {
-            const participants = pStore.useParticipantsStore.getState().participants;
-            const target = participants.find(p => p.id === data.participantId);
-            import('./useMeetingStore').then((mStore) => {
-                mStore.useMeetingStore.getState().setRemoteControlState({
-                    status: 'active',
-                    role: 'controller',
-                    targetId: data.participantId,
-                    targetName: target?.name || 'Participant'
-                });
+          const participants = pStore.useParticipantsStore.getState().participants;
+          const target = participants.find(p => p.id === data.participantId);
+          import('./useMeetingStore').then((mStore) => {
+            mStore.useMeetingStore.getState().setRemoteControlState({
+              status: 'active',
+              role: 'controller',
+              targetId: data.participantId,
+              targetName: target?.name || 'Participant'
             });
+          });
         });
       } else if (data.participantId === get().localUserId) {
         import('sonner').then(({ toast }) => toast.info('Control session is now active.'));
@@ -1163,7 +1170,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     import('./useParticipantsStore').then((store) => {
       const me = store.useParticipantsStore.getState().participants.find(p => p.id === localUserId);
-      socket.emit('connect_to_agent', { 
+      socket.emit('connect_to_agent', {
         agentId,
         hostName: me?.name || 'Host',
         targetParticipantId
@@ -1176,7 +1183,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   respondToControl: async (accepted: boolean) => {
     const { socket, meetingId, localUserId, pendingControlRequest } = get();
     if (!socket || !meetingId || !localUserId || !pendingControlRequest) return;
-    
+
     if (accepted) {
       socket.emit('accept_control', {
         meetingId,
