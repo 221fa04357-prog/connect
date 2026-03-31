@@ -53,6 +53,7 @@ import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { useAIStore } from '@/stores/useAIStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
+import { ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
 import { cn } from '@/lib/utils';
 import { Reaction } from '@/types';
 import { useIsMobile } from '@/hooks';
@@ -1445,7 +1446,8 @@ function ControlBar() {
         emitWhiteboardRedo,
         requestRecordingPermission,
         grantRecordingPermission,
-        denyRecordingPermission
+        denyRecordingPermission,
+        emitReaction
     } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
@@ -1856,13 +1858,20 @@ function ControlBar() {
 
     // Handlers
     const handleReaction = (emoji: string) => {
+        const reactionId = `reaction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const reaction: Reaction = {
-            id: `reaction-${Date.now()}`,
-            participantId: user?.id || 'unknown',
+            id: reactionId,
+            participantId: user?.id || localUserId || 'anonymous',
             emoji,
             timestamp: new Date()
         };
-        addReaction(reaction);
+        
+        // Emit to server - the server will broadcast back to everyone including us
+        // useMeetingStore will then pick it up in receive_reaction listener
+        if (meeting?.id) {
+            emitReaction(meeting.id, reaction);
+        }
+        
         toggleReactions();
     };
 
@@ -1892,7 +1901,7 @@ function ControlBar() {
                 console.log("Requesting audio stream on user gesture...");
                 const isVideoOff = useMeetingStore.getState().isVideoOff;
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: ENHANCED_AUDIO_CONSTRAINTS,
                     video: !isVideoOff
                 });
 
@@ -1944,10 +1953,13 @@ function ControlBar() {
         if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
             try {
                 console.log("Requesting video stream on user gesture...");
-                const isAudioMutedCurrent = useMeetingStore.getState().isAudioMuted;
+                const { selectedAudioId } = useMeetingStore.getState();
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
-                    audio: !isAudioMutedCurrent
+                    audio: {
+                        ...ENHANCED_AUDIO_CONSTRAINTS,
+                        deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
+                    }
                 });
                 setLocalStream(stream);
             } catch (err) {
@@ -2190,9 +2202,15 @@ function ControlBar() {
                 if (!stream) {
                     // Try to get a basic stream if none exists
                     try {
+                        const { selectedAudioId, selectedVideoId } = useMeetingStore.getState();
                         stream = await navigator.mediaDevices.getUserMedia({
-                            audio: true,
-                            video: true
+                            audio: {
+                                ...ENHANCED_AUDIO_CONSTRAINTS,
+                                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
+                            },
+                            video: {
+                                deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined
+                            }
                         });
                         setLocalStream(stream);
                     } catch (e) {

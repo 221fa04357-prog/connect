@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
 import { Button } from '@/components/ui';
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useAIStore } from '@/stores/useAIStore';
@@ -608,19 +609,7 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id, user?.id, meetingStoreAudioMuted, meetingStoreVideoOff, myParticipant?.isHandRaised]);
 
-  // Sync Reactions
-  const lastReactionIdForSync = useRef<string | null>(null);
-  useEffect(() => {
-    if (meeting?.id && reactions.length > 0) {
-      const latest = reactions[reactions.length - 1];
-      if (latest.id !== lastReactionIdForSync.current) {
-        lastReactionIdForSync.current = latest.id;
-        if (latest.participantId === user?.id) {
-          emitReaction(meeting.id, latest);
-        }
-      }
-    }
-  }, [meeting?.id, reactions, user?.id]);
+
 
   // No longer needed to sync preview state to participant store on mount, 
   // because we now use MeetingStore as the authoritative source for local user.
@@ -684,10 +673,8 @@ export default function MeetingRoom() {
                 facingMode: 'user'
               },
               audio: {
-                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                ...ENHANCED_AUDIO_CONSTRAINTS,
+                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
               }
             });
 
@@ -711,10 +698,8 @@ export default function MeetingRoom() {
               const { selectedAudioId, isAudioMuted } = useMeetingStore.getState();
               const audioStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
-                  echoCancellation: true,
-                  noiseSuppression: true,
-                  autoGainControl: true
+                  ...ENHANCED_AUDIO_CONSTRAINTS,
+                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
                 }
               });
 
@@ -994,6 +979,7 @@ export default function MeetingRoom() {
       <AICompanionPanel />
       <TranscriptPanel />
       <ResourceHubPanel />
+      <PollPanel />
       <VideoStartRequestPopup />
 
 

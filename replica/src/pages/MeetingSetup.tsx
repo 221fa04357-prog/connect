@@ -36,6 +36,7 @@ import { useGuestSessionStore } from '@/stores/useGuestSessionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { useIsMobile } from '@/hooks';
+import { ENHANCED_AUDIO_CONSTRAINTS } from '@/lib/audioProcessor';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -98,10 +99,8 @@ export function JoinMeeting() {
                             facingMode: 'user'
                         },
                         audio: {
+                            ...ENHANCED_AUDIO_CONSTRAINTS,
                             deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true
                         }
                     });
 
@@ -195,7 +194,7 @@ export function JoinMeeting() {
             try {
                 const isVideoOff = useMeetingStore.getState().isVideoOff;
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: ENHANCED_AUDIO_CONSTRAINTS,
                     video: !isVideoOff
                 });
                 setLocalStream(stream);
@@ -216,7 +215,7 @@ export function JoinMeeting() {
                 const isAudioMuted = useMeetingStore.getState().isAudioMuted;
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
-                    audio: !isAudioMuted
+                    audio: ENHANCED_AUDIO_CONSTRAINTS
                 });
                 setLocalStream(stream);
             } catch (err) {

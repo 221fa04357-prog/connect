@@ -6,8 +6,10 @@ import { usePollStore, Poll } from '@/stores/usePollStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useChatStore } from '@/stores/useChatStore';
+import { useParticipantsStore } from '@/stores/useParticipantsStore';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
 
 export function PollPanel() {
     const { 
@@ -22,6 +24,16 @@ export function PollPanel() {
     const { meeting, isJoinedAsHost } = useMeetingStore();
     const { user } = useAuthStore();
     const { localUserId } = useChatStore();
+    const { participants } = useParticipantsStore();
+    
+    // Robust host check
+    const currentUserId = user?.id || localUserId;
+    const currentParticipant = participants.find(p => p.id === currentUserId);
+    const isHostOrCoHost = isJoinedAsHost || 
+                           currentParticipant?.role === 'host' || 
+                           currentParticipant?.role === 'co-host';
+    
+
     
     const [isCreating, setIsCreating] = useState(false);
     const [question, setQuestion] = useState('');
@@ -102,7 +114,7 @@ export function PollPanel() {
                         </div>
                     </div>
 
-                    {isJoinedAsHost && !isCreating && (
+                    {isHostOrCoHost && !isCreating && (
                         <div className="p-4 border-b border-[#404040] shrink-0">
                             <Button 
                                 onClick={() => setIsCreating(true)}
@@ -202,7 +214,7 @@ export function PollPanel() {
                                                 </span>
                                                 <h4 className="text-sm font-semibold">{poll.question}</h4>
                                             </div>
-                                            {isJoinedAsHost && poll.status === 'open' && (
+                                            {isHostOrCoHost && poll.status === 'open' && (
                                                 <Button size="sm" variant="ghost" className="text-red-400 h-7 px-2 hover:bg-red-500/10" onClick={() => meeting?.id && closePoll(meeting.id, poll.id)}>
                                                     End
                                                 </Button>

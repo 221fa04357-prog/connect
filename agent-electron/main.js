@@ -1,8 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron');
-const { execFile } = require('child_process');
 app.commandLine.appendSwitch('ignore-certificate-errors');
-const path = require('path');
-const http = require('http');
 const io = require('socket.io-client');
 const InputManager = require('./input-manager');
 
@@ -185,7 +182,42 @@ app.whenReady().then(() => {
         }
     });
 
-    setupSocketListeners(socket);
+    // ✅ CONTROL START
+    socket.on('control_started', (data) => {
+        const hostId = data?.hostId;
+        if (!hostId) return;
+        startStreaming(hostId);
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Controlled by Host',
+                agentId: AGENT_ID
+            });
+        }
+    });
+
+    // ✅ HOST INPUT (mouse/keyboard)
+    socket.on('host_input_event', (event) => {
+        if (event && event.event) { // Backend wraps it, handle generic or wrapped
+             handleInputEvent(event.event);
+        } else {
+             handleInputEvent(event);
+        }
+    });
+
+    // ✅ CONTROL STOP
+    socket.on('control_stopped', () => {
+        console.log('[AGENT] Control stopped');
+        global.currentRequestId = null;
+        stopStreaming();
+
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status: 'Linked & Connected',
+                agentId: AGENT_ID,
+                meetingId: global.meetingId
+            });
+        }
+    });
 
     socket.on('connect_error', (error) => {
         console.error('Connection Error:', error.message);
@@ -205,22 +237,6 @@ app.whenReady().then(() => {
                 agentId: AGENT_ID
             });
         }
-    });
-
-    // Spawn Python Agent Executable
-    const isDev = !app.isPackaged;
-    const agentPath = isDev
-        ? path.join(__dirname, 'resources', 'agent.exe')
-        : path.join(process.resourcesPath, 'agent.exe');
-
-    console.log('Starting Python Agent from:', agentPath);
-
-    execFile(agentPath, (err, stdout, stderr) => {
-        if (err) {
-            console.error('Failed to start agent:', err);
-            return;
-        }
-        console.log('Agent started successfully');
     });
 });
 

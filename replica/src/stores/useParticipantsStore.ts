@@ -60,11 +60,24 @@ interface ParticipantsState {
   toggleParticipantAudio: (id: string) => void;
   toggleParticipantVideo: (id: string) => void;
   forceSetParticipantVideo: (id: string, isOff: boolean) => void;
-  lowerAllHandsLocal: () => void;
   syncParticipants: (participants: Participant[]) => void;
   resetWaitingRoomBadge: () => void;
   reset: () => void;
 }
+
+const computeHandRaises = (participants: Participant[]): Participant[] => {
+  const raised = participants
+    .filter(p => p.isHandRaised)
+    .sort((a, b) => (a.handRaiseTimestamp || 0) - (b.handRaiseTimestamp || 0));
+
+  return participants.map(p => {
+    if (p.isHandRaised) {
+      const idx = raised.findIndex(r => r.id === p.id);
+      return { ...p, handRaiseNumber: idx !== -1 ? idx + 1 : undefined };
+    }
+    return { ...p, handRaiseNumber: undefined, handRaiseTimestamp: undefined };
+  });
+};
 
 export const useParticipantsStore = create<ParticipantsState>()(
   persist(
@@ -81,7 +94,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
       spotlightedParticipantId: null,
       lastViewedWaitingRoomCount: 0,
 
-      setParticipants: (participants) => set({ participants }),
+      setParticipants: (participants) => set({ participants: computeHandRaises(participants) }),
 
       addParticipant: (participant) => set((state) => {
         const p = { ...participant, isVideoAllowed: !state.videoRestricted };
@@ -94,7 +107,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
           };
           return { waitingRoom: [...state.waitingRoom, waitingEntry] };
         }
-        const res = { participants: [...state.participants, p] };
+        const res = { participants: computeHandRaises([...state.participants, p]) };
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return res;
       }),
@@ -102,15 +115,16 @@ export const useParticipantsStore = create<ParticipantsState>()(
       removeParticipant: (id) => set((state) => {
         const target = state.participants.find(p => p.id === id);
         if (target?.role === 'host') return {};
-        const res = { participants: state.participants.filter(p => p.id !== id) };
+        const res = { participants: computeHandRaises(state.participants.filter(p => p.id !== id)) };
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return res;
       }),
 
       updateParticipant: (id, updates) => set((state) => {
-        const participants = state.participants.map(p =>
+        const pList = state.participants.map(p =>
           p.id === id ? { ...p, ...updates } : p
         );
+        const participants = computeHandRaises(pList);
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
@@ -126,29 +140,20 @@ export const useParticipantsStore = create<ParticipantsState>()(
       toggleHandRaise: (id) => set((state) => {
         const currentParticipant = state.participants.find(p => p.id === id);
         const nextHandRaised = !currentParticipant?.isHandRaised;
+        const timestamp = nextHandRaised ? Date.now() : undefined;
 
         // Broadcast update
         import('./useChatStore').then((chatStore) => {
           const cs = chatStore.useChatStore.getState();
           if (cs.meetingId) {
-            cs.emitParticipantUpdate(cs.meetingId, id, { isHandRaised: nextHandRaised });
+            cs.emitParticipantUpdate(cs.meetingId, id, { isHandRaised: nextHandRaised, handRaiseTimestamp: timestamp });
           }
         });
 
-        const participants = state.participants.map(p =>
-          p.id === id ? { ...p, isHandRaised: nextHandRaised } : p
+        const pList = state.participants.map(p =>
+          p.id === id ? { ...p, isHandRaised: nextHandRaised, handRaiseTimestamp: timestamp } : p
         );
-        setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
-        return { participants };
-      }),
-
-      lowerAllHandsLocal: () => set((state) => {
-        const participants = state.participants.map(p => ({
-          ...p,
-          isHandRaised: false,
-          handRaiseNumber: undefined,
-          handRaiseTimestamp: undefined
-        }));
+        const participants = computeHandRaises(pList);
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles }, { source: INSTANCE_ID }));
         return { participants };
       }),
@@ -353,7 +358,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
           joinedAt: new Date()
         };
         const res = {
-          participants: [...state.participants, newParticipant],
+          participants: computeHandRaises([...state.participants, newParticipant]),
           waitingRoom: state.waitingRoom.filter(p => p.id !== id)
         };
         setTimeout(() => eventBus.publish('participants:update', { participants: useParticipantsStore.getState().participants, transientRoles: useParticipantsStore.getState().transientRoles, waitingRoom: useParticipantsStore.getState().waitingRoom }, { source: INSTANCE_ID }));
@@ -479,7 +484,7 @@ export const useParticipantsStore = create<ParticipantsState>()(
         return { participants };
       }),
 
-      syncParticipants: (participants) => set({ participants }),
+      syncParticipants: (participants) => set({ participants: computeHandRaises(participants) }),
 
       resetWaitingRoomBadge: () => set((state) => ({ 
         lastViewedWaitingRoomCount: state.waitingRoom.length 
@@ -512,7 +517,7 @@ eventBus.subscribe('participants:update', (payload, meta) => {
 
   const { participants, transientRoles, videoRestricted } = payload;
   const updates: any = {
-    participants: participants,
+    participants: computeHandRaises(participants || []),
     transientRoles: transientRoles || {}
   };
   if (videoRestricted !== undefined) {
