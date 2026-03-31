@@ -1257,7 +1257,6 @@ function ControlApprovalDialog() {
         toast.info("Linking Agent...", {
             description: "Attempting to link the agent manually."
         });
-        setManualAgentId('');
     };
 
     // Initial check when popup opens
@@ -1267,6 +1266,21 @@ function ControlApprovalDialog() {
         console.log('[AGENT] Popup opened, fetching latest agent status from backend...');
         getAgentStatus(meetingId, localUserId);
 
+        const handleError = (data: { message: string }) => {
+            toast.error("Linking Failed", { description: data.message });
+        };
+        const handleSuccess = (data: { agentId: string }) => {
+            toast.success("Agent Linked!", { description: `Successfully linked to ${data.agentId}` });
+            setManualAgentId(''); // Clear only on success
+        };
+
+        socket.on('manual_link_error', handleError);
+        socket.on('manual_link_success', handleSuccess);
+
+        return () => {
+            socket.off('manual_link_error', handleError);
+            socket.off('manual_link_success', handleSuccess);
+        };
         // No more polling since the backend auto-links using the queue and broadcasts updates.
     }, [!!pendingRequest, meetingId, localUserId, socket]);
 

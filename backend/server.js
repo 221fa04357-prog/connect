@@ -908,7 +908,10 @@ io.on('connection', (socket) => {
         }
 
         // Broadcast updated participant list to everyone in the room
-        const roomParticipants = Array.from(room.values());
+        const roomParticipants = Array.from(room.values()).map(p => ({
+            ...p,
+            agentConnected: !!agentStatusMap[p.id]?.ready
+        }));
         io.to(meetingId).emit('participants_update', roomParticipants);
 
         // Also send waiting room status OK to this user
@@ -1994,7 +1997,10 @@ io.on('connection', (socket) => {
                 console.log(`User ${p.name} left meeting: ${meetingId}`);
 
                 // Broadcast update
-                const roomParticipants = Array.from(participants.values());
+                const roomParticipants = Array.from(participants.values()).map(p => ({
+                    ...p,
+                    agentConnected: !!agentStatusMap[p.id]?.ready
+                }));
                 io.to(meetingId).emit('participants_update', roomParticipants);
 
                 // Cleanup empty rooms
@@ -2056,6 +2062,22 @@ io.on('connection', (socket) => {
         
         if (disconnectedParticipantId) {
             unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== disconnectedParticipantId);
+            
+            // Free up any agent that was locked to this participant
+            const linkedAgentId = activeSessions[disconnectedParticipantId];
+            if (linkedAgentId) {
+                console.log(`[AGENT] Participant ${disconnectedParticipantId} disconnected. Freeing agent ${linkedAgentId}`);
+                delete activeSessions[disconnectedParticipantId];
+                delete agentStatusMap[disconnectedParticipantId];
+                
+                // Return agent to available pool if agent is still connected
+                if (agentSocketMap[linkedAgentId] && !availableAgents.includes(linkedAgentId)) {
+                    availableAgents.push(linkedAgentId);
+                    
+                    // Tell the agent to reset its visual state since the participant is gone
+                    io.to(agentSocketMap[linkedAgentId]).emit("control_stopped");
+                }
+            }
         }
 
         // --- agentStatusMap Cleanup ---
@@ -2219,21 +2241,22 @@ io.on('connection', (socket) => {
         const { agentId } = data;
         if (!agentId) return;
 
-        agentSocketMap[agentId] = socket.id;
-        console.log(`[AGENT] agent_idle_connect registered: ${agentId} -> ${socket.id}`);
+        const normalizedAgentId = agentId.replace(/[- ]/g, '').toUpperCase();
+        agentSocketMap[normalizedAgentId] = socket.id;
+        console.log(`[AGENT] agent_idle_connect registered: ${normalizedAgentId} (from ${agentId}) -> ${socket.id}`);
 
         if (unlinkedParticipants.length > 0) {
             const { meetingId, participantId } = unlinkedParticipants.shift();
-            activeSessions[participantId] = agentId;
-            console.log(`[AUTO-LINK] Auto-linking new agent ${agentId} to waiting participant ${participantId}`);
+            activeSessions[participantId] = normalizedAgentId;
+            console.log(`[AUTO-LINK] Auto-linking new agent ${normalizedAgentId} to waiting participant ${participantId}`);
             io.to(socket.id).emit("manual_link_received", {
                 meetingId,
                 participantId
             });
         } else {
-            if (!availableAgents.includes(agentId)) {
-                availableAgents.push(agentId);
-                console.log(`[AGENT] Added ${agentId} to available queue. Total available: ${availableAgents.length}`);
+            if (!availableAgents.includes(normalizedAgentId)) {
+                availableAgents.push(normalizedAgentId);
+                console.log(`[AGENT] Added ${normalizedAgentId} to available queue. Total available: ${availableAgents.length}`);
             }
         }
     });
@@ -2244,23 +2267,27 @@ io.on('connection', (socket) => {
         const { agentId, meetingId, participantId } = data;
         if (!agentId || !meetingId || !participantId) return;
 
-        const agentSocketId = agentSocketMap[agentId];
+        const normalizedSearchId = agentId.replace(/[- ]/g, '').toUpperCase();
+        const agentSocketId = agentSocketMap[normalizedSearchId];
+        
         if (!agentSocketId) {
-            console.log(`[AGENT] Agent ${agentId} not found for manual linking`);
+            console.log(`[AGENT] Agent ${normalizedSearchId} (input: ${agentId}) not found for manual linking`);
+            socket.emit('manual_link_error', { message: `Agent ID "${agentId}" not found. Enable the agent app first.` });
             return;
         }
 
         // Agent Already Linked Check
-        const isAgentBusy = Object.values(activeSessions).includes(agentId);
-        if (isAgentBusy && activeSessions[participantId] !== agentId) {
-            console.log(`[AGENT] Agent ${agentId} is already busy. Cannot manually link to ${participantId}`);
+        const isAgentBusy = Object.values(activeSessions).includes(normalizedSearchId);
+        if (isAgentBusy && activeSessions[participantId] !== normalizedSearchId) {
+            console.log(`[AGENT] Agent ${normalizedSearchId} is already busy. Cannot manually link to ${participantId}`);
+            socket.emit('manual_link_error', { message: `Agent ID "${agentId}" is already assigned to someone else.` });
             return;
         }
 
-        availableAgents = availableAgents.filter(a => a !== agentId);
+        availableAgents = availableAgents.filter(a => a.replace(/[- ]/g, '').toUpperCase() !== normalizedSearchId);
         unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== participantId);
         
-        activeSessions[participantId] = agentId;
+        activeSessions[participantId] = normalizedSearchId;
         
         agentStatusMap[participantId] = {
             socketId: agentSocketId,
@@ -2279,6 +2306,7 @@ io.on('connection', (socket) => {
         });
 
         console.log(`[AGENT] Manually linked agent ${agentId} to participant ${participantId}`);
+        socket.emit('manual_link_success', { agentId });
     });
 });
 
