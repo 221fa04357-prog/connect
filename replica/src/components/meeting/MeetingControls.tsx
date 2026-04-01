@@ -1424,7 +1424,6 @@ function ControlBar() {
         setPendingMediaRequest,
         setAudioMuted,
         setVideoOff,
-        screenShareStream,
         remoteControlState,
         setRemoteControlState
     } = useMeetingStore();
@@ -1448,8 +1447,7 @@ function ControlBar() {
         requestRecordingPermission,
         grantRecordingPermission,
         denyRecordingPermission,
-        emitReaction,
-        stopControl
+        emitReaction
     } = useChatStore();
     const { user, isSubscribed } = useAuthStore();
     const {
@@ -2011,32 +2009,11 @@ function ControlBar() {
         // 5. If remote control is active and we are the controlled ones, stop it too
         const { remoteControlState, setRemoteControlState } = useMeetingStore.getState();
         if (remoteControlState.status === 'active' && remoteControlState.role === 'controlled') {
-            const currentStream = useMeetingStore.getState().screenShareStream;
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop());
-            }
             if (meeting?.id) {
-                stopControl();
+                useChatStore.getState().stopControl();
                 setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
             }
         }
-    };
-
-    const handleStopControlClick = () => {
-        // Participant-specific cleanup
-        if (remoteControlState.status === 'active' && remoteControlState.role === 'controlled') {
-            if (screenShareStream) {
-                screenShareStream.getTracks().forEach(track => track.stop());
-            }
-            if (isScreenSharing) {
-                // Ensure screen share state is cleared
-                setScreenShareStream(null);
-            }
-        }
-
-        // Common stop logic for both host and participant
-        setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
-        stopControl();
     };
 
     const handleShareClick = () => {
@@ -3415,7 +3392,18 @@ function ControlBar() {
                             size="sm"
                             variant="destructive"
                             className="rounded-full h-8"
-                            onClick={handleStopControlClick}
+                            onClick={() => {
+                                if (meeting?.id) {
+                                    if (remoteControlState.role !== 'controller') {
+                                        handleStopScreenShare();
+                                    } else {
+                                        if (meeting?.id) {
+                                            useChatStore.getState().stopControl();
+                                        }
+                                        setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+                                    }
+                                }
+                            }}
                         >
                             Stop Control
                         </Button>
