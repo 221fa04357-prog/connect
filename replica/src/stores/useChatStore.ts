@@ -1175,7 +1175,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         hostId: pendingControlRequest.hostId,
         agentId: 'socket-agent'
       });
-      set({ isControlling: true });
+      set({ isControlling: false });
     } else {
       socket.emit('control_rejected', {
         meetingId,
