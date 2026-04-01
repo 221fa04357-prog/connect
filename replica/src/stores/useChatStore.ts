@@ -750,6 +750,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on('remote_frame', (data: { frame: string }) => {
       // Dispatch event for RemoteControlStream component
+      console.log('[RemoteControl] Received remote_frame event from backend, frame size:', data.frame?.length || 0);
       window.dispatchEvent(new CustomEvent('remote_control_frame', { detail: data.frame }));
     });
 

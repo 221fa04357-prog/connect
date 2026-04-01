@@ -64,7 +64,7 @@ function createWindow() {
 
 let captureTimeout;
 
-async function captureLoop(hostId) {
+async function captureLoop(hostId, participantId) {
     if (!isControlled) return;
     try {
         const start = Date.now();
@@ -82,8 +82,10 @@ async function captureLoop(hostId) {
 
                 socket.emit('agent_frame', {
                     hostId,
+                    participantId,
                     frame: `data:image/jpeg;base64,${base64}`
                 });
+                console.log('Agent frame emitted', { hostId, participantId });
             }
         }
 
@@ -92,22 +94,22 @@ async function captureLoop(hostId) {
         const delay = Math.max(0, 66 - elapsed);
 
         if (isControlled) {
-            captureTimeout = setTimeout(() => captureLoop(hostId), delay);
+            captureTimeout = setTimeout(() => captureLoop(hostId, participantId), delay);
         }
     } catch (err) {
         console.error('Capture error:', err);
         // Continue loop even on failure to avoid deadlocks
         if (isControlled) {
-            captureTimeout = setTimeout(() => captureLoop(hostId), 100);
+            captureTimeout = setTimeout(() => captureLoop(hostId, participantId), 100);
         }
     }
 }
 
-async function startStreaming(hostId) {
+async function startStreaming(hostId, participantId) {
     if (captureTimeout) clearTimeout(captureTimeout);
     isControlled = true;
-    console.log('Starting screen stream for host:', hostId);
-    captureLoop(hostId);
+    console.log('Starting screen stream for host:', hostId, 'participant:', participantId);
+    captureLoop(hostId, participantId);
 }
 
 function stopStreaming() {
@@ -184,24 +186,33 @@ app.whenReady().then(() => {
     // ✅ CONTROL START
     socket.on('control_started', (data) => {
         const hostId = data?.hostId;
-        if (!hostId) return;
-        startStreaming(hostId);
+        const participantId = data?.participantId || global.participantId;
+        if (!hostId) {
+            console.warn('control_started received without hostId');
+            return;
+        }
+        startStreaming(hostId, participantId);
         if (mainWindow) {
             mainWindow.webContents.send('status-update', {
                 status: 'Controlled by Host',
-                agentId: AGENT_ID
+                agentId: AGENT_ID,
+                meetingId: global.meetingId,
+                participantId
             });
         }
     });
 
     // ✅ HOST INPUT (mouse/keyboard)
-    socket.on('host_input_event', (event) => {
-        if (event && event.event) { // Backend wraps it, handle generic or wrapped
+    const handleIncomingInput = (event) => {
+        if (event && event.event) {
             handleInputEvent(event.event);
         } else {
             handleInputEvent(event);
         }
-    });
+    };
+
+    socket.on('host_input_event', handleIncomingInput);
+    socket.on('input_event', handleIncomingInput);
 
     // ✅ CONTROL STOP
     socket.on('control_stopped', () => {

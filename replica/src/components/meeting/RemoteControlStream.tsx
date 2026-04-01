@@ -12,6 +12,7 @@ export function RemoteControlStream() {
 
   useEffect(() => {
     const handleFrame = (event: any) => {
+      console.log('[RemoteControlStream] Received frame event, size:', event.detail?.length || 0);
       setFrame(event.detail);
     };
 
