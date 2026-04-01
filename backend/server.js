@@ -1852,17 +1852,32 @@ io.on('connection', (socket) => {
     });
 
     socket.on('stop_control', (data) => {
-        const { meetingId, targetId } = data;
-        // Broadcast to everyone in the room that control has stopped for a specific relationship
-        // or just broadcast to the room and let clients decide.
-        // Usually, we just relay it to the other party.
+        const { meetingId } = data;
+        if (!meetingId) return;
+
         const room = rooms.get(meetingId);
         if (!room) return;
 
-        for (const [sId, p] of room.entries()) {
-            if (p.id === targetId) {
-                io.to(sId).emit('control_stopped');
-                break;
+        // Only allow participants/host in this room to stop an active remote control session.
+        if (!room.has(socket.id)) return;
+
+        // Notify all meeting participants that control has stopped.
+        io.to(meetingId).emit('control_stopped');
+
+        // Also notify linked agent (if any) to stop agent-side control stream
+        for (const [participantId, agentId] of Object.entries(activeSessions)) {
+            if (agentSocketMap[agentId]) {
+                io.to(agentSocketMap[agentId]).emit('control_stopped');
+            }
+        }
+
+        // Optionally clear active session mapping for this meeting participant
+        for (const [participantId, agentId] of Object.entries(activeSessions)) {
+            if (agentSocketMap[agentId] && room) {
+                // keep map cleanup if this specific participant is part of the room
+                if ([...room.values()].some(p => p.id === participantId)) {
+                    delete activeSessions[participantId];
+                }
             }
         }
     });

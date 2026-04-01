@@ -878,6 +878,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
       console.log('[Frontend] Remote control STARTED:', data);
       const hostIsMe = data.hostId === get().socket?.id;
+      const participantIsMe = data.participantId === get().localUserId;
       
       if (hostIsMe) {
         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
@@ -898,8 +899,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 });
             });
         });
-      } else if (data.participantId === get().localUserId) {
+      } else if (participantIsMe) {
         import('sonner').then(({ toast }) => toast.info('Control session is now active.'));
+        import('./useMeetingStore').then((mStore) => {
+            mStore.useMeetingStore.getState().setRemoteControlState({
+                status: 'active',
+                role: 'controlled',
+                targetId: data.hostId,
+                targetName: 'Host'
+            });
+        });
       }
     });
 
@@ -914,7 +923,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ isControlling: false, nativeAgentStatus: { status: 'idle' } });
       import('sonner').then(({ toast }) => toast.info('Remote control session ended.'));
       import('./useMeetingStore').then((mStore) => {
-        mStore.useMeetingStore.getState().setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+        const meetingStore = mStore.useMeetingStore.getState();
+        meetingStore.setRemoteControlState({ status: 'idle', role: null, targetId: null, targetName: null });
+
+        if (meetingStore.screenShareStream) {
+          meetingStore.screenShareStream.getTracks().forEach((track) => track.stop());
+          meetingStore.setScreenShareStream(null);
+        }
       });
     });
 
