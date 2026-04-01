@@ -3384,7 +3384,7 @@ function ControlBar() {
                             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                             <span className="text-white text-sm font-medium">
                                 {remoteControlState.role === 'controller' 
-                                    ? `Controlling ${remoteControlState.targetName || 'Participant'}` 
+                                    ? `You are controlling ${remoteControlState.targetName || 'Participant'}'s screen` 
                                     : `${remoteControlState.targetName || 'Host'} is controlling your screen`}
                             </span>
                         </div>

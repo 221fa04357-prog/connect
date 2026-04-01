@@ -1805,81 +1805,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('request_control', (data) => {
-        const { meetingId, userId } = data;
-        console.log(`Received request_control for meeting ${meetingId}, target userId: ${userId}`);
-        const room = rooms.get(meetingId);
-        if (!room) {
-            console.log(`Room ${meetingId} not found`);
-            return;
-        }
-
-        let targetSocketId = null;
-        for (const [sId, p] of room.entries()) {
-            if (p.id === userId) {
-                targetSocketId = sId;
-                break;
-            }
-        }
-
-        if (targetSocketId) {
-            const sender = room.get(socket.id);
-            const fromName = sender?.name || 'Host';
-            const fromId = sender?.id || 'host';
-
-            console.log(`Forwarding control request from ${fromName} (${fromId}) to participant ${userId} (Socket: ${targetSocketId})`);
-            io.to(targetSocketId).emit('control_requested', { fromName, fromId });
-        } else {
-            console.log(`Target participant ${userId} not found in room ${meetingId}. Available IDs:`, Array.from(room.values()).map(p => p.id));
-        }
-    });
-
-    socket.on('respond_to_control', (data) => {
-        const { meetingId, hostId, accepted } = data;
-        const room = rooms.get(meetingId);
-        if (!room) return;
-
-        const participant = room.get(socket.id);
-        const participantId = participant?.id;
-
-        for (const [sId, p] of room.entries()) {
-            if (p.id === hostId) {
-                io.to(sId).emit('control_response_received', { participantId, accepted });
-                console.log(`User ${participantId} responded to control request: ${accepted ? 'Accepted' : 'Denied'}`);
-                break;
-            }
-        }
-    });
-
-    socket.on('stop_control', (data) => {
-        const { meetingId, targetId } = data;
-        // Broadcast to everyone in the room that control has stopped for a specific relationship
-        // or just broadcast to the room and let clients decide.
-        // Usually, we just relay it to the other party.
-        const room = rooms.get(meetingId);
-        if (!room) return;
-
-        for (const [sId, p] of room.entries()) {
-            if (p.id === targetId) {
-                io.to(sId).emit('control_stopped');
-                break;
-            }
-        }
-    });
-
-    socket.on('send_control_event', (data) => {
-        const { meetingId, targetId, event } = data;
-        const room = rooms.get(meetingId);
-        if (!room) return;
-
-        for (const [sId, p] of room.entries()) {
-            if (p.id === targetId) {
-                io.to(sId).emit('receive_control_event', { event });
-                break;
-            }
-        }
-    });
-
     socket.on('start_recording', (data) => {
         const { meetingId } = data;
         socket.to(meetingId).emit('recording_started');
@@ -2178,7 +2103,15 @@ io.on('connection', (socket) => {
         const agentSocketId = agent.socketId;
         console.log(`[RemoteControl] Linking Host ${hostId} to Agent ${agentSocketId}`);
 
+        // Notify the agent specifically
         io.to(agentSocketId).emit('control_started', { hostId, hostName: 'Host' });
+
+        // Broadcast to the meeting so everyone stays in sync with control status
+        io.to(meetingId).emit('control_started', { 
+            agentId: 'native-agent', 
+            participantId, 
+            hostId 
+        });
 
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
@@ -2192,8 +2125,35 @@ io.on('connection', (socket) => {
         const { meetingId, hostId } = data;
         console.log(`[RemoteControl] Control rejected by participant for host ${hostId}`);
         const hostSocketId = getSocketIdFallback(meetingId, hostId);
+
+        // Notify the room so the pending states can be cleared
+        io.to(meetingId).emit('control_denied', { participantId: socket.id });
+
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: false, reason: 'rejected' });
+        }
+    });
+
+    socket.on('control_stop', (data) => {
+        const { meetingId } = data;
+        console.log(`[RemoteControl] Control session stopped for room: ${meetingId}`);
+        
+        // Notify everyone to reset their control indicators
+        io.to(meetingId).emit('control_stopped');
+        
+        // Specifically tell any agents to stop as well
+        // We could iterate and find the active agent for this room/session
+        availableAgents.forEach(aid => {
+            const asid = agentSocketMap[aid];
+            if (asid) io.to(asid).emit("control_stopped");
+        });
+    });
+
+    socket.on('host_input_event', (data) => {
+        const { agentId, event } = data;
+        const asid = agentSocketMap[agentId];
+        if (asid) {
+            io.to(asid).emit('receive_control_event', { event });
         }
     });
 
