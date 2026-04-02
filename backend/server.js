@@ -193,7 +193,7 @@ const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replac
 const corsOptions = {
     origin: [allowedOrigin, "http://localhost:5173", "https://your-vercel-app.vercel.app", "*"],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"]
 };
 app.use(cors(corsOptions));
@@ -1855,8 +1855,22 @@ io.on('connection', (socket) => {
         socket.to(meeting_id).emit('whiteboard_redo');
     });
 
-    socket.on('whiteboard_access_update', (data) => {
+    socket.on('whiteboard_access_update', async (data) => {
         const { meeting_id, access } = data;
+        
+        try {
+            // Persist to DB so it's not lost on refresh or overwritten by other setting updates
+            const result = await db.query('SELECT settings FROM meetings WHERE id = $1', [meeting_id]);
+            if (result.rows.length > 0) {
+                const settings = typeof result.rows[0].settings === 'string' ? JSON.parse(result.rows[0].settings) : (result.rows[0].settings || {});
+                settings.whiteboardEditAccess = access;
+                await db.query('UPDATE meetings SET settings = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(settings), meeting_id]);
+                console.log(`Whiteboard access persisted for ${meeting_id}: ${access}`);
+            }
+        } catch (err) {
+            console.error('Error persisting whiteboard access update:', err);
+        }
+
         // Broadcast access change to everyone in the room
         io.to(meeting_id).emit('whiteboard_access_updated', { access });
     });

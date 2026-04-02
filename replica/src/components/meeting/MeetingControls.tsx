@@ -1469,11 +1469,13 @@ function ControlBar() {
         || (user?.id ? (participants.find(p => p.id === user.id) || participants.find(p => p.id === `participant-${user.id}`)) : null)
         || participants[0];
 
-    const currentRole = currentParticipant ? (transientRoles[currentParticipant.id] || currentParticipant.role) : 'participant';
+    // Canonical Current Role and Access Logic
+    const currentRole = currentParticipant ? (transientRoles[currentParticipant.id] || currentParticipant.role) : (isJoinedAsHost ? 'host' : 'participant');
     const isHost = isJoinedAsHost || currentRole === 'host' || currentRole === 'co-host';
     const isHandRaised = !!currentParticipant?.isHandRaised;
 
-    const isHostOrCoHost = currentParticipant?.role === 'host' || currentParticipant?.role === 'co-host' || isJoinedAsHost;
+    // Use currentRole (respecting promo/demo) for media permissions
+    const isHostOrCoHost = isJoinedAsHost || currentRole === 'host' || currentRole === 'co-host';
     const micAllowed = isHostOrCoHost || meeting?.settings?.micAllowed !== false;
     const videoAllowed = isHostOrCoHost || meeting?.settings?.cameraAllowed !== false;
     const screenShareAllowed = isHostOrCoHost || meeting?.settings?.screenShareAllowed !== false;
@@ -1549,14 +1551,21 @@ function ControlBar() {
     // Chat Badge Logic
     const displayUnreadCount = !isChatOpen ? (unreadCount > 99 ? '99+' : unreadCount) : 0;
 
-    // RBAC for Whiteboard
+    // RBAC for Whiteboard - Using currentRole for consistency
     const whiteboardEditAccess = meeting?.settings?.whiteboardEditAccess || 'hostOnly';
+    
+    // Explicitly separate host and co-host logic:
+    // A user is ONLY the "Actual Host" if they are the owner (isJoinedAsHost) AND haven't been assigned co-host role,
+    // OR if they have been explicitly promoted to 'host' role.
+    const isActuallyHost = (isJoinedAsHost && currentRole !== 'co-host') || currentRole === 'host';
+    const isCoHost = currentRole === 'co-host';
+
     const canEditWhiteboard =
-        currentParticipant?.role === 'host' ||
-        (whiteboardEditAccess === 'coHost' && currentParticipant?.role === 'co-host') ||
+        isActuallyHost ||
+        (whiteboardEditAccess === 'coHost' && isCoHost) ||
         (whiteboardEditAccess === 'everyone');
-    // Only editors can close the whiteboard for everyone (global close)
-    const canCloseWhiteboardForAll = canEditWhiteboard;
+    // Only hosts/co-hosts can close for everyone (global), others just hide locally
+    const canCloseWhiteboardForAll = isActuallyHost || isCoHost;
 
     // Whiteboard handlers
     const openWhiteboard = () => {
