@@ -99,7 +99,7 @@ export function RemoteControlStream() {
           ref={imgRef}
           src={frame}
           alt="Remote Screen"
-          className="w-full h-full object-contain cursor-none select-none"
+          className="w-full h-full object-cover cursor-none select-none"
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
