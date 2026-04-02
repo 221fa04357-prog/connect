@@ -211,7 +211,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const hasElevatedRole = nextRole === 'host' || nextRole === 'co-host';
 
             if (hasElevatedRole) {
-              ms.setIsJoinedAsHost(true);
+              // Only the actual "Host" role should be treated as the primary host
+              // Co-hosts should maintain administrative rights via their role, but not bypass session permissions
+              ms.setIsJoinedAsHost(nextRole === 'host');
+              
               import('sonner').then(({ toast }) => {
                 const label = nextRole === 'host' ? 'Host' : 'Co-Host';
                 toast.success(`You have been promoted to ${label}!`);
@@ -401,17 +404,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('whiteboard_access_updated', (data: { access: string }) => {
+      console.log(`[Whiteboard Access] Socket event received: ${data.access}`);
       import('./useMeetingStore').then((meetingStore) => {
         const ms = meetingStore.useMeetingStore.getState();
         if (ms.meeting) {
+          // Robust settings parsing in case it's a JSON string
+          const prevSettings = typeof ms.meeting.settings === 'string' 
+              ? JSON.parse(ms.meeting.settings) 
+              : (ms.meeting.settings || {});
+              
           const nextMeeting = {
             ...ms.meeting,
             settings: {
-              ...ms.meeting.settings,
+              ...prevSettings,
               whiteboardEditAccess: data.access as 'hostOnly' | 'coHost' | 'everyone'
             }
           };
+          
+          console.log(`[Whiteboard Access] Updating local meeting state to ${data.access}`);
           ms.setMeeting(nextMeeting);
+        } else {
+          console.warn('[Whiteboard Access] Received update but no meeting found in state');
         }
       });
     });

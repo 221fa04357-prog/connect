@@ -265,7 +265,14 @@ export const useMeetingStore = create<MeetingState>()(
 
       // ================= ACTIONS =================
 
-      setMeeting: (meeting) => set({ meeting }),
+      setMeeting: (m) => {
+        if (!m) {
+          set({ meeting: null, isJoinedAsHost: false });
+          return;
+        }
+        const nextSettings = typeof m.settings === 'string' ? JSON.parse(m.settings) : m.settings;
+        set({ meeting: { ...m, settings: nextSettings } });
+      },
       setLocalStream: async (stream) => {
         const state = get();
         if (state.localStream === stream) return;
@@ -568,6 +575,10 @@ export const useMeetingStore = create<MeetingState>()(
 
         set({ meeting: { ...m, settings: nextSettings } });
 
+        // Optimistic broadcast to ensure real-time update even if DB sync has latency/CORS catch
+        console.log(`[Whiteboard Access] Optimistically emitting access update: ${access}`);
+        useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
+
         try {
           const response = await fetch(`${API}/api/meetings/${m.id}`, {
             method: 'PATCH',
@@ -590,8 +601,6 @@ export const useMeetingStore = create<MeetingState>()(
             { meeting: nextMeeting },
             { source: INSTANCE_ID }
           );
-
-          useChatStore.getState().emitWhiteboardAccessUpdate(m.id, access);
         } catch (err) {
           console.error('Error setting whiteboard access:', err);
         }
