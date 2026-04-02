@@ -196,16 +196,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('participant_updated', (data: { userId: string, updates: any }) => {
+      import('./useParticipantsStore').then((store) => {
+        store.useParticipantsStore.getState().updateParticipant(data.userId, data.updates);
+      });
+
+      // Hardware Sync: If the update is for ME, update my local meeting store
       const localUserId = get().localUserId;
-
-      // Update participant list for everyone EXCEPT self-echoes to prevent flicker
-      if (data.userId !== localUserId) {
-        import('./useParticipantsStore').then((store) => {
-          store.useParticipantsStore.getState().updateParticipant(data.userId, data.updates);
-        });
-      }
-
-      // Hardware Sync: If the update is for ME, sync my local meeting store
       if (data.userId === localUserId) {
         import('./useMeetingStore').then((meetingStore) => {
           const ms = meetingStore.useMeetingStore.getState();
