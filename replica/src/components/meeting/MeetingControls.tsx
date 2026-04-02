@@ -1919,12 +1919,24 @@ function ControlBar() {
 
         if (participant) {
             const nextMuted = !currentIsMuted;
-            updateParticipant(participant.id, { isAudioMuted: nextMuted });
+            
+            // Prepare batched updates
+            const participantUpdates: Partial<any> = { isAudioMuted: nextMuted };
+            
+            // BATCHED HAND LOWER: If we are muting and hand is raised, include it in the same update
+            if (nextMuted && isHandRaised) {
+                participantUpdates.isHandRaised = false;
+                participantUpdates.handRaiseTimestamp = undefined;
+                participantUpdates.handRaiseNumber = undefined;
+            }
 
-            // Broadcast update to others
+            // Single local state update
+            updateParticipant(participant.id, participantUpdates);
+
+            // Broadcast single update to others
             const { meetingId, emitParticipantUpdate } = useChatStore.getState();
             if (meetingId) {
-                emitParticipantUpdate(meetingId, participant.id, { isAudioMuted: nextMuted });
+                emitParticipantUpdate(meetingId, participant.id, participantUpdates);
             }
         }
     };
@@ -2850,10 +2862,7 @@ function ControlBar() {
                                     <Plus className="w-4 h-4 mr-2" />
                                     Resource Hub
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={handleToggleHand} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
-                                    <Hand className={cn("w-4 h-4 mr-2", isHandRaised ? 'text-yellow-400' : '')} />
-                                    {isHandRaised ? 'Lower Hand' : 'Raise Hand'}
-                                </DropdownMenuItem>
+
                                 <DropdownMenuItem onClick={() => setViewMode(viewMode === 'gallery' ? 'speaker' : 'gallery')} className="cursor-pointer flex items-center gap-2 text-gray-200 hover:bg-[#232323]">
                                     {viewMode === 'gallery' ? <User className="w-4 h-4 mr-2" /> : <Grid3x3 className="w-4 h-4 mr-2" />}
                                     {viewMode === 'gallery' ? 'Speaker View' : 'Gallery View'}
