@@ -106,13 +106,10 @@ export function JoinMeeting() {
 
                     // Check if we are still on this page before setting store state
                     if (!isJoiningRef.current) {
-                        // Apply initial state - STOP tracks if they should be off to ensure hardware release
-                        if (isAudioMuted) {
-                            stream.getAudioTracks().forEach(t => t.stop());
-                        }
-                        if (isVideoOff) {
-                            stream.getVideoTracks().forEach(t => t.stop());
-                        }
+                        // Apply initial state - Use .enabled = false for UI-only "offs" 
+                        // so tracks stay alive for the transition to the meeting.
+                        stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+                        stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
 
                         setLocalStream(stream);
                         setPermissionDenied(false);
