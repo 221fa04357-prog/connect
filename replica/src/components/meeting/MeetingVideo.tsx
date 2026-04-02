@@ -1,4 +1,3 @@
-
 import { Participant } from '@/types';
 import { Mic, MicOff, Video, VideoOff, Pin, Hand, StopCircle, MousePointer2, Crown, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,7 +22,9 @@ interface VideoTileProps {
     onPin?: () => void;
     className?: string;
     onClick?: () => void;
+    onDoubleClick?: () => void;
     fullscreen?: boolean;
+    small?: boolean;
     onExitFullscreen?: () => void;
 }
 
@@ -34,7 +35,9 @@ export function VideoTile({
     onPin,
     className,
     onClick,
+    onDoubleClick,
     fullscreen,
+    small,
     onExitFullscreen
 }: VideoTileProps) {
     const {
@@ -154,16 +157,23 @@ export function VideoTile({
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: fullscreen ? 1 : 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className={cn(
-                'relative aspect-square bg-[#232323] rounded-lg overflow-hidden group min-h-[200px] md:min-h-[280px] cursor-pointer shadow-lg border border-[#333]',
+                'video-tile relative bg-[#232323] rounded-lg overflow-hidden group cursor-pointer shadow-lg border border-white/5',
+                !small && !fullscreen && 'aspect-square min-h-[200px] md:min-h-[280px]',
+                small && 'small',
                 isPinned && 'ring-2 ring-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]',
+                !isPinned && isActive && 'active-highlight',
                 !isPinned && participant.isHandRaised && 'ring-2 ring-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.4)]',
                 fullscreen && 'w-full h-full',
                 className
             )}
             onClick={onClick}
+            onDoubleClick={(e) => {
+                e.stopPropagation();
+                onDoubleClick?.();
+            }}
         >
             {/* Main Content (Video/Avatar) */}
             <div className="absolute inset-0 flex items-center justify-center bg-black">
@@ -226,7 +236,10 @@ export function VideoTile({
 
                 {participant.isVideoOff && (
                     <div
-                        className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-semibold"
+                        className={cn(
+                            "rounded-full flex items-center justify-center text-white font-semibold shadow-inner",
+                            small ? "w-10 h-10 text-lg" : "w-16 h-16 md:w-20 md:h-20 text-2xl"
+                        )}
                         style={{ backgroundColor: participant.avatar }}
                     >
                         {participant.name.charAt(0).toUpperCase()}
@@ -269,80 +282,93 @@ export function VideoTile({
                 </AnimatePresence>
             </div>
 
-            {/* Bottom Info Bar anchored to bottom */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 z-10">
-                <div className="flex items-center justify-between min-w-0 flex-nowrap whitespace-nowrap">
-                    <div className="flex items-center gap-2 min-w-0 flex-nowrap">
-                        <span className="text-white text-sm font-medium truncate max-w-[70px] min-w-0">
-                            {participant.name} {isLocal && '(You)'}
+            {/* Name Tag (Bottom Bar for Large, Pill for Small) */}
+            <div className={cn("name-tag", small ? "small" : "absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between")}>
+                <div className="flex items-center gap-2 truncate">
+                    <span className="truncate max-w-[120px] font-medium text-white shadow-sm">
+                        {participant.name} {isLocal && '(You)'}
+                    </span>
+
+                    {participant.role === 'host' && (
+                        <span className="host-badge text-[10px] py-0.5 px-1.5 uppercase font-bold tracking-wider">
+                            Host
                         </span>
-                        {participant.role === 'host' && (
-                            <span className="text-[10px] bg-[#3B82F6] text-white px-1.5 py-0.5 rounded font-medium tracking-wide flex-shrink-0">
-                                Host
-                            </span>
-                        )}
-                        {participant.role === 'co-host' && (
-                            <span className="text-[10px] bg-[#8B5CF6] text-white px-1.5 py-0.5 rounded font-medium tracking-wide flex-shrink-0">
-                                Co-Host
-                            </span>
-                        )}
-                    </div>
+                    )}
+                </div>
 
-                    {/* Interactive Controls */}
-                    <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap">
-                        {/* Only allow toggling if it's participant, co-host OR self OR current user is Host/Co-host */}
-                        {(participant.role === 'participant' || participant.role === 'co-host' || isLocal || isHostOrCoHost) ? (
-                            <>
-                                <div className="relative">
-                                    <button
-                                        onClick={handleToggleMuteClick}
-                                        className={cn(
-                                            "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                            // Priority: Local State > Participant State
-                                            (isLocal ? msAudioMuted : participant.isAudioMuted)
-                                                ? "bg-red-500/20 text-red-500"
-                                                : "text-white"
-                                        )}
-                                    >
-                                        {(isLocal ? msAudioMuted : participant.isAudioMuted) ? (
-                                            <MicOff className="w-4 h-4" />
-                                        ) : (
-                                            <Mic className="w-4 h-4" />
-                                        )}
-                                    </button>
-                                </div>
-
-                                <div className="relative">
-                                    <button
-                                        onClick={handleToggleVideoClick}
-                                        className={cn(
-                                            "p-1.5 rounded-full transition-colors hover:bg-white/20 flex-shrink-0",
-                                            (isLocal ? msVideoOff : participant.isVideoOff)
-                                                ? "bg-red-500/20 text-red-500"
-                                                : "text-white"
-                                        )}
-                                    >
-                                        {(isLocal ? msVideoOff : participant.isVideoOff) ? (
-                                            <VideoOff className="w-4 h-4" />
-                                        ) : (
-                                            <Video className="w-4 h-4" />
-                                        )}
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="p-1.5 text-white/40 flex-shrink-0">
-                                    {participant.isAudioMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                                </div>
-                                <div className="p-1.5 text-white/40 flex-shrink-0">
-                                    {participant.isVideoOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
-                                </div>
-                            </>
-                        )}
-                    </div>
+                <div className="flex items-center gap-2">
+                    {/* Status indicators ONLY for small tiles to definitely prevent overlap on the large Speaker/Grid view */}
+                    {small && (
+                        <>
+                            <div className={cn(
+                                "rounded-full flex items-center justify-center p-1 shadow-sm transition-colors",
+                                "w-4 h-4",
+                                (isLocal ? msAudioMuted : participant.isAudioMuted) ? "bg-red-500/90" : "bg-white/10"
+                            )}>
+                                {(isLocal ? msAudioMuted : participant.isAudioMuted) 
+                                    ? <MicOff className="w-2.5 h-2.5" /> 
+                                    : <Mic className="w-2.5 h-2.5" />
+                                }
+                            </div>
+                            
+                            <div className={cn(
+                                "rounded-full flex items-center justify-center p-1 border border-white/5 transition-colors",
+                                "w-4 h-4",
+                                (isLocal ? msVideoOff : participant.isVideoOff) ? "bg-black/40" : "bg-white/10"
+                            )}>
+                                {(isLocal ? msVideoOff : participant.isVideoOff) 
+                                    ? <VideoOff className="w-2.5 h-2.5 text-white/70" /> 
+                                    : <Video className="w-2.5 h-2.5 text-white/90" />
+                                }
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
+
+            {/* Interactive Controls - Visible on large tiles at bottom right on hover */}
+            {!small && (
+                <div className="absolute bottom-3 right-3 flex items-center gap-2 z-40 opacity-100 transition-opacity">
+                    {/* Only allow toggling if it's participant, co-host OR self OR current user is Host/Co-host */}
+                    {(participant.role === 'participant' || participant.role === 'co-host' || isLocal || isHostOrCoHost) ? (
+                        <>
+                            <div className="relative">
+                                <button
+                                    onClick={handleToggleMuteClick}
+                                    className={cn(
+                                        "tile-control-btn shadow-xl",
+                                        (isLocal ? msAudioMuted : participant.isAudioMuted) && "muted"
+                                    )}
+                                    title={(isLocal ? msAudioMuted : participant.isAudioMuted) ? "Unmute" : "Mute"}
+                                >
+                                    {(isLocal ? msAudioMuted : participant.isAudioMuted) ? (
+                                        <MicOff />
+                                    ) : (
+                                        <Mic />
+                                    )}
+                                </button>
+                            </div>
+
+                            <div className="relative">
+                                <button
+                                    onClick={handleToggleVideoClick}
+                                    className={cn(
+                                        "tile-control-btn shadow-xl",
+                                        (isLocal ? msVideoOff : participant.isVideoOff) && ""
+                                    )}
+                                    title={(isLocal ? msVideoOff : participant.isVideoOff) ? "Start Video" : "Stop Video"}
+                                >
+                                    {(isLocal ? msVideoOff : participant.isVideoOff) ? (
+                                        <VideoOff />
+                                    ) : (
+                                        <Video />
+                                    )}
+                                </button>
+                            </div>
+                        </>
+                    ) : null}
+                </div>
+            )}
         </motion.div>
     );
 }
@@ -730,6 +756,34 @@ export function VideoGrid() {
     const { nativeAgentStatus, localUserId } = useChatStore();
     const { remoteControlState } = useMeetingStore();
 
+    // ─── Stable Speaker Switching Logic ───
+    const [stableSpeakerId, setStableSpeakerId] = useState<string | null>(null);
+    const lastSwitchTimeRef = useRef<number>(0);
+
+    useEffect(() => {
+        const now = Date.now();
+
+        // Overrides: Pinned participant always takes the stage
+        if (pinnedParticipantId) {
+            setStableSpeakerId(pinnedParticipantId);
+            return;
+        }
+
+        // Logic: Switch to active speaker ONLY if stable (avoid flicker)
+        if (activeSpeakerId && activeSpeakerId !== stableSpeakerId) {
+            if (now - lastSwitchTimeRef.current > 700) {
+                setStableSpeakerId(activeSpeakerId);
+                lastSwitchTimeRef.current = now;
+            }
+        }
+
+        // Fallback: Default to host or first participant if nothing is set
+        if (!stableSpeakerId && participants.length > 0) {
+            const host = participants.find(p => p.role === 'host') || participants[0];
+            setStableSpeakerId(host.id);
+        }
+    }, [activeSpeakerId, pinnedParticipantId, stableSpeakerId, participants]);
+
     const currentUserParticipant = participants.find(p => p.id === user?.id || p.id === `participant-${user?.id}` || p.id === useChatStore.getState().localUserId);
     const currentUserRole = currentUserParticipant?.role || user?.role || 'participant';
     const isHostOrCoHost = isJoinedAsHost || currentUserRole === 'host' || currentUserRole === 'co-host';
@@ -809,8 +863,8 @@ export function VideoGrid() {
         const participant = participants.find(p => p.id === focusedParticipantId);
         if (!participant) return null;
         return (
-            <div className="relative h-dvh overflow-hidden">
-                <div className="h-full pt-[30px] pb-[105px] flex items-center justify-center">
+            <div className="flex flex-col h-full w-full bg-black overflow-hidden pb-[90px]">
+                <div className="flex-1 w-full relative overflow-hidden flex items-center justify-center p-4">
                     <div className="w-full h-full bg-black rounded-xl overflow-hidden">
                         <VideoTile
                             participant={participant}
@@ -828,52 +882,64 @@ export function VideoGrid() {
     }
 
     // View Mode Logic (Speaker)
-    if (viewMode === 'speaker' && !sharingParticipant && !focusedParticipantId && visibleParticipants.length > 1) {
-        const currentLocalUserId = user?.id || `guest-${useChatStore.getState().socket?.id}`;
+    if (viewMode === 'speaker' && !sharingParticipant && !focusedParticipantId) {
+        const speakerParticipant = participants.find(p => p.id === stableSpeakerId) || participants[0];
 
-        let speakerParticipant = null;
-        if (activeSpeakerId) {
-            speakerParticipant = visibleParticipants.find(p => p.id === activeSpeakerId);
-        }
-        if (!speakerParticipant && pinnedParticipantId) {
-            speakerParticipant = visibleParticipants.find(p => p.id === pinnedParticipantId);
-        }
-        if (!speakerParticipant) {
-            speakerParticipant = visibleParticipants.find(p => p.id !== currentLocalUserId) || visibleParticipants[0];
-        }
-
-        const otherParticipants = visibleParticipants.filter(p => p.id !== speakerParticipant?.id);
+        // For the filmstrip, we use a STABLE order (e.g., by joinedAt or role)
+        const filmstripParticipants = [...visibleParticipants].sort((a, b) => {
+            if (a.role === 'host') return -1;
+            if (b.role === 'host') return 1;
+            return (new Date(a.joinedAt).getTime()) - (new Date(b.joinedAt).getTime());
+        });
 
         return (
-            <div className="flex flex-col h-full w-full p-4 overflow-hidden pt-[30px] pb-[105px]">
-                {/* Main Speaker Area */}
-                {speakerParticipant && (
-                    <div className="flex-1 min-w-0 bg-black rounded-xl overflow-hidden mb-4 relative">
-                        <VideoTile
-                            participant={speakerParticipant}
-                            isActive={true}
-                            isPinned={pinnedParticipantId === speakerParticipant.id}
-                            onPin={() => handlePin(speakerParticipant.id)}
-                            onClick={() => setFocusedParticipant(speakerParticipant.id)}
-                            fullscreen={true}
-                            className="w-full h-full object-contain"
-                        />
+            <div className="flex flex-col h-full w-full bg-black overflow-hidden pb-[90px]">
+                {/* Main Stage (Top - Flexible Space) */}
+                <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+                    <div className="main-speaker-container relative w-full h-full flex items-center justify-center">
+                        <AnimatePresence mode="wait">
+                            {speakerParticipant && (
+                                <motion.div
+                                    key={speakerParticipant.id}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="w-full h-full"
+                                >
+                                    <VideoTile
+                                        participant={speakerParticipant}
+                                        isActive={false}
+                                        isPinned={pinnedParticipantId === speakerParticipant.id}
+                                        onPin={() => handlePin(speakerParticipant.id)}
+                                        onDoubleClick={() => handlePin(speakerParticipant.id)}
+                                        onClick={() => setFocusedParticipant(speakerParticipant.id)}
+                                        fullscreen={true}
+                                        className="w-full h-full"
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
-                )}
+                </div>
 
-                {/* Other Participants (Bottom Row) */}
-                <div className="flex gap-2 overflow-x-auto no-scrollbar shrink-0 shadow-sm border border-[#333] p-2 rounded-xl bg-[#1C1C1C]">
-                    {otherParticipants.map((participant) => (
-                        <div key={participant.id} className="w-48 aspect-video shrink-0">
-                            <VideoTile
-                                participant={participant}
-                                isActive={participant.id === activeSpeakerId}
-                                isPinned={pinnedParticipantId === participant.id}
-                                onPin={() => handlePin(participant.id)}
-                                onClick={() => setFocusedParticipant(participant.id)}
-                            />
-                        </div>
-                    ))}
+                {/* Filmstrip (Bottom - Compact Space) */}
+                <div className="h-[140px] flex-shrink-0 w-full flex items-start justify-start md:justify-center bg-[#07090f] border-t border-white/10 px-4 overflow-hidden shadow-sm">
+                    <div className="flex items-center gap-4 overflow-x-auto no-scrollbar scroll-smooth pt-3 pb-4 px-6 max-w-full">
+                        {filmstripParticipants.map((participant) => (
+                            <div key={participant.id} className="flex-shrink-0">
+                                <VideoTile
+                                    participant={participant}
+                                    isActive={participant.id === activeSpeakerId}
+                                    isPinned={pinnedParticipantId === participant.id}
+                                    onPin={() => handlePin(participant.id)}
+                                    onClick={() => setFocusedParticipant(participant.id)}
+                                    onDoubleClick={() => handlePin(participant.id)}
+                                    small
+                                />
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -955,7 +1021,7 @@ export function VideoGrid() {
 
     // Layout when remote controlling
     const isRemoteControlling = nativeAgentStatus.status === 'connected' && remoteControlState.role === 'controller';
-    
+
     if (isRemoteControlling) {
         return (
             <div className="flex flex-col md:flex-row h-full w-full gap-4 p-0 overflow-hidden pt-0 pb-[105px]">

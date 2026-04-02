@@ -843,19 +843,9 @@ export default function MeetingRoom() {
     return () => clearInterval(interval);
   }, [isRecording, recordingStartTime]);
 
-  /* ---------------- ACTIVE SPEAKER (SIMULATION) ---------------- */
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const randomParticipant =
-        participants[Math.floor(Math.random() * participants.length)];
-      if (randomParticipant && !randomParticipant.isAudioMuted) {
-        setActiveSpeaker(randomParticipant.id);
-        setTimeout(() => setActiveSpeaker(null), 2000);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [participants, setActiveSpeaker]);
+  /* ---------------- ACTIVE SPEAKER (LOCAL VAD) ---------------- */
+  // We remove the random simulation and will implement real VAD logic if needed.
+  // The store's activeSpeakerId will now only change when explicitly set.
 
   /* ---------------- WAITING ROOM LOGIC ---------------- */
   const isWaiting = useMeetingStore(state => state.isWaiting);
