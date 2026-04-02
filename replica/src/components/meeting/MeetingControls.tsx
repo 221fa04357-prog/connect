@@ -1564,8 +1564,10 @@ function ControlBar() {
         isActuallyHost ||
         (whiteboardEditAccess === 'coHost' && isCoHost) ||
         (whiteboardEditAccess === 'everyone');
-    // Only hosts/co-hosts can close for everyone (global), others just hide locally
-    const canCloseWhiteboardForAll = isActuallyHost || isCoHost;
+    
+    // Global Close Logic: Only the primary meeting host (owner) or the specific user who started the whiteboard can close for all.
+    // Others (including non-initiating co-hosts) only hide it locally.
+    const canCloseWhiteboardForAll = isActuallyHost || (whiteboardInitiatorId === currentUserId);
 
     // Whiteboard handlers
     const openWhiteboard = () => {
