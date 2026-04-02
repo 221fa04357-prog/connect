@@ -108,7 +108,6 @@ interface MeetingState {
   // ===== Actions =====
   setMeeting: (meeting: Meeting) => void;
   setLocalStream: (stream: MediaStream | null) => void;
-  setLocalVideoTrack: (track: MediaStreamTrack | null) => void;
   enumerateDevices: () => Promise<void>;
   setAudioDevice: (id: string) => Promise<void>;
   setVideoDevice: (id: string) => Promise<void>;
@@ -267,37 +266,6 @@ export const useMeetingStore = create<MeetingState>()(
       // ================= ACTIONS =================
 
       setMeeting: (meeting) => set({ meeting }),
-      setLocalVideoTrack: (track: MediaStreamTrack | null) => {
-        const state = get();
-        if (!state.localStream) {
-          if (track) {
-            console.log("Store: Creating new localStream from video track");
-            const newStream = new MediaStream([track]);
-            set({ localStream: newStream });
-          }
-          return;
-        }
-
-        const currentStream = state.localStream;
-        
-        // 1. Remove and stop old video tracks to turn off LED
-        currentStream.getVideoTracks().forEach(t => {
-          console.log("Store: Stopping and removing old video track");
-          t.stop();
-          currentStream.removeTrack(t);
-        });
-
-        // 2. Add new track if provided
-        if (track) {
-          console.log("Store: Adding new video track to existing stream");
-          track.enabled = !state.isVideoOff;
-          currentStream.addTrack(track);
-        }
-
-        // 3. Update store state with a new stream reference to trigger effects
-        // This keeps the audio tracks (and their processing) stable.
-        set({ localStream: new MediaStream(currentStream.getTracks()) });
-      },
       setLocalStream: async (stream) => {
         const state = get();
         if (state.localStream === stream) return;
@@ -310,27 +278,14 @@ export const useMeetingStore = create<MeetingState>()(
 
         if (stream && stream.getAudioTracks().length > 0) {
           try {
-            // Ensure raw tracks are enabled so the processor can 'hear' them!
-            stream.getAudioTracks().forEach(t => t.enabled = true);
-            
             const processedStream = await audioProcessor.processStream(stream);
-            
-            // Sync output tracks with current store muted state
-            processedStream.getAudioTracks().forEach(t => t.enabled = !state.isAudioMuted);
-            processedStream.getVideoTracks().forEach(t => t.enabled = !state.isVideoOff);
-            
             set({ localStream: processedStream });
           } catch (err) {
             console.error('AudioProcessor error:', err);
-            stream.getAudioTracks().forEach(t => t.enabled = !state.isAudioMuted);
-            stream.getVideoTracks().forEach(t => t.enabled = !state.isVideoOff);
             set({ localStream: stream });
           }
         } else {
           audioProcessor.stop();
-          if (stream) {
-            stream.getVideoTracks().forEach(t => t.enabled = !state.isVideoOff);
-          }
           set({ localStream: stream });
         }
       },
@@ -422,10 +377,7 @@ export const useMeetingStore = create<MeetingState>()(
       setAudioMuted: (muted) =>
         set((state) => {
           if (state.localStream) {
-            state.localStream.getAudioTracks().forEach((t) => {
-              t.enabled = !muted;
-              console.log(`Store: Audio track ${t.enabled ? 'enabled' : 'disabled'} (muted: ${muted})`);
-            });
+            state.localStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
           }
           return { isAudioMuted: muted };
         }),
@@ -433,10 +385,7 @@ export const useMeetingStore = create<MeetingState>()(
       setVideoOff: (off) =>
         set((state) => {
           if (state.localStream) {
-            state.localStream.getVideoTracks().forEach((t) => {
-              t.enabled = !off;
-              console.log(`Store: Video track ${t.enabled ? 'enabled' : 'disabled'} (off: ${off})`);
-            });
+            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !off));
           }
           return { isVideoOff: off };
         }),
@@ -445,10 +394,7 @@ export const useMeetingStore = create<MeetingState>()(
         set((state) => {
           const nextMuted = !state.isAudioMuted;
           if (state.localStream) {
-            state.localStream.getAudioTracks().forEach((t) => {
-              t.enabled = !nextMuted;
-              console.log(`Store: [Toggle] Audio track ${t.enabled ? 'enabled' : 'disabled'}`);
-            });
+            state.localStream.getAudioTracks().forEach((t) => (t.enabled = !nextMuted));
           }
           return { isAudioMuted: nextMuted };
         }),
@@ -457,10 +403,7 @@ export const useMeetingStore = create<MeetingState>()(
         set((state) => {
           const nextVideoOff = !state.isVideoOff;
           if (state.localStream) {
-            state.localStream.getVideoTracks().forEach((t) => {
-              t.enabled = !nextVideoOff;
-              console.log(`Store: [Toggle] Video track ${t.enabled ? 'enabled' : 'disabled'}`);
-            });
+            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !nextVideoOff));
           }
           return { isVideoOff: nextVideoOff };
         }),
