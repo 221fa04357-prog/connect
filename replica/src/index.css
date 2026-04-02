@@ -298,3 +298,178 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   /* Framer Motion handles enter/exit animations; no CSS transition needed */
 }
+
+/* --- Zoom-like Speaker View Layout --- */
+.zoom-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  width: 100% !important;
+  background: #0b0f19 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+.main-stage {
+  flex: 1 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 20px !important;
+  min-height: 0 !important;
+  position: relative !important;
+  background: #0b0f19 !important;
+}
+
+/* Container for the main speaker video - professional centered frame */
+.main-speaker-container {
+  width: 95% !important;
+  max-width: 1000px !important;
+  max-height: 100% !important; /* CRITICAL: Prevents pushing filmstrip out */
+  aspect-ratio: 16 / 9 !important;
+  background: #000 !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7) !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Video fills the contained frame without black bars */
+.main-speaker-container video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* If the placeholder/avatar is shown instead of video */
+.main-speaker-container .rounded-full {
+  width: 100px !important;
+  height: 100px !important;
+  font-size: 3rem !important;
+}
+
+.filmstrip {
+  height: 110px !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 10px 20px !important;
+  overflow-x: auto !important;
+  background: #0f172a !important;
+}
+
+/* Name Tag Styles - Pill for small, Bar for large */
+.name-tag {
+  position: absolute !important;
+  z-index: 30 !important;
+  pointer-events: none !important;
+  color: white !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Default Pill Style (Medium/Large Gallery) */
+.name-tag:not(.small):not(.absolute) {
+  bottom: 12px !important;
+  left: 12px !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  gap: 8px !important;
+  max-width: calc(100% - 24px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.name-tag.small {
+  bottom: 6px !important;
+  left: 6px !important;
+  padding: 2px 6px !important;
+  font-size: 11px !important;
+  gap: 4px !important;
+}
+
+.host-badge {
+  background: #3b82f6 !important;
+  color: white !important;
+  text-transform: uppercase !important;
+  font-weight: 800 !important;
+  font-size: 9px !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Interactive Control Buttons (Bottom Right) */
+.tile-control-btn {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.tile-control-btn:hover {
+  background: rgba(0, 0, 0, 0.8) !important;
+  transform: scale(1.1) !important;
+}
+
+.tile-control-btn.muted {
+  background: #ef4444 !important;
+  /* Red circle for muted */
+  border-color: #f87171 !important;
+}
+
+.tile-control-btn svg {
+  width: 16px !important;
+  height: 16px !important;
+  color: white !important;
+}
+
+/* Small Participant Tiles for Filmstrip */
+.video-tile.small {
+  width: 200px !important;
+  height: 125px !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  background: #000 !important;
+  flex-shrink: 0 !important;
+  min-height: unset !important;
+  aspect-ratio: 16 / 9 !important;
+}
+
+.video-tile.small video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Active Speaker Highlight */
+.video-tile.active-highlight {
+  border: 2px solid #22c55e !important;
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.4) !important;
+}
+
+/* Hide scrollbar for filmstrip but keep functionality */
+.filmstrip::-webkit-scrollbar {
+  display: none !important;
+}
+
+.filmstrip {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Animations for Speaker View */
+.speaker-transition {
+  transition: scale 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease-out !important;
+}
