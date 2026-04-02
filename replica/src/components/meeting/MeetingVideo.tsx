@@ -1,6 +1,6 @@
 
 import { Participant } from '@/types';
-import { Mic, MicOff, Video, VideoOff, Pin, Hand, StopCircle, MousePointer2, Crown } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Pin, Hand, StopCircle, MousePointer2, Crown, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
@@ -378,12 +378,22 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
     const containerRef = useRef<HTMLDivElement>(null);
     const { remoteControlState, meeting } = useMeetingStore();
     const { sendControlEvent, stopControl } = useChatStore();
+    const [displaySurface, setDisplaySurface] = useState<string | undefined>();
 
     useEffect(() => {
-        if (videoRef.current && stream) {
-            videoRef.current.srcObject = stream;
+        if (stream) {
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack) {
+                const settings = videoTrack.getSettings();
+                setDisplaySurface(settings.displaySurface);
+            }
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
         }
     }, [stream]);
+
+    const isMonitorShare = isLocal && displaySurface === 'monitor';
 
     // Handle incoming events (for the controlled user)
     useEffect(() => {
@@ -655,7 +665,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
     return (
         <div
             ref={containerRef}
-            className="relative w-full h-full bg-black rounded-xl overflow-hidden group outline-none"
+            className={cn("relative w-full h-full bg-black rounded-xl overflow-hidden group outline-none", isMonitorShare && "flex items-center justify-center p-8 bg-[#0a0a0a]")}
             onMouseMove={handleMouseMove}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
@@ -667,14 +677,26 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
             onWheel={handleScroll}
             tabIndex={remoteControlState.status === 'active' && remoteControlState.role === 'controller' ? 0 : -1}
         >
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                onLoadedMetadata={(e) => e.currentTarget.play()}
-                className="w-full h-full object-cover pointer-events-none"
-            />
+            {isMonitorShare ? (
+                <div className="flex flex-col items-center justify-center text-center p-8 bg-[#111] rounded-2xl border border-[#333] shadow-2xl w-fit xl:min-w-[400px]">
+                    <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
+                        <Monitor className="w-8 h-8 text-blue-500" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-white mb-2">You're presenting to everyone</h3>
+                    <p className="text-gray-400 text-sm max-w-sm">
+                        Sharing your entire screen. To avoid an infinite mirror effect, your screen is not previewed here.
+                    </p>
+                </div>
+            ) : (
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    onLoadedMetadata={(e) => e.currentTarget.play()}
+                    className="w-full h-full object-cover pointer-events-none"
+                />
+            )}
 
             {/* Remote Cursor display removed - cursor position not stored */}
 
@@ -686,18 +708,22 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
             )}
 
             {/* Overlay info */}
-            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-white text-sm font-medium">
-                    {participant.name}'s screen
-                </span>
-            </div>
-            {/* Tooltip or Label */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="bg-black/60 backdrop-blur-md px-4 py-1 rounded-full text-xs text-white/80 border border-white/5">
-                    Viewing shared screen
-                </div>
-            </div>
+            {!isMonitorShare && (
+                <>
+                    <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        <span className="text-white text-sm font-medium">
+                            {participant.name}'s screen
+                        </span>
+                    </div>
+                    {/* Tooltip or Label */}
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="bg-black/60 backdrop-blur-md px-4 py-1 rounded-full text-xs text-white/80 border border-white/5">
+                            Viewing shared screen
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
