@@ -130,10 +130,16 @@ async function handleInputEvent(event) {
                 await InputManager.moveMouse(x * width, y * height);
                 lastMouseMove = now;
             }
-        } else if (type === 'mouse_click' || type === 'mouse_down') {
+        } else if (type === 'mouse_down') {
+            await InputManager.mouseDown(button || 'left');
+        } else if (type === 'mouse_up') {
+            await InputManager.mouseUp(button || 'left');
+        } else if (type === 'mouse_click') {
             await InputManager.clickMouse(button || 'left', event.double || false);
-        } else if (type === 'key_down' || type === 'key_press' || type === 'key_up') {
-            await InputManager.typeKey(key);
+        } else if (type === 'key_down' || type === 'key_press') {
+            await InputManager.simulateKey(key, false);
+        } else if (type === 'key_up') {
+            await InputManager.simulateKey(key, true);
         }
     } catch (err) {
         console.error('Input execution error:', err);
@@ -141,6 +147,8 @@ async function handleInputEvent(event) {
 }
 
 app.whenReady().then(() => {
+    console.log('[AGENT] Screen capturing and remote control logic initialized.');
+    console.log('[AGENT] NOTE: Running as Administrator is recommended for full system-level input control.');
     createWindow();
 
     socket = io(SERVER_URL, {

@@ -2136,7 +2136,7 @@ io.on('connection', (socket) => {
 
         // Broadcast to the meeting so everyone stays in sync with control status
         io.to(meetingId).emit('control_started', {
-            agentId: 'native-agent',
+            agentId: linkedAgentId || 'native-agent',
             participantId,
             hostId
         });
