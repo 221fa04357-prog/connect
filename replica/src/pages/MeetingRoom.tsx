@@ -71,7 +71,6 @@ export default function MeetingRoom() {
   const lastScreenShareIdRef = useRef<string | null>(null);
   const receivedStreamsRef = useRef<Record<string, Set<MediaStream>>>({}); // socketId -> Set of streams
   const signalingQueueRef = useRef<Record<string, Promise<void>>>({});
-  const pendingIceCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
 
   const createPeerConnection = useCallback((participantSocketId: string, isPolite: boolean) => {
     if (peerConnections.current[participantSocketId]) return peerConnections.current[participantSocketId];
@@ -310,7 +309,7 @@ export default function MeetingRoom() {
         socket.on('signal_receive', async (data: { from: string, signal: any }) => {
           const { from, signal } = data;
           const socketId = socket.id;
-          if (!socketId || !from) return;
+          if (!socketId) return;
 
           // Politeness: The "polite" peer rolls back if collisions happen.
           // Stable rule: Peer with the "smaller" ID is polite.
@@ -346,29 +345,16 @@ export default function MeetingRoom() {
                 console.log(`Received ANSWER from ${from} `);
                 if (pc.signalingState === "have-local-offer") {
                   await pc.setRemoteDescription(new RTCSessionDescription(signal));
-                  // FLUSH QUEUED CANDIDATES
-                  const answerQueue = pendingIceCandidatesRef.current[from];
-                  if (answerQueue && answerQueue.length > 0) {
-                    console.log(`[Signaling] Flushing ${answerQueue.length} pending ICE candidates for ${from}`);
-                    while (answerQueue.length > 0) {
-                      const candidate = answerQueue.shift();
-                      if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error flushing ICE candidate:", e));
-                    }
-                  }
                 } else {
                   console.warn(`Ignored ANSWER from ${from} because state is ${pc.signalingState} `);
                 }
               } else if (signal.candidate) {
-                if (pc.remoteDescription && pc.remoteDescription.type) {
-                  // Handshake ready, add directly
-                  await pc.addIceCandidate(new RTCIceCandidate(signal)).catch(err => {
-                    if (!ignoreOfferRef.current[from]) console.error("Error adding ICE candidate:", err);
-                  });
-                } else {
-                  // NOT ready, queue it
-                  if (!pendingIceCandidatesRef.current[from]) pendingIceCandidatesRef.current[from] = [];
-                  pendingIceCandidatesRef.current[from].push(signal);
-                  console.log(`[Signaling] Queued ICE candidate for ${from} (handshake pending)`);
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(signal));
+                } catch (err) {
+                  if (!ignoreOfferRef.current[from]) {
+                    console.error("Error adding ICE candidate:", err);
+                  }
                 }
               }
             } catch (err: any) {
