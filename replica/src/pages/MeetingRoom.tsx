@@ -125,22 +125,29 @@ export default function MeetingRoom() {
 
       negotiationTimeoutRef.current[participantSocketId] = setTimeout(async () => {
         try {
-          // Only initiate if state is stable to avoid transition errors
-          if (pc.signalingState !== 'stable') return;
+          // KEY FIX: Delay negotiation if state is not stable, but don't drop it!
+          // We must wait for the state to be stable before sending a new offer.
+          if (pc.signalingState !== 'stable') {
+            console.log(`[Signaling] State is ${pc.signalingState} for ${participantSocketId}, retrying negotiation...`);
+            // Wait for 200ms and trigger again
+            pc.onnegotiationneeded?.(new Event('negotiationneeded'));
+            return;
+          }
+
           makingOfferRef.current[participantSocketId] = true;
           await pc.setLocalDescription();
-          console.log(`Sending OFFER to ${participantSocketId}`);
+          console.log(`[Signaling] Sending OFFER to ${participantSocketId}`);
           useChatStore.getState().socket?.emit('signal_send', {
             to: participantSocketId,
             from: useChatStore.getState().socket?.id,
             signal: pc.localDescription
           });
         } catch (err) {
-          console.error("Negotiation error:", err);
+          console.error(`[Signaling] Negotiation error for ${participantSocketId}:`, err);
         } finally {
           makingOfferRef.current[participantSocketId] = false;
         }
-      }, 100);
+      }, 150);
     };
 
     pc.onicecandidate = (event) => {
@@ -422,30 +429,39 @@ export default function MeetingRoom() {
       const videoTrack = localStream.getVideoTracks()[0];
       const audioTrack = localStream.getAudioTracks()[0];
 
-      Object.values(peerConnections.current).forEach((pc) => {
+      Object.entries(peerConnections.current).forEach(([socketId, pc]) => {
         const senders = pc.getSenders();
 
         // Manage Video Track
         const videoSender = senders.find(s => s.track?.kind === 'video');
         if (videoSender && videoTrack) {
           if (videoSender.track !== videoTrack) {
-            console.log("MeetingRoom: Replacing video track on PC");
-            videoSender.replaceTrack(videoTrack).catch(err => console.error("Error replacing video track:", err));
+            console.log(`MeetingRoom: Replacing video track on PC ${socketId}`);
+            videoSender.replaceTrack(videoTrack).catch(err => console.error(`Error replacing video track for ${socketId}:`, err));
           }
         } else if (!videoSender && videoTrack) {
-          console.log("MeetingRoom: Adding MISSED video track to PC");
+          console.log(`MeetingRoom: Adding MISSED video track to PC ${socketId}`);
           pc.addTrack(videoTrack, localStream);
+        } else if (videoSender && !videoTrack) {
+          // Track removed (e.g. video toggled OFF and stopped)
+          console.log(`MeetingRoom: Removing video track from PC ${socketId}`);
+          pc.removeTrack(videoSender);
         }
 
         // Manage Audio Track
         const audioSender = senders.find(s => s.track?.kind === 'audio');
         if (audioSender && audioTrack) {
           if (audioSender.track !== audioTrack) {
-            console.log("MeetingRoom: Replacing audio track on PC");
-            audioSender.replaceTrack(audioTrack).catch(err => console.error("Error replacing audio track:", err));
+            console.log(`MeetingRoom: Replacing audio track on PC ${socketId}`);
+            // CRITICAL: Ensure the sender is using the processed audio track
+            audioSender.replaceTrack(audioTrack).catch(err => {
+              console.error(`Error replacing audio track for ${socketId}:`, err);
+              // Fallback: If replaceTrack fails, try renegotiating
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            });
           }
         } else if (!audioSender && audioTrack) {
-          console.log("MeetingRoom: Adding MISSED audio track to PC");
+          console.log(`MeetingRoom: Adding MISSED audio track to PC ${socketId}`);
           pc.addTrack(audioTrack, localStream);
         }
       });
