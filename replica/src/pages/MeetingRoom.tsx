@@ -425,27 +425,19 @@ export default function MeetingRoom() {
       Object.values(peerConnections.current).forEach((pc) => {
         const senders = pc.getSenders();
 
-        // Manage Video Track
+        // Replace Video Track
         const videoSender = senders.find(s => s.track?.kind === 'video');
         if (videoSender && videoTrack) {
-          if (videoSender.track !== videoTrack) {
-            console.log("MeetingRoom: Replacing video track on PC");
-            videoSender.replaceTrack(videoTrack).catch(err => console.error("Error replacing video track:", err));
-          }
+          videoSender.replaceTrack(videoTrack);
         } else if (!videoSender && videoTrack) {
-          console.log("MeetingRoom: Adding MISSED video track to PC");
           pc.addTrack(videoTrack, localStream);
         }
 
-        // Manage Audio Track
+        // Replace Audio Track
         const audioSender = senders.find(s => s.track?.kind === 'audio');
         if (audioSender && audioTrack) {
-          if (audioSender.track !== audioTrack) {
-            console.log("MeetingRoom: Replacing audio track on PC");
-            audioSender.replaceTrack(audioTrack).catch(err => console.error("Error replacing audio track:", err));
-          }
+          audioSender.replaceTrack(audioTrack);
         } else if (!audioSender && audioTrack) {
-          console.log("MeetingRoom: Adding MISSED audio track to PC");
           pc.addTrack(audioTrack, localStream);
         }
       });
@@ -655,92 +647,79 @@ export default function MeetingRoom() {
         return;
       }
 
-      // CRITICAL FIX: Persistent Audio and LED Management
-      // We check if we need a new stream or just a new video track
-      const hasAudio = localStream && localStream.getAudioTracks().length > 0 && localStream.getAudioTracks()[0].readyState === 'live';
-      const hasVideo = localStream && localStream.getVideoTracks().length > 0 && localStream.getVideoTracks()[0].readyState === 'live';
-      
-      const setLocalVideoTrack = useMeetingStore.getState().setLocalVideoTrack;
+      // Use MeetingStore state (preview state) instead of ParticipantsStore
+      // Only initialize if video is NOT explicitly off in the MeetingStore
+      if (!meetingStoreVideoOff) {
+        const needsStream =
+          !localStream ||
+          !localStream.active ||
+          localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
-      // Case 1: Initial load or total stream failure - get both
-      if (!localStream || !localStream.active || !hasAudio) {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        if (needsStream) {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error("MediaDevices API not supported.");
+            return;
+          }
 
-        try {
-          console.log(`MeetingRoom: Initializing base stream (videoOff: ${meetingStoreVideoOff})`);
-          const { selectedAudioId, selectedVideoId } = useMeetingStore.getState();
-          
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              ...ENHANCED_AUDIO_CONSTRAINTS,
-              deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
-            },
-            // Only request video if it's supposed to be ON
-            video: meetingStoreVideoOff ? false : {
-              deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              aspectRatio: { ideal: 16 / 9 },
-              facingMode: 'user'
-            }
-          });
+          try {
+            console.log("MeetingRoom: Initializing media stream...");
+            const { selectedAudioId, selectedVideoId, isAudioMuted, isVideoOff } = useMeetingStore.getState();
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
+                facingMode: 'user'
+              },
+              audio: {
+                ...ENHANCED_AUDIO_CONSTRAINTS,
+                deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
+              }
+            });
 
-          // Note: Store's setLocalStream will now handle track.enabled syncing!
-          // We always want raw tracks to be enabled for the processor.
-          setLocalStream(stream);
-        } catch (err) {
-          console.error("MeetingRoom: Failed to get initial stream:", err);
-          // Try audio-only if initial request failed (could be camera in use)
-          if (!meetingStoreVideoOff) {
+            // Set initial track states based on MeetingStore
+            stream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
+            stream.getVideoTracks().forEach(t => t.enabled = !meetingStoreVideoOff);
+
+            console.log('MeetingRoom: Setting local stream', {
+              hasAudio: stream.getAudioTracks().length > 0,
+              hasVideo: stream.getVideoTracks().length > 0,
+              audioEnabled: !meetingStoreAudioMuted,
+              videoEnabled: !meetingStoreVideoOff
+            });
+
+            setLocalStream(stream);
+          } catch (err) {
+            console.error("Failed to access camera/microphone together:", err);
+            // Fallback: If camera is in use by another app (Device in use), try getting JUST audio!
             try {
-               console.log("MeetingRoom: Retrying with audio-only...");
-               const { selectedAudioId } = useMeetingStore.getState();
-               const audioOnly = await navigator.mediaDevices.getUserMedia({
-                 audio: { ...ENHANCED_AUDIO_CONSTRAINTS, deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined }
-               });
-               setLocalStream(audioOnly);
-            } catch (inner) {
-               console.error("MeetingRoom: Total media failure:", inner);
+              console.log("MeetingRoom: Falling back to audio-only stream...");
+              const { selectedAudioId, isAudioMuted } = useMeetingStore.getState();
+              const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  ...ENHANCED_AUDIO_CONSTRAINTS,
+                  deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
+                }
+              });
+
+              audioStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+              console.log('MeetingRoom: Fallback local audio stream set successfully.');
+
+              setLocalStream(audioStream);
+            } catch (fallbackErr) {
+              console.error("Failed to access microphone during fallback:", fallbackErr);
             }
           }
         }
-      } 
-      // Case 2: We have audio, but now we need to turn video ON (and LED ON)
-      else if (!meetingStoreVideoOff && !hasVideo) {
-        try {
-          console.log("MeetingRoom: Camera toggled ON - requesting new video track");
-          const { selectedVideoId } = useMeetingStore.getState();
-          const videoStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              aspectRatio: { ideal: 16 / 9 },
-              facingMode: 'user'
-            }
+      } else {
+        // If video is off, ensure we stop any existing video tracks to turn off the LED
+        if (localStream) {
+          localStream.getVideoTracks().forEach(track => {
+            track.stop();
+            console.log("MeetingRoom: Stopped video track (video is off)");
           });
-          
-          if (videoStream.getVideoTracks().length > 0) {
-            const newTrack = videoStream.getVideoTracks()[0];
-            setLocalVideoTrack(newTrack);
-          }
-        } catch (err) {
-          console.error("MeetingRoom: Failed to get video track:", err);
         }
-      }
-      // Case 3: We have video, but now we need to turn it OFF (and LED OFF)
-      else if (meetingStoreVideoOff && hasVideo) {
-        console.log("MeetingRoom: Camera toggled OFF - stopping video tracks to turn off LED");
-        setLocalVideoTrack(null); 
-      }
-      // Case 4: Sync enabled states manually only if they differ (Store handles first join, this handles mid-meeting)
-      else {
-        localStream.getAudioTracks().forEach(t => {
-          if (t.enabled !== !meetingStoreAudioMuted) t.enabled = !meetingStoreAudioMuted;
-        });
-        localStream.getVideoTracks().forEach(t => {
-          if (t.enabled !== !meetingStoreVideoOff) t.enabled = !meetingStoreVideoOff;
-        });
       }
     };
 

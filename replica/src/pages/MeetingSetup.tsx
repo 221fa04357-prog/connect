@@ -107,14 +107,12 @@ export function JoinMeeting() {
                     // Check if we are still on this page before setting store state
                     if (!isJoiningRef.current) {
                         // Apply initial state - STOP tracks if they should be off to ensure hardware release
-                        // Always keep raw tracks enabled for the AudioProcessor/Captions to work!
-                        // The store's setLocalStream will now handle syncing the output tracks' enabled state.
-                        stream.getAudioTracks().forEach(t => {
-                            t.enabled = true;
-                        });
-                        stream.getVideoTracks().forEach(t => {
-                            t.enabled = !isVideoOff;
-                        });
+                        if (isAudioMuted) {
+                            stream.getAudioTracks().forEach(t => t.stop());
+                        }
+                        if (isVideoOff) {
+                            stream.getVideoTracks().forEach(t => t.stop());
+                        }
 
                         setLocalStream(stream);
                         setPermissionDenied(false);
@@ -194,14 +192,11 @@ export function JoinMeeting() {
 
         if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
             try {
-                // Always try to get both if we don't have a valid stream
                 const isVideoOff = useMeetingStore.getState().isVideoOff;
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: ENHANCED_AUDIO_CONSTRAINTS,
-                    video: true // Always get video even if off, we'll disable it below
+                    video: !isVideoOff
                 });
-                stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
-                stream.getAudioTracks().forEach(t => t.enabled = false); // Will be enabled by toggleAudio()
                 setLocalStream(stream);
             } catch (err) {
                 console.error("Failed to get audio stream:", err);
@@ -213,32 +208,18 @@ export function JoinMeeting() {
     const handleVideoToggle = async () => {
         const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
         const currentStream = useMeetingStore.getState().localStream;
-        const setLocalVideoTrack = useMeetingStore.getState().setLocalVideoTrack;
+        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
 
-        if (!currentIsVideoOff) {
-            // Turning video OFF - Stop and remove video tracks to turn off LED
-            console.log("MeetingSetup: Turning video OFF - removing video track");
-            setLocalVideoTrack(null);
-        } else {
-            // Turning video ON - Request new video track
+        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
             try {
-                console.log("MeetingSetup: Turning video ON - requesting new video track");
-                const { selectedVideoId } = useMeetingStore.getState();
-                const videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        aspectRatio: { ideal: 16 / 9 },
-                        facingMode: 'user'
-                    }
+                const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: ENHANCED_AUDIO_CONSTRAINTS
                 });
-                
-                if (videoStream.getVideoTracks().length > 0) {
-                    setLocalVideoTrack(videoStream.getVideoTracks()[0]);
-                }
+                setLocalStream(stream);
             } catch (err) {
-                console.error("MeetingSetup: Failed to get video track:", err);
+                console.error("Failed to get video stream:", err);
             }
         }
         toggleVideo();
