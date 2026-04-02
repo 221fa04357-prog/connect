@@ -1912,9 +1912,9 @@ io.on('connection', (socket) => {
 
     // --- Signaling for WebRTC ---
     socket.on('signal_send', (data) => {
-        const { to, signal, from } = data;
+        const { to, signal } = data;
         io.to(to).emit('signal_receive', {
-            from,
+            from: socket.id,
             signal
         });
     });
