@@ -1892,24 +1892,8 @@ function ControlBar() {
         const currentIsMuted = isAudioMuted;
         const currentStream = useMeetingStore.getState().localStream;
 
-        // Check if any audio tracks are 'ended'
-        const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
-
-        // If we are unmuting and have no active stream or ended track, try to get it here (user gesture)
-        if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
-            try {
-                console.log("Requesting audio stream on user gesture...");
-                const isVideoOff = useMeetingStore.getState().isVideoOff;
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: ENHANCED_AUDIO_CONSTRAINTS,
-                    video: !isVideoOff
-                });
-
-                setLocalStream(stream);
-            } catch (err) {
-                console.error("Failed to get audio stream on toggle:", err);
-            }
-        }
+        // Note: getUserMedia is now handled centrally in MeetingRoom.tsx initCamera
+        // to ensure tracks are persistent. Store toggleAudio() handles enablement.
 
         toggleAudio();
         const userId = user?.id;
@@ -1946,26 +1930,9 @@ function ControlBar() {
         const currentIsVideoOff = isVideoOff;
         const currentStream = useMeetingStore.getState().localStream;
 
-        // Check if any video tracks are 'ended'
-        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
-
-        // If we are turning video ON and have no active video track or ended track, try to get it here (user gesture)
-        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
-            try {
-                console.log("Requesting video stream on user gesture...");
-                const { selectedAudioId } = useMeetingStore.getState();
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: {
-                        ...ENHANCED_AUDIO_CONSTRAINTS,
-                        deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
-                    }
-                });
-                setLocalStream(stream);
-            } catch (err) {
-                console.error("Failed to get video stream on toggle:", err);
-            }
-        }
+        // Note: getUserMedia is now handled centrally in MeetingRoom.tsx initCamera
+        // to ensure tracks are persistent. Store toggleVideo() handles enablement.
+        // If track WAS stopped (e.g. legacy), MeetingRoom.tsx initCamera will detect and restart it.
 
         toggleVideo();
         const userId = user?.id;
