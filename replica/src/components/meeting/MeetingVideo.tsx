@@ -12,6 +12,7 @@ import { Button } from '@/components/ui'; // Consolidated import
 import { useMediaStore } from '@/stores/useMediaStore';
 import { useBreakoutStore } from '@/stores/useBreakoutStore';
 import { toast } from 'sonner';
+import { RemoteControlStream } from './RemoteControlStream';
 
 // --- VideoTile.tsx ---
 
@@ -672,7 +673,7 @@ export function ScreenShareView({ participant, stream, isLocal }: ScreenShareVie
                 playsInline
                 muted
                 onLoadedMetadata={(e) => e.currentTarget.play()}
-                className="w-full h-full object-contain pointer-events-none"
+                className="w-full h-full object-cover pointer-events-none"
             />
 
             {/* Remote Cursor display removed - cursor position not stored */}
@@ -718,6 +719,8 @@ export function VideoGrid() {
     const { remoteScreenStreams } = useMediaStore();
     const { user } = useAuthStore();
     const { currentRoomId, rooms, isBreakoutActive } = useBreakoutStore();
+    const { nativeAgentStatus, localUserId } = useChatStore();
+    const { remoteControlState } = useMeetingStore();
 
     const currentUserParticipant = participants.find(p => p.id === user?.id || p.id === `participant-${user?.id}` || p.id === useChatStore.getState().localUserId);
     const currentUserRole = currentUserParticipant?.role || user?.role || 'participant';
@@ -738,7 +741,7 @@ export function VideoGrid() {
             p.id === user?.id ||
             p.id === `participant-${user?.id}` ||
             (user?.role === 'host' && p.id === 'participant-1') ||
-            p.id === useChatStore.getState().localUserId;
+            p.id === localUserId;
 
         if (isLocal && (meeting?.settings?.hideSelfView || !showSelfView)) {
             return false;
@@ -942,10 +945,40 @@ export function VideoGrid() {
         );
     }
 
+    // Layout when remote controlling
+    const isRemoteControlling = nativeAgentStatus.status === 'connected' && remoteControlState.role === 'controller';
+    
+    if (isRemoteControlling) {
+        return (
+            <div className="flex flex-col md:flex-row h-full w-full gap-4 p-0 overflow-hidden pt-0 pb-[105px]">
+                {/* Main Remote Control Area */}
+                <div className="flex-1 min-w-0 bg-black rounded-xl overflow-hidden relative">
+                    <RemoteControlStream />
+                </div>
+
+                {/* Participant Sidebar */}
+                <div className="w-full md:w-80 flex-shrink-0 flex md:flex-col gap-3 overflow-x-auto md:overflow-y-auto no-scrollbar pb-2 md:pb-0">
+                    {visibleParticipants.map((participant) => (
+                        <div key={participant.id} className="w-48 md:w-full flex-shrink-0">
+                            <VideoTile
+                                participant={participant}
+                                isActive={participant.id === activeSpeakerId}
+                                isPinned={pinnedParticipantId === participant.id}
+                                onPin={() => handlePin(participant.id)}
+                                onClick={() => setFocusedParticipant(participant.id)}
+                                className="aspect-video h-auto"
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     // Layout when someone is sharing
     if (sharingParticipant && screenStream) {
         return (
-            <div className="flex flex-col md:flex-row h-full w-full gap-4 p-4 overflow-hidden pt-[30px] pb-[105px]">
+            <div className="flex flex-col md:flex-row h-full w-full gap-2 p-0 overflow-hidden pt-0 pb-[105px]">
                 {/* Main Screen Share Area */}
                 <div className="flex-1 min-w-0 bg-black rounded-xl overflow-hidden relative">
                     <ScreenShareView
@@ -956,7 +989,7 @@ export function VideoGrid() {
                 </div>
 
                 {/* Participant Sidebar */}
-                <div className="w-full md:w-64 flex-shrink-0 flex md:flex-col gap-3 overflow-x-auto md:overflow-y-auto no-scrollbar pb-2 md:pb-0">
+                <div className="w-full md:w-80 flex-shrink-0 flex md:flex-col gap-3 overflow-x-auto md:overflow-y-auto no-scrollbar pb-2 md:pb-0">
                     {visibleParticipants.map((participant) => (
                         <div key={participant.id} className="w-48 md:w-full flex-shrink-0">
                             <VideoTile

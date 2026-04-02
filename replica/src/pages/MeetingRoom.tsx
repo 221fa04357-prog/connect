@@ -883,17 +883,12 @@ export default function MeetingRoom() {
 
 
   return (
-    <div className="flex flex-col h-screen bg-[#1C1C1C] pt-4">
+    <div className="flex flex-col h-screen bg-[#1C1C1C]">
 
       {/* MAIN CONTENT */}
       <div className="flex-1 min-h-0 relative">
         <MeetingControls />
         <VideoGrid />
-        {nativeAgentStatus.status === 'connected' && remoteControlState.role === 'controller' && (
-          <div className="absolute inset-x-4 top-[30px] bottom-[105px] z-10">
-            <RemoteControlStream />
-          </div>
-        )}
 
         {/* Global Reactions Overlay */}
         <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
