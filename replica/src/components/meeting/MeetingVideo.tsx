@@ -77,31 +77,22 @@ export function VideoTile({
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
+    // Derive the correct stream for this tile
+    const tileStream = isLocal ? localStream : (participant.socketId ? remoteStreams[participant.socketId] : null);
+
+    // Requirement 2 & 3: Assign srcObject ONLY once (dependency only on stream)
     useEffect(() => {
-        // Show real local stream for the current user/guest only
-        if (isLocal && videoRef.current && localStream) {
-            console.log('VideoTile: Setting local stream', {
-                participantId: participant.id,
-                hasStream: !!localStream,
-                streamActive: localStream.active,
-                videoTracks: localStream.getVideoTracks().length
-            });
-            videoRef.current.srcObject = localStream;
-        }
-        // Show remote stream if available
-        else if (!isLocal && videoRef.current) {
-            // @ts-ignore - participant.socketId comes from backend metadata
-            const stream = remoteStreams[participant.socketId];
-            if (stream) {
-                console.log('VideoTile: Setting remote stream', {
+        if (videoRef.current && tileStream) {
+            if (videoRef.current.srcObject !== tileStream) {
+                console.log('VideoTile: Assigning srcObject', {
                     participantId: participant.id,
-                    socketId: participant.socketId,
-                    hasStream: !!stream
+                    isLocal,
+                    streamId: tileStream.id
                 });
-                videoRef.current.srcObject = stream;
+                videoRef.current.srcObject = tileStream;
             }
         }
-    }, [isLocal, localStream, remoteStreams, participant, participant.isVideoOff]);
+    }, [tileStream]);
 
     const handleToggleMuteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -214,40 +205,31 @@ export function VideoTile({
                     </div>
                 )}
 
-                {participant.isVideoOff ? (
+                {/* Requirement 1: NEVER conditionally render <video>. Always mounted, hidden with CSS. */}
+                <div className={cn("w-full h-full flex items-center justify-center overflow-hidden bg-gray-900 rounded-lg", (isLocal ? msVideoOff : participant.isVideoOff) ? "hidden" : "block")}>
+                    <video
+                        ref={videoRef}
+                        id={isLocal ? "local-video" : `remote-video-${participant.socketId}`}
+                        autoPlay
+                        playsInline
+                        muted={isLocal}
+                        onLoadedMetadata={(e) => {
+                            e.currentTarget.play().catch(err => console.warn("Video play interrupted:", err));
+                        }}
+                        className={cn(
+                            "w-full h-full object-cover rounded-lg",
+                            isLocal && "transform -scale-x-100"
+                        )}
+                        style={{ backgroundColor: '#1f2937' }}
+                    />
+                </div>
+
+                {participant.isVideoOff && (
                     <div
                         className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-semibold"
                         style={{ backgroundColor: participant.avatar }}
                     >
                         {participant.name.charAt(0).toUpperCase()}
-                    </div>
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center overflow-hidden bg-gray-900 rounded-lg">
-                        {isLocal && localStream ? (
-                            <video
-                                ref={videoRef}
-                                id="local-video"
-                                autoPlay
-                                playsInline
-                                muted
-                                onLoadedMetadata={(e) => e.currentTarget.play()}
-                                className="w-full h-full object-cover transform -scale-x-100 rounded-lg"
-                                style={{ backgroundColor: '#1f2937' }}
-                            />
-                        ) : !isLocal && (participant as any).socketId && remoteStreams[(participant as any).socketId] ? (
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                playsInline
-                                onLoadedMetadata={(e) => e.currentTarget.play()}
-                                className="w-full h-full object-cover rounded-lg"
-                                style={{ backgroundColor: '#1f2937' }}
-                            />
-                        ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center rounded-lg">
-                                <Video className="w-12 h-12 text-gray-500" />
-                            </div>
-                        )}
                     </div>
                 )}
 
