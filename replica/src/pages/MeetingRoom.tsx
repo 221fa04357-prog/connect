@@ -419,30 +419,36 @@ export default function MeetingRoom() {
   // DYNAMIC TRACK UPDATE: Re-attach tracks when localStream changes
   useEffect(() => {
     if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0] || null;
-      const audioTrack = localStream.getAudioTracks()[0] || null;
+      const videoTrack = localStream.getVideoTracks()[0];
+      const audioTrack = localStream.getAudioTracks()[0];
 
       Object.values(peerConnections.current).forEach((pc) => {
         const senders = pc.getSenders();
 
         // Sync Video Track
         const videoSender = senders.find(s => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(videoTrack).then(() => {
-            console.log(`MeetingRoom: Replaced video track with: ${videoTrack?.id || 'null'}`);
-          }).catch(err => {
-            console.error('MeetingRoom: Failed to replace video track:', err);
-          });
-        } else if (videoTrack) {
-          pc.addTrack(videoTrack, localStream);
+        if (videoTrack) {
+          if (videoSender) {
+            videoSender.replaceTrack(videoTrack);
+          } else {
+            pc.addTrack(videoTrack, localStream);
+          }
+        } else if (videoSender) {
+          // If we had a video track but now it's gone, clear the sender
+          videoSender.replaceTrack(null);
         }
 
         // Sync Audio Track
         const audioSender = senders.find(s => s.track?.kind === 'audio');
-        if (audioSender) {
-          audioSender.replaceTrack(audioTrack);
-        } else if (audioTrack) {
-          pc.addTrack(audioTrack, localStream);
+        if (audioTrack) {
+          if (audioSender) {
+            audioSender.replaceTrack(audioTrack);
+          } else {
+            pc.addTrack(audioTrack, localStream);
+          }
+        } else if (audioSender) {
+          // If we had an audio track but now it's gone, clear the sender
+          audioSender.replaceTrack(null);
         }
       });
     }
@@ -627,15 +633,12 @@ export default function MeetingRoom() {
           console.log(`MeetingRoom: Audio track ${t.enabled ? 'enabled' : 'disabled'} `);
         }
       });
-      // VIDEO TRACKS: Hardware control is handled by initCamera re-acquisition, 
-      // but we ensure any existing tracks are enabled if video is ON.
-      if (!isVideoOffLocal) {
-        localStream.getVideoTracks().forEach(t => {
-          if (t.enabled !== true) {
-            t.enabled = true;
-          }
-        });
-      }
+      localStream.getVideoTracks().forEach(t => {
+        if (t.enabled !== !isVideoOffLocal) {
+          t.enabled = !isVideoOffLocal;
+          console.log(`MeetingRoom: Video track ${t.enabled ? 'enabled' : 'disabled'} `);
+        }
+      });
     }
   }, [isAudioMutedLocal, isVideoOffLocal, localStream]);
 
@@ -644,6 +647,7 @@ export default function MeetingRoom() {
 
   useEffect(() => {
     const initCamera = async () => {
+      // Robust Guard 1: Do not initialize if we are not supposed to be joined or not hydrated
       if (!meetingJoined || !hasHydrated) {
         if (localStream && !meetingJoined) {
           localStream.getTracks().forEach(t => t.stop());
@@ -653,25 +657,25 @@ export default function MeetingRoom() {
         return;
       }
 
-      // Check if we actually need a video track acquisition
-      // We only request it if video is ON but missing or ended.
-      const existingVideoTrack = localStream?.getVideoTracks()[0];
-      const needsVideoAcquisition = !meetingStoreVideoOff && 
-                                    (!existingVideoTrack || existingVideoTrack.readyState === 'ended');
+      // Requirement 7: Avoid replacing streams frequently. 
+      // Only request if we have NO stream or if basic tracks are missing/dead.
+      const needsStream =
+        !localStream ||
+        !localStream.active ||
+        localStream.getAudioTracks().length === 0 ||
+        localStream.getAudioTracks().some(t => t.readyState === 'ended') ||
+        localStream.getVideoTracks().length === 0 ||
+        localStream.getVideoTracks().some(t => t.readyState === 'ended');
 
-      // Check if we need audio track acquisition
-      const existingAudioTrack = localStream?.getAudioTracks()[0];
-      const needsAudioAcquisition = !localStream || !localStream.active || 
-                                    !existingAudioTrack || existingAudioTrack.readyState === 'ended';
-
-      if (needsVideoAcquisition || needsAudioAcquisition) {
+      if (needsStream) {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           console.error("MediaDevices API not supported.");
           return;
         }
 
         try {
-          console.log(`MeetingRoom: Re-acquiring media stream (Video: ${!meetingStoreVideoOff}, Audio: true)...`);
+          // Requirement 4 & 5: We always get both tracks to allow smooth toggling via .enabled
+          console.log(`MeetingRoom: Initializing dual-track media stream...`);
           const { selectedAudioId, selectedVideoId } = useMeetingStore.getState();
           
           const constraints: MediaStreamConstraints = {
@@ -679,7 +683,7 @@ export default function MeetingRoom() {
               ...ENHANCED_AUDIO_CONSTRAINTS,
               deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
             },
-            video: meetingStoreVideoOff ? false : {
+            video: {
               deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
               width: { ideal: 1280 },
               height: { ideal: 720 },
@@ -690,30 +694,42 @@ export default function MeetingRoom() {
 
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-          // Correctly handle tracks mixing if we only requested one type
-          let finalStream = stream;
-          if (localStream && localStream.active) {
-            // Keep existing tracks if they are still good
-            if (!needsAudioAcquisition && existingAudioTrack) {
-               // We acquired a new video-only or dual stream, but we want to stick to the old audio to prevent pops
-               // However, getUserMedia usually requires both for permission consistency in some UIs.
-            }
-          }
+          // Apply current UI states to the new tracks immediately
+          stream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
+          stream.getVideoTracks().forEach(t => t.enabled = !meetingStoreVideoOff);
 
-          // Apply state
-          finalStream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
-          finalStream.getVideoTracks().forEach(t => t.enabled = true); // Always enabled if requested
+          console.log('MeetingRoom: Setting persistent local stream', {
+            hasAudio: stream.getAudioTracks().length > 0,
+            hasVideo: stream.getVideoTracks().length > 0,
+            audioEnabled: !meetingStoreAudioMuted,
+            videoEnabled: !meetingStoreVideoOff
+          });
 
-          setLocalStream(finalStream);
+          setLocalStream(stream);
         } catch (err) {
-          console.error("Failed to access media devices during re-acquisition:", err);
-          // If we failed to get both, try to fallback to audio only
-          if (needsVideoAcquisition && !meetingStoreVideoOff) {
-             import('sonner').then(({ toast }) => toast.error("Could not access camera. Re-enabling audio only."));
-             // Recursively try again with video off if needed, but let's avoid infinite loops.
+          console.error("Failed to access media devices:", err);
+          // Fallback to audio-only ONLY if video hardware is truly unavailable
+          if (!localStream) {
+            try {
+                console.log("MeetingRoom: Falling back to audio-only stream...");
+                const { selectedAudioId } = useMeetingStore.getState();
+                const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    ...ENHANCED_AUDIO_CONSTRAINTS,
+                    deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
+                }
+                });
+
+                audioStream.getAudioTracks().forEach(t => t.enabled = !meetingStoreAudioMuted);
+                setLocalStream(audioStream);
+            } catch (fallbackErr) {
+                console.error("Failed to access microphone during fallback:", fallbackErr);
+            }
           }
         }
       } 
+      // Requirement 4: Deleted 'else' block that was calling track.stop().
+      // Tracks stay alive but silenced/dark via 'enabled' synced in other effect.
     };
 
     initCamera();
