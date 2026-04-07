@@ -22,10 +22,11 @@ import { TranscriptionOverlay } from '@/components/meeting/TranscriptionOverlay'
 import { CaptionSettings } from '@/components/meeting/CaptionSettings';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { MeetingStats } from '@/components/meeting/MeetingStats';
+import { useActiveSpeaker } from '@/hooks';
 import { RemoteControlStream } from '@/components/meeting/RemoteControlStream';
 
-
 export default function MeetingRoom() {
+  useActiveSpeaker(); // Enable real-time active speaker detection
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const {

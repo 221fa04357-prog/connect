@@ -2,6 +2,10 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useParticipantsStore } from '@/stores/useParticipantsStore';
+import { useMeetingStore } from '@/stores/useMeetingStore';
+import { useMediaStore } from '@/stores/useMediaStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { useChatStore } from '@/stores/useChatStore';
 // Updated import to point to the new centralized UI index
 import { ToastActionElement, ToastProps } from '@/components/ui';
 
@@ -54,25 +58,127 @@ export const useResponsive = () => {
 
 // --- useActiveSpeaker.ts ---
 export const useActiveSpeaker = () => {
-    const { participants, setActiveSpeaker } = useParticipantsStore();
+    const { participants, setActiveSpeaker, activeSpeakerId, updateParticipant } = useParticipantsStore();
+    const { localStream, isAudioMuted } = useMeetingStore();
+    const { remoteStreams } = useMediaStore();
+    const { user } = useAuthStore();
+    const localUserId = useChatStore(s => s.localUserId);
 
-    useEffect(() => {
-        // Simulate active speaker changes every 3-5 seconds
-        const interval = setInterval(() => {
-            const unmutedParticipants = participants.filter((p) => !p.isAudioMuted);
+    const audioCtxRef = React.useRef<AudioContext | null>(null);
+    const analyzersRef = React.useRef<Record<string, AnalyserNode>>({});
+    const animationFrameRef = React.useRef<number>();
+    const lastUpdateRef = React.useRef<number>(0);
 
-            if (unmutedParticipants.length > 0) {
-                const randomSpeaker = unmutedParticipants[
-                    Math.floor(Math.random() * unmutedParticipants.length)
-                ];
-                setActiveSpeaker(randomSpeaker.id);
+    React.useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        // Initialize AudioContext on first run
+        if (!audioCtxRef.current) {
+            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+                latencyHint: 'interactive'
+            });
+        }
+
+        const audioCtx = audioCtxRef.current;
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+
+        // Add or update analyzers for participants
+        participants.forEach(participant => {
+            const isLocal = 
+                participant.id === user?.id || 
+                participant.id === `participant-${user?.id}` || 
+                participant.id === localUserId;
+                
+            const stream = isLocal ? localStream : (participant.socketId ? remoteStreams[participant.socketId] : null);
+
+            // We only analyze if we have a stream and it's not muted
+            if (stream && stream.getAudioTracks().length > 0 && !participant.isAudioMuted) {
+                if (!analyzersRef.current[participant.id]) {
+                    try {
+                        const source = audioCtx.createMediaStreamSource(stream);
+                        const analyser = audioCtx.createAnalyser();
+                        analyser.fftSize = 256;
+                        analyser.smoothingTimeConstant = 0.8;
+                        source.connect(analyser);
+                        analyzersRef.current[participant.id] = analyser;
+                        console.log(`[useActiveSpeaker] Attached analyser to ${participant.name} (${participant.id})`);
+                    } catch (err) {
+                        console.warn(`[useActiveSpeaker] Failed to attach analyser to ${participant.id}:`, err);
+                    }
+                }
             } else {
-                setActiveSpeaker(null);
+                // Remove analyzer if stream is gone or muted
+                if (analyzersRef.current[participant.id]) {
+                    delete analyzersRef.current[participant.id];
+                }
             }
-        }, 3000 + Math.random() * 2000);
+        });
 
-        return () => clearInterval(interval);
-    }, [participants, setActiveSpeaker]);
+        // Cleanup old analyzers for participants who left
+        const currentIds = new Set(participants.map(p => p.id));
+        Object.keys(analyzersRef.current).forEach(id => {
+            if (!currentIds.has(id)) {
+                delete analyzersRef.current[id];
+            }
+        });
+
+        const loop = () => {
+            const now = Date.now();
+            // Throttle to ~10Hz for performance
+            if (now - lastUpdateRef.current < 100) {
+                animationFrameRef.current = requestAnimationFrame(loop);
+                return;
+            }
+            lastUpdateRef.current = now;
+
+            let maxVolume = -1;
+            let currentLoudestId: string | null = null;
+            const SPEAKING_THRESHOLD = 12; // 0-255 scale
+
+            participants.forEach(p => {
+                const analyser = analyzersRef.current[p.id];
+                if (analyser) {
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const average = sum / dataArray.length;
+
+                    // Update the individual participant's isSpeaking state if it changed
+                    const isCurrentlySpeaking = average > SPEAKING_THRESHOLD;
+                    if (isCurrentlySpeaking !== p.isSpeaking) {
+                        updateParticipant(p.id, { isSpeaking: isCurrentlySpeaking });
+                    }
+
+                    if (isCurrentlySpeaking && average > maxVolume) {
+                        maxVolume = average;
+                        currentLoudestId = p.id;
+                    }
+                } else if (p.isSpeaking) {
+                    // Force off if no analyzer (e.g. muted)
+                    updateParticipant(p.id, { isSpeaking: false });
+                }
+            });
+
+            // Set global active speaker to the loudest one found in this poll
+            if (currentLoudestId !== activeSpeakerId) {
+                setActiveSpeaker(currentLoudestId);
+            }
+
+            animationFrameRef.current = requestAnimationFrame(loop);
+        };
+
+        animationFrameRef.current = requestAnimationFrame(loop);
+
+        return () => {
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+        };
+    }, [participants, localStream, remoteStreams, isAudioMuted, user?.id, localUserId, setActiveSpeaker, activeSpeakerId, updateParticipant]);
 };
 
 // --- use-toast.ts ---
