@@ -185,11 +185,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       import('./useParticipantsStore').then((store) => {
         const ps = store.useParticipantsStore.getState();
         ps.updateParticipantAgentStatus(data.participantId, data.ready);
-        
+
         // Ensure UI re-renders if it's the local user
         const localUserId = get().localUserId;
         if (data.participantId === localUserId) {
-           console.log('[AGENT] Local agent status updated:', data.ready);
+          console.log('[AGENT] Local agent status updated:', data.ready);
         }
       });
     });
@@ -217,7 +217,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // Only the actual "Host" role should be treated as the primary host
               // Co-hosts should maintain administrative rights via their role, but not bypass session permissions
               ms.setIsJoinedAsHost(nextRole === 'host');
-              
+
               import('sonner').then(({ toast }) => {
                 const label = nextRole === 'host' ? 'Host' : 'Co-Host';
                 toast.success(`You have been promoted to ${label}!`);
@@ -412,10 +412,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const ms = meetingStore.useMeetingStore.getState();
         if (ms.meeting) {
           // Robust settings parsing in case it's a JSON string
-          const prevSettings = typeof ms.meeting.settings === 'string' 
-              ? JSON.parse(ms.meeting.settings) 
-              : (ms.meeting.settings || {});
-              
+          const prevSettings = typeof ms.meeting.settings === 'string'
+            ? JSON.parse(ms.meeting.settings)
+            : (ms.meeting.settings || {});
+
           const nextMeeting = {
             ...ms.meeting,
             settings: {
@@ -423,7 +423,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               whiteboardEditAccess: data.access as 'hostOnly' | 'coHost' | 'everyone'
             }
           };
-          
+
           console.log(`[Whiteboard Access] Updating local meeting state to ${data.access}`);
           ms.setMeeting(nextMeeting);
         } else {
@@ -852,16 +852,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Removed conflicting 'agent_status_update' listener
     // This listener was overwriting the correct 'ready' state with 'false'
     // because data.status was undefined in the new flow.
-    
+
     socket.on('control_connected', (data: { agentId: string, agentSocketId: string }) => {
       const targetId = get().nativeAgentStatus.targetParticipantId;
-      set({ 
-        nativeAgentStatus: { 
-          status: 'connected', 
+      set({
+        nativeAgentStatus: {
+          status: 'connected',
           agentId: data.agentId,
           agentSocketId: data.agentSocketId,
           targetParticipantId: targetId
-        } 
+        }
       });
 
       if (targetId) {
@@ -886,25 +886,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
       console.log('[Frontend] Remote control STARTED:', data);
       const hostIsMe = data.hostId === get().socket?.id;
-      
+
       if (hostIsMe) {
         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
-        set({ 
-            isControlling: true,
-            nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
+        set({
+          isControlling: true,
+          nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
         });
-        
+
         import('./useParticipantsStore').then((pStore) => {
-            const participants = pStore.useParticipantsStore.getState().participants;
-            const target = participants.find(p => p.id === data.participantId);
-            import('./useMeetingStore').then((mStore) => {
-                mStore.useMeetingStore.getState().setRemoteControlState({
-                    status: 'active',
-                    role: 'controller',
-                    targetId: data.participantId,
-                    targetName: target?.name || 'Participant'
-                });
+          const participants = pStore.useParticipantsStore.getState().participants;
+          const target = participants.find(p => p.id === data.participantId);
+          import('./useMeetingStore').then((mStore) => {
+            mStore.useMeetingStore.getState().setRemoteControlState({
+              status: 'active',
+              role: 'controller',
+              targetId: data.participantId,
+              targetName: target?.name || 'Participant'
             });
+          });
         });
       } else if (data.participantId === get().localUserId) {
         import('sonner').then(({ toast }) => toast.info('Control session is now active.'));
@@ -1162,7 +1162,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     import('./useParticipantsStore').then((store) => {
       const me = store.useParticipantsStore.getState().participants.find(p => p.id === localUserId);
-      socket.emit('connect_to_agent', { 
+      socket.emit('connect_to_agent', {
         agentId,
         hostName: me?.name || 'Host',
         targetParticipantId
@@ -1175,7 +1175,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   respondToControl: async (accepted: boolean) => {
     const { socket, meetingId, localUserId, pendingControlRequest } = get();
     if (!socket || !meetingId || !localUserId || !pendingControlRequest) return;
-    
+
     if (accepted) {
       socket.emit('accept_control', {
         meetingId,
