@@ -82,6 +82,7 @@ interface ChatState {
 
   setFrequentQuestionUsers: (users: any[]) => void;
   clearFrequentQuestionUsers: () => void;
+  emitCaptionLanguage: (meetingId: string, language: string) => void;
   fetchSmartReplies: (chatContext: string) => Promise<void>;
   reset: () => void;
 }

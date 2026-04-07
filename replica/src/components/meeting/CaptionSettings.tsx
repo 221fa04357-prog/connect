@@ -53,7 +53,7 @@ export function CaptionSettings() {
 
     const { meeting } = useMeetingStore();
     const { user } = useAuthStore();
-    const { meetingId } = useChatStore();
+    const { socket, meetingId, emitCaptionLanguage } = useChatStore();
 
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
@@ -68,6 +68,10 @@ export function CaptionSettings() {
 
     const handleSelectLanguage = (lang: string) => {
         setSpeakingLanguage(lang);
+        // Broadcast to all participants immediately when selected
+        if (meetingId) {
+            emitCaptionLanguage(meetingId, lang);
+        }
     };
 
     const handleSave = () => {
