@@ -53,7 +53,7 @@ export function CaptionSettings() {
 
     const { meeting } = useMeetingStore();
     const { user } = useAuthStore();
-    const { meetingId } = useChatStore();
+    const { socket, meetingId, emitCaptionLanguage } = useChatStore();
 
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
@@ -82,10 +82,6 @@ export function CaptionSettings() {
         }
         setSettingsOpen(false);
         setView('main');
-
-        import('sonner').then(({ toast }) => {
-            toast.success(`Caption language changed to ${speakingLanguage}`);
-        });
     };
 
     return (
