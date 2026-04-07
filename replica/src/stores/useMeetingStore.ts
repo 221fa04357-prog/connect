@@ -72,6 +72,7 @@ interface MeetingState {
   screenShareStream: MediaStream | null;
   recordingStartTime: number | null;
   localStream: MediaStream | null;
+  rawStream: MediaStream | null;
   isAudioMuted: boolean;
   isVideoOff: boolean;
   whiteboardStrokes: any[];
@@ -212,6 +213,7 @@ export const useMeetingStore = create<MeetingState>()(
       recordingStartTime: null,
       showSelfView: true,
       localStream: null,
+      rawStream: null,
       isAudioMuted: true,
 
       showUpgradeModal: false,
@@ -284,6 +286,8 @@ export const useMeetingStore = create<MeetingState>()(
         }
 
         if (stream && stream.getAudioTracks().length > 0) {
+          // Keep a reference to the original, unprocessed stream!
+          set({ rawStream: stream });
           try {
             const processedStream = await audioProcessor.processStream(stream);
             set({ localStream: processedStream });
@@ -293,7 +297,7 @@ export const useMeetingStore = create<MeetingState>()(
           }
         } else {
           audioProcessor.stop();
-          set({ localStream: stream });
+          set({ localStream: stream, rawStream: null });
         }
       },
 
@@ -386,6 +390,9 @@ export const useMeetingStore = create<MeetingState>()(
           if (state.localStream) {
             state.localStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
           }
+          if (state.rawStream) {
+            state.rawStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
+          }
           return { isAudioMuted: muted };
         }),
 
@@ -408,6 +415,9 @@ export const useMeetingStore = create<MeetingState>()(
           const nextMuted = !state.isAudioMuted;
           if (state.localStream) {
             state.localStream.getAudioTracks().forEach((t) => (t.enabled = !nextMuted));
+          }
+          if (state.rawStream) {
+            state.rawStream.getAudioTracks().forEach((t) => (t.enabled = !nextMuted));
           }
           return { isAudioMuted: nextMuted };
         }),
