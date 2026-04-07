@@ -78,7 +78,6 @@ async function setup() {
       );
     `);
 
-    // Seed initial data if table is empty (disabled mock seeds for real data flow)
     /*
     const recapCount = await db.query('SELECT COUNT(*) FROM recaps');
     if (parseInt(recapCount.rows[0].count) === 0) {
