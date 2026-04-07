@@ -746,15 +746,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('caption_language_changed', (data: { language: string }) => {
-      import('./useTranscriptionStore').then((store) => {
-        store.useTranscriptionStore.getState().setSpeakingLanguage(data.language);
-      });
-      import('sonner').then(({ toast }) => {
-        toast.info(`Caption language changed to ${data.language}`);
-      });
-    });
-
     socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
         set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
@@ -1223,10 +1214,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
-
-  emitCaptionLanguage: (meetingId, language) => {
-    get().socket?.emit('caption_language_change', { meeting_id: meetingId, language });
-  },
 
   requestVideoStart: (meetingId, targetUserId, requesterName) => {
     get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });
