@@ -745,7 +745,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-
     socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
         set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
@@ -1214,7 +1213,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
-
 
   requestVideoStart: (meetingId, targetUserId, requesterName) => {
     get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });

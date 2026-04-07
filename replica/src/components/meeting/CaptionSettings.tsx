@@ -55,7 +55,6 @@ export function CaptionSettings() {
     const { user } = useAuthStore();
     const { meetingId } = useChatStore();
 
-    // Changes
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
 
@@ -73,12 +72,18 @@ export function CaptionSettings() {
 
     const handleSave = () => {
         setTranscriptionEnabled(true); // Automatically turn on captions when user interacts with settings
+        // Show local toast
+        import('sonner').then(({ toast }) => {
+            if (view === 'speaking') {
+                toast.info(`Speaking Language changed to ${speakingLanguage}`);
+            } else if (view === 'translation') {
+                toast.info(`Translation Language changed to ${translationLanguage}`);
+            } else {
+                toast.info(`Caption settings applied`);
+            }
+        });
         setSettingsOpen(false);
         setView('main');
-
-        import('sonner').then(({ toast }) => {
-            toast.success(`Caption language changed to ${speakingLanguage}`);
-        });
     };
 
     return (
