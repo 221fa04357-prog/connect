@@ -55,6 +55,7 @@ export function CaptionSettings() {
     const { user } = useAuthStore();
     const { meetingId } = useChatStore();
 
+    // Changes
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
 
