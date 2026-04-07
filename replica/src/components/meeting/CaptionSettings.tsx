@@ -4,7 +4,6 @@ import { ChevronLeft, ChevronRight, Check, X, Lock } from 'lucide-react';
 import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { useMeetingStore } from '@/stores/useMeetingStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useChatStore } from '@/stores/useChatStore';
 import { Button } from '@/components/ui';
 
 const QUICK_LANGUAGES = ['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Malayalam', 'Marathi', 'Gujarati', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Korean', 'Arabic'];
@@ -53,8 +52,6 @@ export function CaptionSettings() {
 
     const { meeting } = useMeetingStore();
     const { user } = useAuthStore();
-    const { socket, meetingId, emitCaptionLanguage } = useChatStore();
-
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
 

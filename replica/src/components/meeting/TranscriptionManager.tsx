@@ -5,7 +5,7 @@ import { useTranscriptionStore } from '@/stores/useTranscriptionStore';
 import { useChatStore } from '@/stores/useChatStore';
 
 export function TranscriptionManager() {
-    const { localStream, isAudioMuted, meeting } = useMeetingStore();
+    const { localStream, rawStream, isAudioMuted, meeting } = useMeetingStore();
     const { user } = useAuthStore();
     const { socket } = useChatStore();
     const {
@@ -73,16 +73,16 @@ export function TranscriptionManager() {
     }, [isCaptionsAllowed, isTranscriptionEnabled, setTranscriptionEnabled]);
 
     const startRecording = () => {
-        if (mediaRecorderRef.current || !localStream) {
+        if (mediaRecorderRef.current || !rawStream) {
             console.log('[Transcription] Cannot start: ', { 
                 hasRecorder: !!mediaRecorderRef.current, 
-                hasStream: !!localStream 
+                hasStream: !!rawStream 
             });
             return;
         }
 
         try {
-            const tracks = localStream.getAudioTracks();
+            const tracks = rawStream.getAudioTracks();
             console.log(`[Transcription] Audio tracks found: ${tracks.length}`);
             tracks.forEach((t, i) => {
                 console.log(`[Transcription] Track [${i}]: id=${t.id}, label=${t.label}, enabled=${t.enabled}, muted=${t.muted}, state=${t.readyState}`);
@@ -94,11 +94,11 @@ export function TranscriptionManager() {
                 return;
             }
 
-            // 1. Setup AudioContext and Analyser directly on localStream
+            // 1. Setup AudioContext and Analyser directly on raw microphone stream
             const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const source = audioCtx.createMediaStreamSource(localStream);
+            const source = audioCtx.createMediaStreamSource(rawStream);
             const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 2048;
+            analyser.fftSize = 256;
             source.connect(analyser);
 
             if (audioCtx.state === 'suspended') {
@@ -129,11 +129,11 @@ export function TranscriptionManager() {
                 if (currentAverageVolume > 0.3) {
                     speakingFramesCount++;
                     if (speakingFramesCount >= speakingFramesThreshold) {
-                        isSpeakingInSegment = true;
-                    }
-                } else {
-                    speakingFramesCount = Math.max(0, speakingFramesCount - 1);
+                    isSpeakingInSegment = true;
                 }
+            } else {
+                speakingFramesCount = Math.max(0, speakingFramesCount - 1);
+            }
                 
                 requestAnimationFrame(checkVolume);
             };
@@ -166,8 +166,8 @@ export function TranscriptionManager() {
             const selectedMimeType = getSupportedMimeType();
             console.log(`[Transcription] Selected MIME type: ${selectedMimeType || 'default'}`);
 
-            // Use only audio tracks to avoid issues with video tracks in localStream
-            const audioStream = new MediaStream(localStream.getAudioTracks());
+            // Use only audio tracks to avoid issues with video tracks in rawStream
+            const audioStream = new MediaStream(rawStream.getAudioTracks());
             const recorder = new MediaRecorder(audioStream, selectedMimeType ? { mimeType: selectedMimeType } : undefined);
             
             mediaRecorderRef.current = recorder;
@@ -280,7 +280,7 @@ export function TranscriptionManager() {
     // We only START the recorder if local stream exists and mic is NOT muted.
     // Requirement #8: Capture when mic is ON, even if captions are disabled (for AI Companion).
     useEffect(() => {
-        if (!localStream || isAudioMuted) {
+        if (!rawStream || isAudioMuted) {
             stopRecording();
             return;
         }
