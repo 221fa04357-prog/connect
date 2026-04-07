@@ -77,24 +77,21 @@ export function JoinMeeting() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const isJoiningRef = useRef(false);
 
-    // Initial Stream Setup - Responsive to stores
+    // Initial Stream Setup
     useEffect(() => {
         const initCamera = async () => {
             try {
+                // Check if browser supports mediaDevices
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     console.error("MediaDevices API not supported.");
                     setPermissionDenied(true);
                     return;
                 }
 
-                // Decide what we need
-                const needsVideoAcquisition = !isVideoOff && 
-                                              (!localStream || !localStream.getVideoTracks()[0] || localStream.getVideoTracks()[0].readyState === 'ended');
-                const needsAudioAcquisition = !localStream || !localStream.active;
-
-                if (needsVideoAcquisition || needsAudioAcquisition) {
+                // Only request if we don't have one active
+                if (!localStream || !localStream.active) {
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: isVideoOff ? false : {
+                        video: {
                             deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
                             width: { ideal: 1280 },
                             height: { ideal: 720 },
@@ -107,21 +104,26 @@ export function JoinMeeting() {
                         }
                     });
 
-                    // Check if we are still on this page
+                    // Check if we are still on this page before setting store state
                     if (!isJoiningRef.current) {
+                        // Apply initial state - Use .enabled = false for UI-only "offs" 
+                        // so tracks stay alive for the transition to the meeting.
                         stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-                        stream.getVideoTracks().forEach(t => t.enabled = true);
+                        stream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
 
                         setLocalStream(stream);
                         setPermissionDenied(false);
                     } else {
+                        // If we are already joining, just stop this new stream immediately
                         stream.getTracks().forEach(t => t.stop());
                     }
                 }
             } catch (err: any) {
-                console.error("MeetingSetup: Camera access error:", err);
+                console.error("Camera access error:", err);
                 if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                     setPermissionDenied(true);
+                } else if (err.name === 'NotFoundError') {
+                    console.error("No camera/microphone found.");
                 }
                 setPermissionDenied(true);
             }
@@ -171,7 +173,7 @@ export function JoinMeeting() {
                 }
             }
         };
-    }, [isVideoOff, isAudioMuted, selectedVideoId, selectedAudioId, paramMeetingId, navigate, user?.id, addParticipant, setLocalStream, setMeeting, setMeetingJoined]);
+    }, []);
 
     // Bind stream to video element
     useEffect(() => {
@@ -181,10 +183,42 @@ export function JoinMeeting() {
     }, [localStream]);
 
     const handleAudioToggle = async () => {
+        const currentIsMuted = useMeetingStore.getState().isAudioMuted;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getAudioTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsMuted && (!currentStream || !currentStream.active || currentStream.getAudioTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isVideoOff = useMeetingStore.getState().isVideoOff;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: ENHANCED_AUDIO_CONSTRAINTS,
+                    video: !isVideoOff
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get audio stream:", err);
+            }
+        }
         toggleAudio();
     };
 
     const handleVideoToggle = async () => {
+        const currentIsVideoOff = useMeetingStore.getState().isVideoOff;
+        const currentStream = useMeetingStore.getState().localStream;
+        const hasEndedTrack = currentStream?.getVideoTracks().some(t => t.readyState === 'ended');
+
+        if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
+            try {
+                const isAudioMuted = useMeetingStore.getState().isAudioMuted;
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: ENHANCED_AUDIO_CONSTRAINTS
+                });
+                setLocalStream(stream);
+            } catch (err) {
+                console.error("Failed to get video stream:", err);
+            }
+        }
         toggleVideo();
     };
 

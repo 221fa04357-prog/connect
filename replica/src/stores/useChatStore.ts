@@ -82,6 +82,7 @@ interface ChatState {
 
   setFrequentQuestionUsers: (users: any[]) => void;
   clearFrequentQuestionUsers: () => void;
+  emitCaptionLanguage: (meetingId: string, language: string) => void;
   fetchSmartReplies: (chatContext: string) => Promise<void>;
   reset: () => void;
 }
@@ -745,7 +746,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-
     socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
         set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
@@ -1215,7 +1215,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
 
-
   requestVideoStart: (meetingId, targetUserId, requesterName) => {
     get().socket?.emit('request_video_start', { meetingId, targetUserId, requesterName });
   },
@@ -1223,7 +1222,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   respondToVideoRequest: (meetingId, hostId, participantId, accepted) => {
     get().socket?.emit('video_start_response', { meetingId, hostId, participantId, accepted });
   },
-
 
 
   markAsRead: () => set({ unreadCount: 0 }),

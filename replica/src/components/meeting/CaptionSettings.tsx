@@ -68,10 +68,18 @@ export function CaptionSettings() {
 
     const handleSelectLanguage = (lang: string) => {
         setSpeakingLanguage(lang);
+        // Broadcast to all participants immediately when selected
+        if (meetingId) {
+            emitCaptionLanguage(meetingId, lang);
+        }
     };
 
     const handleSave = () => {
         setTranscriptionEnabled(true); // Automatically turn on captions when user interacts with settings
+        // Re-broadcast selected language on save to ensure all participants are in sync
+        if (meetingId) {
+            emitCaptionLanguage(meetingId, speakingLanguage);
+        }
         setSettingsOpen(false);
         setView('main');
 
