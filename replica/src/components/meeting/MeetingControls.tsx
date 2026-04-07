@@ -1976,17 +1976,29 @@ function ControlBar() {
         if (currentIsVideoOff && (!currentStream || !currentStream.active || currentStream.getVideoTracks().length === 0 || hasEndedTrack)) {
             try {
                 console.log("Requesting video stream on user gesture...");
-                const { selectedAudioId } = useMeetingStore.getState();
+                const { selectedAudioId, selectedVideoId, isAudioMuted } = useMeetingStore.getState();
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
+                    video: {
+                        deviceId: selectedVideoId !== 'default' ? { exact: selectedVideoId } : undefined,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        aspectRatio: { ideal: 16 / 9 }
+                    },
                     audio: {
                         ...ENHANCED_AUDIO_CONSTRAINTS,
                         deviceId: selectedAudioId !== 'default' ? { exact: selectedAudioId } : undefined
                     }
                 });
+                
+                // Sync track states before setting
+                stream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+                stream.getVideoTracks().forEach(t => t.enabled = true);
+                
                 setLocalStream(stream);
             } catch (err) {
                 console.error("Failed to get video stream on toggle:", err);
+                import('sonner').then(({ toast }) => toast.error("Could not access camera. Please check permissions."));
+                return;
             }
         }
 

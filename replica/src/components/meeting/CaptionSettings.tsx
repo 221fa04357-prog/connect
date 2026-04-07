@@ -53,33 +53,23 @@ export function CaptionSettings() {
 
     const { meeting } = useMeetingStore();
     const { user } = useAuthStore();
-    const { socket, meetingId, emitCaptionLanguage } = useChatStore();
+    const { socket, meetingId } = useChatStore();
 
     // Check if user is host
     const isJoinedAsHost = user?.id === meeting?.hostId || user?.role === 'host' || user?.id === 'host';
 
     // Check caption settings
     const isLanguageLocked = meeting?.settings?.captionLanguageLocked === true;
-    const isCaptionsAllowed = meeting?.settings?.captionsAllowed !== false;
-
     const [view, setView] = useState<'main' | 'speaking' | 'translation'>('main');
 
     if (!isSettingsOpen) return null;
 
     const handleSelectLanguage = (lang: string) => {
         setSpeakingLanguage(lang);
-        // Broadcast to all participants immediately when selected
-        if (meetingId) {
-            emitCaptionLanguage(meetingId, lang);
-        }
     };
 
     const handleSave = () => {
         setTranscriptionEnabled(true); // Automatically turn on captions when user interacts with settings
-        // Re-broadcast selected language on save to ensure all participants are in sync
-        if (meetingId) {
-            emitCaptionLanguage(meetingId, speakingLanguage);
-        }
         setSettingsOpen(false);
         setView('main');
     };
