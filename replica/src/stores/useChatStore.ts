@@ -1237,10 +1237,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
 
-  emitCaptionLanguage: (meetingId, language) => {
-    get().socket?.emit('set_caption_language', { meetingId, language });
-  },
-
   fetchSmartReplies: async (chatContext) => {
     if (get().isFetchingSmartReplies) return;
     set({ isFetchingSmartReplies: true });

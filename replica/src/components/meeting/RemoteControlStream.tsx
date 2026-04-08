@@ -6,15 +6,13 @@ import { Button } from '@/components/ui';
 export function RemoteControlStream() {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const lastMouseMoveRef = useRef<number>(0);
   const { nativeAgentStatus, sendControlEvent } = useChatStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [frame, setFrame] = useState<string | null>(null);
 
-  const isControlActive = nativeAgentStatus.status === 'connected';
-
   useEffect(() => {
     const handleFrame = (event: any) => {
+      console.log('[RemoteControlStream] Received frame event, size:', event.detail?.length || 0);
       setFrame(event.detail);
     };
 
@@ -111,36 +109,18 @@ export function RemoteControlStream() {
 
       if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
         e.preventDefault();
-      }
-    };
+    }
+  };
 
-    const handleWindowKeyUp = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
-        return;
-      }
+  const handleKeyUp = (e: React.KeyboardEvent) => {
+    if (nativeAgentStatus.status !== 'connected') return;
+    sendControlEvent({
+      type: 'key_up',
+      key: e.key.toLowerCase()
+    });
+  };
 
-      sendControlEvent({
-        type: 'key_up',
-        key: e.key.toLowerCase()
-      });
-    };
-
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mousedown', handleWindowMouseDown);
-    window.addEventListener('mouseup', handleWindowMouseUp);
-    window.addEventListener('keydown', handleWindowKeyDown);
-    window.addEventListener('keyup', handleWindowKeyUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mousedown', handleWindowMouseDown);
-      window.removeEventListener('mouseup', handleWindowMouseUp);
-      window.removeEventListener('keydown', handleWindowKeyDown);
-      window.removeEventListener('keyup', handleWindowKeyUp);
-    };
-  }, [isControlActive, sendControlEvent]);
-
-  if (!isControlActive) {
+  if (nativeAgentStatus.status !== 'connected') {
     return null;
   }
 
@@ -162,8 +142,13 @@ export function RemoteControlStream() {
           ref={imgRef}
           src={frame}
           alt="Remote Screen"
-          className="w-full h-full object-contain cursor-none select-none"
+          className="w-full h-full object-cover cursor-none select-none"
+          onMouseMove={handleMouseMove}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
           tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
         />
       )}
 
@@ -186,7 +171,7 @@ export function RemoteControlStream() {
         <div className="flex items-center gap-1">
           <Keyboard className="w-3 h-3" /> Enabled
         </div>
-        <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" /> Live
+        <div className="w-1.5 h-1.5 rounded-full bg-green-500" /> Live
       </div>
     </div>
   );
