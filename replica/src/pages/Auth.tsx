@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui';
 
-// Custom SVG for browser-native exclamation in orange box
+// Custom SVG for browser-native exclamation in orange box 
 function NativeExclamationIcon() {
     return (
         <svg width="20" height="20" viewBox="0 0 20 20" style={{ minWidth: 20, minHeight: 20 }} aria-hidden="true">
@@ -179,8 +179,8 @@ export function Login() {
                     {authError && (
                         <div className={cn(
                             "px-4 py-3 rounded-lg text-sm mb-6 text-center",
-                            authError === 'originally_google' 
-                                ? "bg-blue-500/20 border border-blue-500/50 text-blue-100" 
+                            authError === 'originally_google'
+                                ? "bg-blue-500/20 border border-blue-500/50 text-blue-100"
                                 : "bg-red-500/20 border border-red-500/50 text-red-100"
                         )}>
                             {authError === 'Account not found'
@@ -351,7 +351,7 @@ export function ResetPassword() {
         e.preventDefault();
         setAuthError('');
         setSuccessMsg('');
-        
+
         // Validate all fields
         const newErrors = {
             email: validate('email', form.email),
@@ -360,7 +360,7 @@ export function ResetPassword() {
         };
         setErrors(newErrors);
         setTouched({ email: true, password: true, confirmPassword: true });
-        
+
         if (!newErrors.email && !newErrors.password && !newErrors.confirmPassword) {
             try {
                 await setPasswordAction({
@@ -393,7 +393,7 @@ export function ResetPassword() {
                     </div>
                     <h2 className="text-2xl font-bold text-white text-center mb-2">Reset Password</h2>
                     <p className="text-gray-400 text-center mb-8">Enter your email and new password</p>
-                    
+
                     {authError && (
                         <div className="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-lg text-sm mb-6 text-center">
                             {authError}
@@ -845,7 +845,7 @@ export function VerifyEmail() {
     const verifyOTP = useAuthStore((state) => state.verifyOTP);
     const resendOTP = useAuthStore((state) => state.resendOTP);
     const isLoading = useAuthStore((state) => state.isLoading);
-    
+
     const [email, setEmail] = useState('');
     const [otp, setOtp] = useState('');
     const [error, setError] = useState('');
@@ -916,7 +916,7 @@ export function VerifyEmail() {
 
     async function handleResend() {
         if (cooldown > 0) return;
-        
+
         setError('');
         setSuccess('');
         setOtp('');
@@ -972,9 +972,9 @@ export function VerifyEmail() {
                                     >
                                         <InputOTPGroup className="gap-2">
                                             {[0, 1, 2, 3, 4, 5].map((idx) => (
-                                                <InputOTPSlot 
-                                                    key={idx} 
-                                                    index={idx} 
+                                                <InputOTPSlot
+                                                    key={idx}
+                                                    index={idx}
                                                     className={cn(
                                                         "w-12 h-14 text-xl font-bold bg-[#1C1C1C] border-[#404040] text-white focus:border-[#0B5CFF] focus:ring-1 focus:ring-[#0B5CFF] rounded-md border-l border-r border-t border-b data-[active=true]:border-[#0B5CFF] data-[active=true]:ring-1 data-[active=true]:ring-[#0B5CFF]",
                                                         success && "border-green-500 bg-green-500/10 text-green-500 ring-1 ring-green-500"
@@ -994,32 +994,32 @@ export function VerifyEmail() {
                                 </Button>
                             </form>
 
-                                {cooldown > 0 && !success && (
-                                    <div className="text-center mt-2">
-                                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
-                                        <button
-                                            disabled={true}
-                                            className="font-semibold text-gray-500 no-underline cursor-not-allowed"
-                                        >
-                                            Resend Code in {Math.floor(cooldown / 60)}:{(cooldown % 60).toString().padStart(2, '0')}s
-                                        </button>
-                                    </div>
-                                )}
-                                {(cooldown <= 0 || success) && (
-                                    <div className="text-center mt-2">
-                                        <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
-                                        <button
-                                            onClick={handleResend}
-                                            disabled={!!success || isLoading}
-                                            className={cn(
-                                                "font-semibold underline transition-colors",
-                                                (success || isLoading) ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
-                                            )}
-                                        >
-                                            Resend OTP
-                                        </button>
-                                    </div>
-                                )}
+                            {cooldown > 0 && !success && (
+                                <div className="text-center mt-2">
+                                    <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
+                                    <button
+                                        disabled={true}
+                                        className="font-semibold text-gray-500 no-underline cursor-not-allowed"
+                                    >
+                                        Resend Code in {Math.floor(cooldown / 60)}:{(cooldown % 60).toString().padStart(2, '0')}s
+                                    </button>
+                                </div>
+                            )}
+                            {(cooldown <= 0 || success) && (
+                                <div className="text-center mt-2">
+                                    <p className="text-gray-400 text-sm mb-2">Didn't receive the code?</p>
+                                    <button
+                                        onClick={handleResend}
+                                        disabled={!!success || isLoading}
+                                        className={cn(
+                                            "font-semibold underline transition-colors",
+                                            (success || isLoading) ? "text-gray-500 no-underline cursor-not-allowed" : "text-[#0B5CFF] hover:text-[#2D8CFF]"
+                                        )}
+                                    >
+                                        Resend OTP
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
 
@@ -1032,7 +1032,7 @@ export function VerifyEmail() {
                         </button>
                     </div>
                 </div>
-                
+
                 <p className="text-center text-gray-500 text-xs mt-6">
                     Check your spam or junk folder if you don't see the email in your inbox.
                 </p>

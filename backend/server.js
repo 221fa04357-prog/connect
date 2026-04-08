@@ -2228,7 +2228,15 @@ io.on('connection', (socket) => {
     socket.on('host_input_event', (data) => {
         const { agentId, event } = data;
 
-        let targetSocketId = null;
+        console.log(`[Backend] Received remote_input from host. participantId: ${participantId}, agentId: ${agentId}`);
+
+        // 1. Try routing by participantId (most reliable)
+        if (participantId) {
+            const agentStatus = agentStatusMap[participantId];
+            if (agentStatus && agentStatus.ready) {
+                targetSocketId = agentStatus.socketId;
+            }
+        }
 
         if (!agentId) {
             console.warn('[RemoteControl] host_input_event: no agentId given');
@@ -2255,8 +2263,9 @@ io.on('connection', (socket) => {
             return;
         }
 
-        io.to(targetSocketId).emit('host_input_event', event);
-        io.to(targetSocketId).emit('input_event', event);
+        // Relay the event to the agent
+        console.log(`[Backend] Relay remote_input SUCCESS -> targetSocketId: ${targetSocketId}`);
+        io.to(targetSocketId).emit('remote_input', event || data);
     });
 
     socket.on('agent_frame', (data) => {

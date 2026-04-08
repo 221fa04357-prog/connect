@@ -118,11 +118,16 @@ function stopStreaming() {
 }
 
 async function handleInputEvent(event) {
-    if (!isControlled) return;
+    if (!isControlled) {
+        console.warn('[AGENT] Input IGNORED: isControlled is FALSE');
+        return;
+    }
 
     try {
         const { type, x, y, button, key } = event;
         const { width, height } = screen.getPrimaryDisplay().bounds;
+
+        console.log(`[AGENT] Executing remote_input: ${type}`, { x, y, button, key });
 
         if (type === 'mouse_move') {
             const now = Date.now();

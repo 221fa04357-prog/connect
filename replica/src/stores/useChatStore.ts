@@ -1204,9 +1204,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
 
   sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus } = get();
-    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
-      socket.emit('host_input_event', {
+    const { socket, nativeAgentStatus, meetingId } = get();
+    if (socket && nativeAgentStatus.status === 'connected') {
+      console.log('[useChatStore] Emitting remote_input', {
+        meetingId,
+        participantId: nativeAgentStatus.targetParticipantId,
+        agentId: nativeAgentStatus.agentId,
+        event
+      });
+      socket.emit('remote_input', {
+        meetingId,
+        participantId: nativeAgentStatus.targetParticipantId,
         agentId: nativeAgentStatus.agentId,
         event
       });
