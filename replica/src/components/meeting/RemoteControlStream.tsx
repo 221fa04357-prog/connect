@@ -6,13 +6,15 @@ import { Button } from '@/components/ui';
 export function RemoteControlStream() {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const lastMouseMoveRef = useRef<number>(0);
   const { nativeAgentStatus, sendControlEvent } = useChatStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [frame, setFrame] = useState<string | null>(null);
 
+  const isControlActive = nativeAgentStatus.status === 'connected';
+
   useEffect(() => {
     const handleFrame = (event: any) => {
-      console.log('[RemoteControlStream] Received frame event, size:', event.detail?.length || 0);
       setFrame(event.detail);
     };
 
@@ -20,64 +22,122 @@ export function RemoteControlStream() {
     return () => window.removeEventListener('remote_control_frame', handleFrame);
   }, []);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (nativeAgentStatus.status !== 'connected' || !imgRef.current) return;
+  useEffect(() => {
+    if (!isControlActive) return;
 
-    const rect = imgRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const getNormalizedCoords = (e: MouseEvent) => {
+      const img = imgRef.current;
+      if (!img || img.naturalWidth === 0) return null;
 
-    sendControlEvent({
-      type: 'mouse_move',
-      x,
-      y
-    });
-  };
+      const rect = img.getBoundingClientRect();
+      
+      // Calculate the scale and actual displayed dimensions (object-contain)
+      const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+      const displayWidth = img.naturalWidth * scale;
+      const displayHeight = img.naturalHeight * scale;
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (nativeAgentStatus.status !== 'connected') return;
-    const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
-    sendControlEvent({
-      type: 'mouse_down',
-      button: buttonMap[e.button] || 'left'
-    });
-  };
+      // Offsets of the displayed image within the rect
+      const offsetX = (rect.width - displayWidth) / 2;
+      const offsetY = (rect.height - displayHeight) / 2;
 
-  const handleMouseUp = (e: React.MouseEvent) => {
-    if (nativeAgentStatus.status !== 'connected') return;
-    const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
-    sendControlEvent({
-      type: 'mouse_up',
-      button: buttonMap[e.button] || 'left'
-    });
-  };
+      // Normalized coordinates relative only to the actual content
+      const x = (e.clientX - rect.left - offsetX) / displayWidth;
+      const y = (e.clientY - rect.top - offsetY) / displayHeight;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (nativeAgentStatus.status !== 'connected') return;
-    // Basic key relay
-    sendControlEvent({
-      type: 'key_down',
-      key: e.key.toLowerCase(),
-      shift: e.shiftKey,
-      ctrl: e.ctrlKey,
-      alt: e.altKey,
-      meta: e.metaKey
-    });
-    // Prevent default browser shortcuts if controlled
-    if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
+      return { x, y };
+    };
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastMouseMoveRef.current < 33) return; // ~30fps
+
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+
+      const { x, y } = coords;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+      sendControlEvent({ type: 'mouse_move', x, y });
+      lastMouseMoveRef.current = now;
+    };
+
+    const handleWindowMouseDown = (e: MouseEvent) => {
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+      
+      const { x, y } = coords;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+      const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
+      sendControlEvent({
+        type: 'mouse_down',
+        button: buttonMap[e.button] || 'left',
+        x, y
+      });
+    };
+
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+      
+      const { x, y } = coords;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+      const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
+      sendControlEvent({
+        type: 'mouse_up',
+        button: buttonMap[e.button] || 'left',
+        x, y
+      });
+    };
+
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      // Prevent sending keys if user is typing in an input/textarea
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      sendControlEvent({
+        type: 'key_down',
+        key: e.key.toLowerCase(),
+        shift: e.shiftKey,
+        ctrl: e.ctrlKey,
+        alt: e.altKey,
+        meta: e.metaKey
+      });
+
+      if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
         e.preventDefault();
-    }
-  };
+      }
+    };
 
-  const handleKeyUp = (e: React.KeyboardEvent) => {
-    if (nativeAgentStatus.status !== 'connected') return;
-    sendControlEvent({
-      type: 'key_up',
-      key: e.key.toLowerCase()
-    });
-  };
+    const handleWindowKeyUp = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
 
-  if (nativeAgentStatus.status !== 'connected') {
+      sendControlEvent({
+        type: 'key_up',
+        key: e.key.toLowerCase()
+      });
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mousedown', handleWindowMouseDown);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('keydown', handleWindowKeyDown);
+    window.addEventListener('keyup', handleWindowKeyUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mousedown', handleWindowMouseDown);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('keydown', handleWindowKeyDown);
+      window.removeEventListener('keyup', handleWindowKeyUp);
+    };
+  }, [isControlActive, sendControlEvent]);
+
+  if (!isControlActive) {
     return null;
   }
 
@@ -99,13 +159,8 @@ export function RemoteControlStream() {
           ref={imgRef}
           src={frame}
           alt="Remote Screen"
-          className="w-full h-full object-cover cursor-none select-none"
-          onMouseMove={handleMouseMove}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
+          className="w-full h-full object-contain cursor-none select-none"
           tabIndex={0}
-          onKeyDown={handleKeyDown}
-          onKeyUp={handleKeyUp}
         />
       )}
 
@@ -128,7 +183,7 @@ export function RemoteControlStream() {
         <div className="flex items-center gap-1">
           <Keyboard className="w-3 h-3" /> Enabled
         </div>
-        <div className="w-1.5 h-1.5 rounded-full bg-green-500" /> Live
+        <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" /> Live
       </div>
     </div>
   );

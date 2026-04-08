@@ -1281,7 +1281,7 @@ function ControlApprovalDialog() {
             socket.off('manual_link_error', handleError);
             socket.off('manual_link_success', handleSuccess);
         };
-        // No more polling since the backend auto-links using the queue and broadcasts updates.
+
     }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
@@ -1291,7 +1291,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=1wF6ixITVUa3rKhBu3_fBCmRsU68VYKaB"
+            "https://drive.google.com/uc?export=download&id=1pUo5cWSGp_dOpb5dH60vsoz4hmJVCsSf"
         );
 
         if (meetingId && localUserId) {

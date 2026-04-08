@@ -679,7 +679,7 @@ io.on('connection', (socket) => {
 
     // --- GLOBAL EVENT LOGGER FOR DEBUGGING ---
     socket.onAny((event, data) => {
-        if (event === 'agent_frame' || event === 'host_input_event' || event === 'accept_control' || event === 'control_started') {
+        if (event === 'agent_frame' || event === 'remote_input' || event === 'accept_control' || event === 'control_started') {
             console.log(`[SOCKET ${socket.id}] Event: ${event}`, data ? Object.keys(data).slice(0, 3) : '');
         }
     });
@@ -2225,38 +2225,48 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('host_input_event', (data) => {
-        const { agentId, event } = data;
-
+    socket.on('remote_input', (data) => {
+        const { participantId, agentId, event } = data;
         let targetSocketId = null;
 
-        if (!agentId) {
-            console.warn('[RemoteControl] host_input_event: no agentId given');
-            return;
+        // 1. Try routing by participantId (most reliable)
+        if (participantId) {
+            const agentStatus = agentStatusMap[participantId];
+            if (agentStatus && agentStatus.ready) {
+                targetSocketId = agentStatus.socketId;
+            }
         }
 
-        // agentId may be an internal agent identifier or an actual socket id
-        if (agentSocketMap[agentId]) {
-            targetSocketId = agentSocketMap[agentId];
-        } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
-            targetSocketId = agentId;
-        } else if (io.sockets.sockets[agentId]) {
-            targetSocketId = agentId;
-        } else {
-            // If we have a controlSession for this participant, use it
-            const candidate = Object.values(controlSessionMap).find(s => s.agentId === agentId || s.hostSocketId === agentId);
+        // 2. Fallback to agentId if participantId didn't work
+        if (!targetSocketId && agentId) {
+            if (agentSocketMap[agentId]) {
+                targetSocketId = agentSocketMap[agentId];
+            } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
+                targetSocketId = agentId;
+            } else if (io.sockets.sockets[agentId]) {
+                targetSocketId = agentId;
+            }
+        }
+
+        // 3. Last resort fallback to active control session
+        if (!targetSocketId) {
+            const candidate = Object.values(controlSessionMap).find(s => 
+                s.participantId === participantId || 
+                s.agentId === agentId || 
+                s.hostSocketId === agentId
+            );
             if (candidate && candidate.agentId && agentSocketMap[candidate.agentId]) {
                 targetSocketId = agentSocketMap[candidate.agentId];
             }
         }
 
         if (!targetSocketId) {
-            console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
+            console.warn(`[RemoteControl] Agent not found for participant=${participantId} or agentId=${agentId}`);
             return;
         }
 
-        io.to(targetSocketId).emit('host_input_event', event);
-        io.to(targetSocketId).emit('input_event', event);
+        // Relay the event to the agent
+        io.to(targetSocketId).emit('remote_input', event || data);
     });
 
     socket.on('agent_frame', (data) => {
@@ -2352,6 +2362,14 @@ io.on('connection', (socket) => {
         const normalizedAgentId = agentId.replace(/[- ]/g, '').toUpperCase();
         agentSocketMap[normalizedAgentId] = socket.id;
         console.log(`[AGENT] agent_idle_connect registered: ${normalizedAgentId} (from ${agentId}) -> ${socket.id}`);
+
+        // Sync existing links to the new socketId
+        Object.keys(agentStatusMap).forEach(pId => {
+            if (agentStatusMap[pId].agentId === normalizedAgentId) {
+                console.log(`[AGENT] Syncing reconnection: ${pId} now mapped to new socket ${socket.id}`);
+                agentStatusMap[pId].socketId = socket.id;
+            }
+        });
 
         if (unlinkedParticipants.length > 0) {
             const { meetingId, participantId } = unlinkedParticipants.shift();

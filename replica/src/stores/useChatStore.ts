@@ -1204,9 +1204,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
 
   sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus } = get();
-    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
-      socket.emit('host_input_event', {
+    const { socket, nativeAgentStatus, meetingId } = get();
+    if (socket && nativeAgentStatus.status === 'connected') {
+      socket.emit('remote_input', {
+        meetingId,
+        participantId: nativeAgentStatus.targetParticipantId,
         agentId: nativeAgentStatus.agentId,
         event
       });
@@ -1228,6 +1230,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   markAsRead: () => set({ unreadCount: 0 }),
 
   clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
+
+  emitCaptionLanguage: (meetingId, language) => {
+    get().socket?.emit('set_caption_language', { meetingId, language });
+  },
 
   fetchSmartReplies: async (chatContext) => {
     if (get().isFetchingSmartReplies) return;
