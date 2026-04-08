@@ -19,16 +19,62 @@ export function TranscriptionManager() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const captionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const translationQueueRef = useRef<Promise<any>>(Promise.resolve());
 
     // Listen for transcription results from the shared socket
     // REMOVED `isTranscriptionEnabled` from the array logic so that ALL users get incoming captions!
     useEffect(() => {
         if (!socket) return;
 
+        const translateText = async (text: string, targetLang: string, sourceLang?: string) => {
+            // Edge case: Same language -> skip translation network call
+            if (sourceLang && targetLang.toLowerCase() === sourceLang.toLowerCase()) {
+                return text;
+            }
+
+            try {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/translate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, targetLang })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.text || text;
+                }
+                return text;
+            } catch (err) {
+                console.error('[Translation] Proxy error:', err);
+                return text;
+            }
+        };
+
         const handleTranscription = (data: any) => {
             if (data.text) {
-                console.log('%c[Transcription] Received: ' + data.text, 'color: #0B5CFF; font-weight: bold;');
-                handleNewTranscription(data.text, data.participantName || 'Guest', data.participantId, data.role);
+                const { translationLanguage } = useTranscriptionStore.getState();
+                const sourceLanguage = data.language || 'English';
+                
+                // Chain the processing to the translation queue to preserve order
+                translationQueueRef.current = translationQueueRef.current.then(async () => {
+                    let finalText;
+
+                    if (translationLanguage === 'Original') {
+                        // ONLY use raw captions if 'Original' is selected
+                        finalText = data.text;
+                    } else {
+                        // All other language selections go through the translation flow
+                        console.log(`[Translation] Processing for ${translationLanguage}...`);
+                        finalText = await translateText(data.text, translationLanguage, sourceLanguage);
+                    }
+
+                    console.log('%c[Transcription] Displaying: ' + finalText, 'color: #0B5CFF; font-weight: bold;');
+                    handleNewTranscription(finalText, data.participantName || 'Guest', data.participantId, data.role);
+                }).catch(err => {
+                    console.error('[Translation] Queue error:', err);
+                    // Fallback choice: If the system is set to translate, we still try to show the result
+                    // but on error we use the raw text to ensure captions stay visible
+                    handleNewTranscription(data.text, data.participantName || 'Guest', data.participantId, data.role);
+                });
             }
         };
 

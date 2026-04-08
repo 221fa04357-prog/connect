@@ -284,5 +284,7 @@ module.exports = {
     getChatCompletion,
     summarizeMeeting,
     generateRecapContent,
-    transcribeAudio
+    transcribeAudio,
+    translateText,
+    LANGUAGE_MAPPING
 };
