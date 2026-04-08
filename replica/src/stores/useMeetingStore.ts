@@ -399,7 +399,14 @@ export const useMeetingStore = create<MeetingState>()(
       setVideoOff: (off) =>
         set((state) => {
           if (state.localStream) {
-            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !off));
+            if (off) {
+              state.localStream.getVideoTracks().forEach((t) => {
+                t.enabled = false;
+                t.stop();
+              });
+            } else {
+              state.localStream.getVideoTracks().forEach((t) => (t.enabled = true));
+            }
           }
           return { isVideoOff: off };
         }),
@@ -420,7 +427,14 @@ export const useMeetingStore = create<MeetingState>()(
         set((state) => {
           const nextVideoOff = !state.isVideoOff;
           if (state.localStream) {
-            state.localStream.getVideoTracks().forEach((t) => (t.enabled = !nextVideoOff));
+            if (nextVideoOff) {
+              state.localStream.getVideoTracks().forEach((t) => {
+                t.enabled = false;
+                t.stop();
+              });
+            } else {
+              state.localStream.getVideoTracks().forEach((t) => (t.enabled = true));
+            }
           }
           return { isVideoOff: nextVideoOff };
         }),
