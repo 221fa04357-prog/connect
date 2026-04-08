@@ -131,10 +131,13 @@ async function handleInputEvent(event) {
                 lastMouseMove = now;
             }
         } else if (type === 'mouse_down') {
+            if (x !== undefined && y !== undefined) await InputManager.moveMouse(x * width, y * height);
             await InputManager.mouseDown(button || 'left');
         } else if (type === 'mouse_up') {
+            if (x !== undefined && y !== undefined) await InputManager.moveMouse(x * width, y * height);
             await InputManager.mouseUp(button || 'left');
         } else if (type === 'mouse_click') {
+            if (x !== undefined && y !== undefined) await InputManager.moveMouse(x * width, y * height);
             await InputManager.clickMouse(button || 'left', event.double || false);
         } else if (type === 'key_down' || type === 'key_press') {
             await InputManager.simulateKey(key, false);
@@ -160,9 +163,19 @@ app.whenReady().then(() => {
     socket.on('connect', () => {
         console.log('Connected to signaling server');
 
-        // --- NEW AUTO-LINK BEHAVIOR ---
-        // Emit agent_idle_connect instead of agent_status on initial boot
+        // Initial registration
         socket.emit("agent_idle_connect", { agentId: AGENT_ID });
+
+        // If previously linked, re-sync linkage on reconnection
+        if (global.participantId && global.meetingId) {
+            console.log('[AGENT] Re-syncing linkage status on reconnection');
+            socket.emit("agent_status", {
+                agentId: AGENT_ID,
+                meetingId: global.meetingId,
+                participantId: global.participantId,
+                ready: true
+            });
+        }
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
@@ -210,17 +223,16 @@ app.whenReady().then(() => {
         }
     });
 
-    // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (event) => {
-        if (event && event.event) {
-            handleInputEvent(event.event);
-        } else {
-            handleInputEvent(event);
-        }
+    // ✅ REMOTE INPUT (mouse/keyboard)
+    const handleIncomingInput = (data) => {
+        const inputEvent = (data && data.event) ? data.event : data;
+        if (!inputEvent) return;
+
+        console.log(`[AGENT] Received remote_input: ${inputEvent.type}`, inputEvent);
+        handleInputEvent(inputEvent);
     };
 
-    socket.on('host_input_event', handleIncomingInput);
-    socket.on('input_event', handleIncomingInput);
+    socket.on('remote_input', handleIncomingInput);
 
     // ✅ CONTROL STOP
     socket.on('control_stopped', () => {
