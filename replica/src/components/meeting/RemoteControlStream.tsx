@@ -57,6 +57,7 @@ export function RemoteControlStream() {
       const { x, y } = coords;
       if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
+      console.log('[RemoteControlStream] Captured mouse_move', { x, y });
       sendControlEvent({ type: 'mouse_move', x, y });
       lastMouseMoveRef.current = now;
     };
@@ -69,6 +70,7 @@ export function RemoteControlStream() {
       if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
       const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
+      console.log('[RemoteControlStream] Captured mouse_down', { button: buttonMap[e.button] || 'left', x, y });
       sendControlEvent({
         type: 'mouse_down',
         button: buttonMap[e.button] || 'left',
@@ -84,6 +86,7 @@ export function RemoteControlStream() {
       if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
       const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
+      console.log('[RemoteControlStream] Captured mouse_up', { button: buttonMap[e.button] || 'left', x, y });
       sendControlEvent({
         type: 'mouse_up',
         button: buttonMap[e.button] || 'left',
