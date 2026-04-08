@@ -261,6 +261,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
                     role: role || 'participant',
                     text: translatedText.trim(),
                     originalText: text.trim(),
+                    language: language || 'en',
                     timestamp: new Date().toISOString()
                 };
 
@@ -291,6 +292,22 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
 });
 
+app.post('/api/translate', async (req, res) => {
+    const { text, targetLang } = req.body;
+
+    if (!text || !targetLang) {
+        return res.status(400).json({ error: 'Text and targetLang are required' });
+    }
+
+    try {
+        console.log(`[Translation] Translating text to ${targetLang}...`);
+        const translatedText = await groqService.translateText(text, targetLang);
+        res.json({ text: translatedText });
+    } catch (err) {
+        console.error('Translation error:', err);
+        res.status(500).json({ error: 'Translation failed' });
+    }
+});
 
 app.get('/api/resources/:meetingId', async (req, res) => {
     try {
