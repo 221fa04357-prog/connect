@@ -211,12 +211,9 @@ def on_stop_control(data=None):
     state.is_approved = False
     state.host_id = None
 
-@sio.on('remote_input')
-def on_remote_input(data):
-    input_event = data.get('event') if data and isinstance(data, dict) and 'event' in data else data
-    if input_event:
-        print(f"[AGENT] Received remote_input: {input_event.get('type')}")
-        handle_input_event(input_event)
+@sio.on('input_event')
+def on_input_event(data):
+    handle_input_event(data)
 
 def register_agent():
     if sio.connected:

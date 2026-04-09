@@ -687,7 +687,7 @@ io.on('connection', (socket) => {
 
     // --- GLOBAL EVENT LOGGER FOR DEBUGGING ---
     socket.onAny((event, data) => {
-        if (event === 'agent_frame' || event === 'remote_input' || event === 'accept_control' || event === 'control_started') {
+        if (event === 'agent_frame' || event === 'host_input_event' || event === 'accept_control' || event === 'control_started') {
             console.log(`[SOCKET ${socket.id}] Event: ${event}`, data ? Object.keys(data).slice(0, 3) : '');
         }
     });
@@ -2246,12 +2246,20 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('remote_input', (data) => {
-        const { participantId, agentId, event } = data;
-        let targetSocketId = null;
+    socket.on('host_input_event', (data) => {
+        const { agentId, event } = data;
 
         const normalizedAgentId = agentId ? agentId.replace(/[- ]/g, '').toUpperCase() : null;
         console.log(`[Backend] Received remote_input. participantId: ${participantId}, agentId: ${agentId}, normalizedAgentId: ${normalizedAgentId}`);
+
+        // 1. Try routing by participantId (most reliable)
+        if (participantId) {
+            const agentStatus = agentStatusMap[participantId];
+            if (agentStatus && agentStatus.ready) {
+                targetSocketId = agentStatus.socketId;
+                console.log(`[Backend] Routing by participantId ${participantId} -> socket ${targetSocketId}`);
+            }
+        }
 
         // 1. Try routing by participantId (most reliable)
         if (participantId) {
@@ -2285,20 +2293,25 @@ io.on('connection', (socket) => {
             }
         }
 
-        // 3. Last resort fallback to active control session
-        if (!targetSocketId) {
-            const candidate = Object.values(controlSessionMap).find(s => 
-                s.participantId === participantId || 
-                s.agentId === agentId || 
-                s.hostSocketId === agentId
-            );
+
+
+        // agentId may be an internal agent identifier or an actual socket id
+        if (agentSocketMap[agentId]) {
+            targetSocketId = agentSocketMap[agentId];
+        } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
+            targetSocketId = agentId;
+        } else if (io.sockets.sockets[agentId]) {
+            targetSocketId = agentId;
+        } else {
+            // If we have a controlSession for this participant, use it
+            const candidate = Object.values(controlSessionMap).find(s => s.agentId === agentId || s.hostSocketId === agentId);
             if (candidate && candidate.agentId && agentSocketMap[candidate.agentId]) {
                 targetSocketId = agentSocketMap[candidate.agentId];
             }
         }
 
         if (!targetSocketId) {
-            console.warn(`[RemoteControl] Agent not found for participant=${participantId} or agentId=${agentId}`);
+            console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
             return;
         }
 
