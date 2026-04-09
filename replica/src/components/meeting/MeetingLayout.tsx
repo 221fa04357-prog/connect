@@ -1281,7 +1281,7 @@ function ControlApprovalDialog() {
             socket.off('manual_link_error', handleError);
             socket.off('manual_link_success', handleSuccess);
         };
-
+        // No more polling since the backend auto-links using the queue and broadcasts updates.
     }, [!!pendingRequest, meetingId, localUserId, socket]);
 
     if (!pendingRequest) return null;
