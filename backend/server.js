@@ -674,6 +674,14 @@ const activeSessions = {}; // participantId -> agentId
 const controlSessionMap = {}; // participantId -> { agentId, hostSocketId }
 const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 
+/** Align with agentSocketMap keys (hyphens stripped, uppercase). Not for socket ids. */
+function normalizeAgentId(agentId) {
+    if (agentId == null || agentId === "") return null;
+    const s = String(agentId).trim();
+    if (s === "native-agent") return null;
+    return s.replace(/[- ]/g, "").toUpperCase();
+}
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
@@ -2150,7 +2158,7 @@ io.on('connection', (socket) => {
         }
 
         const agentSocketId = agent.socketId;
-        const linkedAgentId = agent.agentId || activeSessions[participantId] || null;
+        const linkedAgentId = normalizeAgentId(agent.agentId || activeSessions[participantId]) || null;
         if (linkedAgentId) {
             activeSessions[participantId] = linkedAgentId;
             controlSessionMap[participantId] = { agentId: linkedAgentId, hostSocketId };
@@ -2167,7 +2175,7 @@ io.on('connection', (socket) => {
 
         // Broadcast to the meeting so everyone stays in sync with control status
         io.to(meetingId).emit('control_started', {
-            agentId: linkedAgentId || 'native-agent',
+            agentId: linkedAgentId || "native-agent",
             participantId,
             hostId
         });
@@ -2175,7 +2183,7 @@ io.on('connection', (socket) => {
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
             io.to(hostSocketId).emit('control_connected', {
-                agentId: linkedAgentId || 'native-agent',
+                agentId: linkedAgentId || "native-agent",
                 agentSocketId,
                 participantId
             });
@@ -2253,25 +2261,39 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Safety check (from main)
-if (!agentId) {
-    console.warn('[RemoteControl] host_input_event: no agentId given');
-    return;
-}
+        // 1. Try routing by participantId (most reliable)
+        if (participantId) {
+            const agentStatus = agentStatusMap[participantId];
+            if (agentStatus && agentStatus.ready) {
+                targetSocketId = agentStatus.socketId;
+                console.log(`[Backend] Routing by participantId ${participantId} -> socket ${targetSocketId}`);
+            }
+        }
 
-// 2. Fallback to normalized agentId (from featu)
-if (!targetSocketId && normalizedAgentId) {
-    if (agentSocketMap[normalizedAgentId]) {
-        targetSocketId = agentSocketMap[normalizedAgentId];
-        console.log(`[Backend] Routing by normalizedAgentId ${normalizedAgentId} -> socket ${targetSocketId}`);
-    } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
-        targetSocketId = agentId;
-        console.log(`[Backend] Routing by raw agentId (socket lookup) ${agentId} -> socket ${targetSocketId}`);
-    } else if (io.sockets.sockets[agentId]) {
-        targetSocketId = agentId;
-        console.log(`[Backend] Routing by raw agentId (socket fallback) ${agentId} -> socket ${targetSocketId}`);
-    }
-}
+        // 1b. controlSessionMap (if agentStatusMap is stale but session was accepted)
+        if (!targetSocketId && participantId && controlSessionMap[participantId]?.agentId) {
+            const aid = controlSessionMap[participantId].agentId;
+            if (aid && agentSocketMap[aid]) {
+                targetSocketId = agentSocketMap[aid];
+                console.log(`[Backend] Routing via controlSessionMap participant=${participantId} agent=${aid} -> ${targetSocketId}`);
+            }
+        }
+
+        // 2. Fallback to normalized agentId
+        if (!targetSocketId && normalizedAgentId) {
+            if (agentSocketMap[normalizedAgentId]) {
+                targetSocketId = agentSocketMap[normalizedAgentId];
+                console.log(`[Backend] Routing by normalizedAgentId ${normalizedAgentId} -> socket ${targetSocketId}`);
+            } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
+                targetSocketId = agentId;
+                console.log(`[Backend] Routing by raw agentId (socket lookup) ${agentId} -> socket ${targetSocketId}`);
+            } else if (io.sockets.sockets[agentId]) {
+                targetSocketId = agentId;
+                console.log(`[Backend] Routing by raw agentId (socket fallback) ${agentId} -> socket ${targetSocketId}`);
+            }
+        }
+
+
 
         // agentId may be an internal agent identifier or an actual socket id
         if (agentSocketMap[agentId]) {
@@ -2350,11 +2372,16 @@ if (!targetSocketId && normalizedAgentId) {
 
         console.log(`[AGENT] agent status update: ${participantId} in ${meetingId} (ready: ${ready})`);
 
+        const resolvedAgentKey =
+            normalizeAgentId(agentId) ||
+            Object.keys(agentSocketMap).find((id) => agentSocketMap[id] === socket.id) ||
+            null;
+
         agentStatusMap[participantId] = {
             socketId: socket.id,
             meetingId,
             ready: !!ready,
-            agentId: agentId || Object.keys(agentSocketMap).find(id => agentSocketMap[id] === socket.id) || null
+            agentId: resolvedAgentKey
         };
 
         io.to(meetingId).emit("agent_status_update", {
@@ -2391,6 +2418,16 @@ if (!targetSocketId && normalizedAgentId) {
         const normalizedAgentId = agentId.replace(/[- ]/g, '').toUpperCase();
         agentSocketMap[normalizedAgentId] = socket.id;
         console.log(`[AGENT] agent_idle_connect registered: ${normalizedAgentId} (from ${agentId}) -> ${socket.id}`);
+
+        // Sync existing links to the new socketId
+        Object.keys(agentStatusMap).forEach((pId) => {
+            const stored = agentStatusMap[pId].agentId;
+            if (stored === normalizedAgentId || normalizeAgentId(stored) === normalizedAgentId) {
+                console.log(`[AGENT] Syncing reconnection: ${pId} now mapped to new socket ${socket.id}`);
+                agentStatusMap[pId].socketId = socket.id;
+                agentStatusMap[pId].agentId = normalizedAgentId;
+            }
+        });
 
         if (unlinkedParticipants.length > 0) {
             const { meetingId, participantId } = unlinkedParticipants.shift();
