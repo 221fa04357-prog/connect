@@ -2174,11 +2174,7 @@ io.on('connection', (socket) => {
 
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
-            io.to(hostSocketId).emit('control_connected', {
-                agentId: linkedAgentId || 'native-agent',
-                agentSocketId,
-                participantId
-            });
+            io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
         } else {
             console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
         }
@@ -2197,17 +2193,8 @@ io.on('connection', (socket) => {
             hostSocketId = getSocketIdFallback(meetingId, hostId);
         }
 
-        // Resolve participant user id (socket.id is unstable for client-side identity checks)
-        let participantId = null;
-        if (meetingId && rooms.has(meetingId)) {
-            const participant = rooms.get(meetingId).get(socket.id);
-            participantId = participant?.id || null;
-        }
-
-        // Notify only the requesting host to avoid resetting unrelated control sessions
-        if (hostSocketId) {
-            io.to(hostSocketId).emit('control_denied', { participantId });
-        }
+        // Notify the room so the pending states can be cleared
+        io.to(meetingId).emit('control_denied', { participantId: socket.id });
 
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: false, reason: 'rejected' });
@@ -2241,37 +2228,20 @@ io.on('connection', (socket) => {
     socket.on('host_input_event', (data) => {
         const { agentId, event } = data;
 
-        const normalizedAgentId = agentId ? agentId.replace(/[- ]/g, '').toUpperCase() : null;
-        console.log(`[Backend] Received remote_input. participantId: ${participantId}, agentId: ${agentId}, normalizedAgentId: ${normalizedAgentId}`);
+        console.log(`[Backend] Received remote_input from host. participantId: ${participantId}, agentId: ${agentId}`);
 
         // 1. Try routing by participantId (most reliable)
         if (participantId) {
             const agentStatus = agentStatusMap[participantId];
             if (agentStatus && agentStatus.ready) {
                 targetSocketId = agentStatus.socketId;
-                console.log(`[Backend] Routing by participantId ${participantId} -> socket ${targetSocketId}`);
             }
         }
 
-        // Safety check (from main)
-if (!agentId) {
-    console.warn('[RemoteControl] host_input_event: no agentId given');
-    return;
-}
-
-// 2. Fallback to normalized agentId (from featu)
-if (!targetSocketId && normalizedAgentId) {
-    if (agentSocketMap[normalizedAgentId]) {
-        targetSocketId = agentSocketMap[normalizedAgentId];
-        console.log(`[Backend] Routing by normalizedAgentId ${normalizedAgentId} -> socket ${targetSocketId}`);
-    } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
-        targetSocketId = agentId;
-        console.log(`[Backend] Routing by raw agentId (socket lookup) ${agentId} -> socket ${targetSocketId}`);
-    } else if (io.sockets.sockets[agentId]) {
-        targetSocketId = agentId;
-        console.log(`[Backend] Routing by raw agentId (socket fallback) ${agentId} -> socket ${targetSocketId}`);
-    }
-}
+        if (!agentId) {
+            console.warn('[RemoteControl] host_input_event: no agentId given');
+            return;
+        }
 
         // agentId may be an internal agent identifier or an actual socket id
         if (agentSocketMap[agentId]) {
