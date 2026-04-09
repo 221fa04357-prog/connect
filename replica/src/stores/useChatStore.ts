@@ -748,7 +748,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
-        set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
+        set((state) => ({
+          nativeAgentStatus: {
+            ...state.nativeAgentStatus,
+            status: 'connected',
+            agentSocketId: data.agentSocketId
+          }
+        }));
         import('sonner').then(({ toast }) => toast.success('Remote control session started!'));
       } else {
         set({ nativeAgentStatus: { status: 'idle' } });
@@ -854,8 +860,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // This listener was overwriting the correct 'ready' state with 'false'
     // because data.status was undefined in the new flow.
 
-    socket.on('control_connected', (data: { agentId: string, agentSocketId: string }) => {
-      const targetId = get().nativeAgentStatus.targetParticipantId;
+    socket.on('control_connected', (data: { agentId: string, agentSocketId: string, participantId?: string }) => {
+      const targetId = get().nativeAgentStatus.targetParticipantId || data.participantId;
       set({
         nativeAgentStatus: {
           status: 'connected',
@@ -890,10 +896,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (hostIsMe) {
         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
-        set({
+        set((state) => ({
           isControlling: true,
-          nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
-        });
+          nativeAgentStatus: {
+            ...state.nativeAgentStatus,
+            status: 'connected',
+            agentId: data.agentId,
+            targetParticipantId: data.participantId
+          }
+        }));
 
         import('./useParticipantsStore').then((pStore) => {
           const participants = pStore.useParticipantsStore.getState().participants;
@@ -912,10 +923,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     });
 
-    socket.on('control_denied', (data: { participantId: string }) => {
-      console.log('[Frontend] Control request denied by participant');
+    socket.on('control_denied', (data: { participantId?: string }) => {
+      const currentTargetId = get().nativeAgentStatus.targetParticipantId;
+      const isRelevant = !currentTargetId || !data?.participantId || currentTargetId === data.participantId;
+
+      if (!isRelevant) return;
+
+      console.log('[Frontend] Control request denied by participant', data);
       import('sonner').then(({ toast }) => toast.error('Participant rejected the control request.'));
-      set({ nativeAgentStatus: { status: 'idle' } });
+      set({ isControlling: false, nativeAgentStatus: { status: 'idle' } });
     });
 
     socket.on('control_stopped', () => {
