@@ -16,15 +16,11 @@ function getPS() {
         '$sig = @\'',
         '[DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, uint dwExtraInfo);',
         '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);',
-        '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);',
         '\'@',
-        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru > $null;',
-        '$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;',
-        'Write-Host "[PS] Primary Screen Resolution: $($screen.Width)x$($screen.Height)";'
+        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru > $null;'
     ];
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
-    psProcess.stdout.on('data', (data) => console.log(`PS Output: ${data}`));
     psProcess.stderr.on('data', (data) => console.error(`PS Error: ${data}`));
 
     console.log('Using persistent PowerShell for input simulation');
@@ -49,7 +45,7 @@ const InputManager = {
      * Moves mouse to absolute coordinates.
      */
     async moveMouse(x, y) {
-        const command = `[Win32.Win32Input]::SetCursorPos(${Math.round(x)}, ${Math.round(y)});\n`;
+        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(x)}, ${Math.round(y)})\n`;
         getPS().stdin.write(command);
     },
 
