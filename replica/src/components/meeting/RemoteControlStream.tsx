@@ -95,18 +95,20 @@ export function RemoteControlStream() {
           <p className="text-sm text-zinc-400">Initializing stream...</p>
         </div>
       ) : (
-        <img
-          ref={imgRef}
-          src={frame}
-          alt="Remote Screen"
-          className="w-full h-full object-cover cursor-none select-none"
-          onMouseMove={handleMouseMove}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-          onKeyUp={handleKeyUp}
-        />
+        <div className="w-full h-full flex items-center justify-center overflow-hidden">
+          <img
+            ref={imgRef}
+            src={frame}
+            alt="Remote Screen"
+            className="max-w-full max-h-full w-auto h-auto cursor-none select-none shadow-2xl"
+            onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
+          />
+        </div>
       )}
 
       {/* Control Overlay */}
