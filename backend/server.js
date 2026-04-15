@@ -2252,6 +2252,8 @@ io.on('connection', (socket) => {
 
         if (!targetSocketId) {
             console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
+            // Diagnostic log: check if agentId exists in agentSocketMap
+            console.log('[RemoteControl] Current agentSocketMap keys:', Object.keys(agentSocketMap));
             return;
         }
 

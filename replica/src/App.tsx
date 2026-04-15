@@ -132,10 +132,37 @@ const GlobalMiniPreview = () => {
 
   // 4. BIND STREAM: Attach live stream to the mini video reference
   useEffect(() => {
-    if (miniVideoRef.current && localStream) {
-      // Ensure PiP is explicitly allowed on the video element
-      miniVideoRef.current.disablePictureInPicture = false;
-      miniVideoRef.current.srcObject = localStream;
+    const video = miniVideoRef.current;
+    if (!video || !localStream) return;
+
+    // Ensure PiP is explicitly allowed
+    video.disablePictureInPicture = false;
+
+    // Requirement #1: Merge tracks instead of replacing stream to prevent PiP breaks/blinks
+    let targetStream = video.srcObject as MediaStream;
+    
+    if (!targetStream || !(targetStream instanceof MediaStream)) {
+      console.log('[MiniPreview] Initializing new MediaStream');
+      video.srcObject = new MediaStream(localStream.getTracks());
+    } else {
+      // Sync tracks: Remove old, add new
+      const currentTracks = targetStream.getTracks();
+      const newTracks = localStream.getTracks();
+
+      // Remove tracks that are no longer in localStream
+      currentTracks.forEach(track => {
+        if (!newTracks.find(nt => nt.id === track.id)) {
+          targetStream.removeTrack(track);
+          track.stop();
+        }
+      });
+
+      // Add tracks that are new
+      newTracks.forEach(track => {
+        if (!currentTracks.find(ct => ct.id === track.id)) {
+          targetStream.addTrack(track);
+        }
+      });
     }
   }, [localStream, isVideoOff]);
 
@@ -145,7 +172,16 @@ const GlobalMiniPreview = () => {
       // Trigger PiP ONLY when meeting is active and user leaves the tab/app
       if (document.hidden && meetingJoined) {
         const video = miniVideoRef.current;
-        if (video && document.pictureInPictureEnabled) {
+        if (video && document.pictureInPictureEnabled && document.pictureInPictureElement !== video) {
+          // Requirement #4: Only request PiP if video track exists
+          const stream = video.srcObject as MediaStream;
+          const hasVideoTrack = stream && stream.getVideoTracks().some(t => t.readyState === 'live');
+
+          if (!hasVideoTrack) {
+            console.warn('[MiniPreview] Skipping PiP: No active video tracks found.');
+            return;
+          }
+
           try {
             // Only request if not already in PiP
             if (document.pictureInPictureElement !== video && video.readyState >= 2) {

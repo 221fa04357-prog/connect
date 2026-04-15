@@ -211,14 +211,17 @@ app.whenReady().then(() => {
     });
 
     // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (event) => {
-        if (event && event.event) {
-            handleInputEvent(event.event);
-        } else {
-            handleInputEvent(event);
-        }
-    };
+const handleIncomingInput = (event) => {
+    const payload = (event && event.event) ? event.event : event;
 
+    console.log(
+        `[AGENT] Incoming input: ${payload?.type} (${payload?.x ?? '-'}, ${payload?.y ?? '-'})`
+    );
+
+    if (payload) {
+        handleInputEvent(payload);
+    }
+};
     socket.on('host_input_event', handleIncomingInput);
     socket.on('input_event', handleIncomingInput);
 
