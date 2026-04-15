@@ -8,7 +8,7 @@ export function RemoteControlStream() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  
+
   const { nativeAgentStatus, sendControlEvent } = useChatStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
@@ -20,33 +20,46 @@ export function RemoteControlStream() {
       const stream = canvasRef.current.captureStream(30); // 30 FPS
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
-      
+
       // Auto-play the stream
-      videoRef.current.play().catch(err => console.warn('[RemoteControlStream] Video play blocked:', err));
+      videoRef.current.play()
+        .then(() => console.log('[RemoteControlStream] Video playback started'))
+        .catch(err => console.error('[RemoteControlStream] Video play blocked/failed:', err));
     }
   }, []);
 
   useEffect(() => {
     const handleFrame = (event: any) => {
       const base64 = event.detail;
-      if (!base64 || !canvasRef.current) return;
+      if (!base64) {
+        console.warn('[RemoteControlStream] Received empty frame event');
+        return;
+      }
+      if (!canvasRef.current) return;
 
       const img = new Image();
       img.onload = () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        
+
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         // Resize canvas to match frame if needed
         if (canvas.width !== img.width || canvas.height !== img.height) {
+          console.log(`[RemoteControlStream] Resizing canvas to ${img.width}x${img.height}`);
           canvas.width = img.width;
           canvas.height = img.height;
         }
 
         ctx.drawImage(img, 0, 0);
-        if (!hasFrame) setHasFrame(true);
+        if (!hasFrame) {
+          console.log('[RemoteControlStream] First frame rendered successfully');
+          setHasFrame(true);
+        }
+      };
+      img.onerror = (err) => {
+        console.error('[RemoteControlStream] Failed to load image from base64 frame', err);
       };
       img.src = base64;
     };
@@ -122,7 +135,16 @@ export function RemoteControlStream() {
       onContextMenu={(e) => e.preventDefault()}
     >
       {/* Hidden bridge canvas */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      {/* Hidden bridge canvas - using visibility instead of display:none to ensure captureStream works */}
+      <canvas 
+        ref={canvasRef} 
+        style={{ 
+          position: 'absolute', 
+          left: '-9999px', 
+          top: '-9999px', 
+          visibility: 'hidden' 
+        }} 
+      />
 
       {!hasFrame ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 border border-white/10 rounded-xl">
@@ -153,13 +175,13 @@ export function RemoteControlStream() {
           size="sm"
           variant="secondary"
           onClick={() => {
-             if (videoRef.current) {
-                if (document.pictureInPictureElement) {
-                    document.exitPictureInPicture();
-                } else {
-                    videoRef.current.requestPictureInPicture().catch(console.error);
-                }
-             }
+            if (videoRef.current) {
+              if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+              } else {
+                videoRef.current.requestPictureInPicture().catch(console.error);
+              }
+            }
           }}
           className="bg-zinc-900/80 backdrop-blur-md border border-white/10"
         >

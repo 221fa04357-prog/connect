@@ -85,8 +85,18 @@ async function captureLoop(hostId, participantId) {
                     participantId,
                     frame: `data:image/jpeg;base64,${base64}`
                 });
-                console.log('Agent frame emitted', { hostId, participantId });
+                
+                // Log every ~30 frames
+                if (!global._frameSentCount) global._frameSentCount = 0;
+                global._frameSentCount++;
+                if (global._frameSentCount % 30 === 0) {
+                    console.log(`[AGENT] Frame sent successfully (${jpegBuffer.length} bytes) to Host: ${hostId}`);
+                }
+            } else {
+                console.warn('[AGENT] Captured thumbnail is empty');
             }
+        } else {
+            console.warn('[AGENT] No screen sources found');
         }
 
         // Dynamically delay to prevent event loop starvation (~15 FPS target)
@@ -127,10 +137,7 @@ async function handleInputEvent(event) {
         if (type === 'mouse_move') {
             const now = Date.now();
             if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
-                const targetX = Math.round(x * width);
-                const targetY = Math.round(y * height);
-                console.log(`[AGENT] Moving mouse to: (${targetX}, ${targetY})`);
-                await InputManager.moveMouse(targetX, targetY);
+                await InputManager.moveMouse(x * width, y * height);
                 lastMouseMove = now;
             }
         } else if (type === 'mouse_down') {
@@ -216,11 +223,15 @@ app.whenReady().then(() => {
     // ✅ HOST INPUT (mouse/keyboard)
     const handleIncomingInput = (event) => {
         const payload = (event && event.event) ? event.event : event;
-        console.log(`[AGENT] Incoming input event received: ${payload?.type} (${payload?.x}, ${payload?.y})`);
-        
-        handleInputEvent(payload);
-    };
 
+        console.log(
+            `[AGENT] Incoming input: ${payload?.type} (${payload?.x ?? '-'}, ${payload?.y ?? '-'})`
+        );
+
+        if (payload) {
+            handleInputEvent(payload);
+        }
+    };
     socket.on('host_input_event', handleIncomingInput);
     socket.on('input_event', handleIncomingInput);
 

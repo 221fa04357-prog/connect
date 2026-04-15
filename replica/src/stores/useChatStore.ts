@@ -765,8 +765,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on('remote_frame', (data: { frame: string }) => {
       // Dispatch event for RemoteControlStream component
-      console.log('[RemoteControl] Received remote_frame event from backend, frame size:', data.frame?.length || 0);
-      window.dispatchEvent(new CustomEvent('remote_control_frame', { detail: data.frame }));
+      if (data?.frame) {
+        // Log every 30th frame to avoid console spam (~every 1-2 seconds)
+        if (typeof window !== 'undefined' && !(window as any)._frameLogCount) (window as any)._frameLogCount = 0;
+        (window as any)._frameLogCount++;
+        if ((window as any)._frameLogCount % 30 === 0) {
+          console.log('[RemoteControl] Received remote_frame event, size:', data.frame.length);
+        }
+        window.dispatchEvent(new CustomEvent('remote_control_frame', { detail: data.frame }));
+      } else {
+        console.warn('[RemoteControl] Received empty remote_frame event');
+      }
     });
 
     socket.on('control_error', (data: { message: string }) => {
