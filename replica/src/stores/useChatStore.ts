@@ -746,16 +746,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string, agentId?: string }) => {
+    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
-        set((state) => ({ 
-          nativeAgentStatus: { 
-            ...state.nativeAgentStatus, 
-            status: 'connected', 
-            agentSocketId: data.agentSocketId,
-            agentId: data.agentId || state.nativeAgentStatus.agentId
-          } 
-        }));
+        set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
         import('sonner').then(({ toast }) => toast.success('Remote control session started!'));
       } else {
         set({ nativeAgentStatus: { status: 'idle' } });
@@ -770,18 +763,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('control_error', (data: { message: string }) => {
-      set((state) => ({ 
-        nativeAgentStatus: { 
-          ...state.nativeAgentStatus, 
-          status: 'error', 
-          error: data.message 
-        } 
-      }));
+      set({ nativeAgentStatus: { status: 'error', error: data.message } });
       import('sonner').then(({ toast }) => toast.error(data.message));
     });
 
     socket.on('control_stopped', () => {
       set({ nativeAgentStatus: { status: 'idle' } });
+      import('sonner').then(({ toast }) => toast.info('Remote control stopped.'));
     });
 
     socket.on('agent_install_requested', () => {
@@ -902,15 +890,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (hostIsMe) {
         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
-        set((state) => ({
+        set({
           isControlling: true,
-          nativeAgentStatus: { 
-            ...state.nativeAgentStatus, 
-            status: 'connected', 
-            agentId: data.agentId, 
-            targetParticipantId: data.participantId 
-          }
-        }));
+          nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
+        });
 
         import('./useParticipantsStore').then((pStore) => {
           const participants = pStore.useParticipantsStore.getState().participants;
@@ -1076,10 +1059,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().socket?.emit('whiteboard_access_update', { meeting_id: meetingId, access });
   },
 
-  emitCaptionLanguage: (meetingId, language) => {
-    get().socket?.emit('caption_language_change', { meeting_id: meetingId, language });
-  },
-
   muteAll: (meetingId) => {
     get().socket?.emit('mute_all', { meeting_id: meetingId });
   },
@@ -1226,21 +1205,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendControlEvent: (event: any) => {
     const { socket, nativeAgentStatus } = get();
-    // Prioritize agentSocketId for direct routing, fallback to logical agentId
-    const targetAgentId = nativeAgentStatus.agentSocketId || nativeAgentStatus.agentId;
-
-    if (socket && nativeAgentStatus.status === 'connected' && targetAgentId) {
-      console.log(`[RemoteControl] Emitting host_input_event to target: ${targetAgentId} (logical: ${nativeAgentStatus.agentId}) type: ${event.type}`);
+    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
       socket.emit('host_input_event', {
-        agentId: targetAgentId,
+        agentId: nativeAgentStatus.agentId,
         event
-      });
-    } else {
-      console.warn('[RemoteControl] sendControlEvent suppressed:', { 
-        hasSocket: !!socket,
-        status: nativeAgentStatus.status,
-        agentId: nativeAgentStatus.agentId, 
-        agentSocketId: nativeAgentStatus.agentSocketId 
       });
     }
   },

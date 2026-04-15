@@ -127,10 +127,7 @@ async function handleInputEvent(event) {
         if (type === 'mouse_move') {
             const now = Date.now();
             if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
-                const targetX = Math.round(x * width);
-                const targetY = Math.round(y * height);
-                console.log(`[AGENT] Moving mouse to: (${targetX}, ${targetY})`);
-                await InputManager.moveMouse(targetX, targetY);
+                await InputManager.moveMouse(x * width, y * height);
                 lastMouseMove = now;
             }
         } else if (type === 'mouse_down') {
@@ -214,13 +211,17 @@ app.whenReady().then(() => {
     });
 
     // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (event) => {
-        const payload = (event && event.event) ? event.event : event;
-        console.log(`[AGENT] Incoming input event received: ${payload?.type} (${payload?.x}, ${payload?.y})`);
-        
-        handleInputEvent(payload);
-    };
+const handleIncomingInput = (event) => {
+    const payload = (event && event.event) ? event.event : event;
 
+    console.log(
+        `[AGENT] Incoming input: ${payload?.type} (${payload?.x ?? '-'}, ${payload?.y ?? '-'})`
+    );
+
+    if (payload) {
+        handleInputEvent(payload);
+    }
+};
     socket.on('host_input_event', handleIncomingInput);
     socket.on('input_event', handleIncomingInput);
 
