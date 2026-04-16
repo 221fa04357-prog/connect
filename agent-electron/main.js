@@ -85,18 +85,8 @@ async function captureLoop(hostId, participantId) {
                     participantId,
                     frame: `data:image/jpeg;base64,${base64}`
                 });
-                
-                // Log every ~30 frames
-                if (!global._frameSentCount) global._frameSentCount = 0;
-                global._frameSentCount++;
-                if (global._frameSentCount % 30 === 0) {
-                    console.log(`[AGENT] Frame sent successfully (${jpegBuffer.length} bytes) to Host: ${hostId}`);
-                }
-            } else {
-                console.warn('[AGENT] Captured thumbnail is empty');
+                console.log('Agent frame emitted', { hostId, participantId });
             }
-        } else {
-            console.warn('[AGENT] No screen sources found');
         }
 
         // Dynamically delay to prevent event loop starvation (~15 FPS target)
@@ -222,16 +212,13 @@ app.whenReady().then(() => {
 
     // ✅ HOST INPUT (mouse/keyboard)
     const handleIncomingInput = (event) => {
-        const payload = (event && event.event) ? event.event : event;
-
-        console.log(
-            `[AGENT] Incoming input: ${payload?.type} (${payload?.x ?? '-'}, ${payload?.y ?? '-'})`
-        );
-
-        if (payload) {
-            handleInputEvent(payload);
+        if (event && event.event) {
+            handleInputEvent(event.event);
+        } else {
+            handleInputEvent(event);
         }
     };
+
     socket.on('host_input_event', handleIncomingInput);
     socket.on('input_event', handleIncomingInput);
 
