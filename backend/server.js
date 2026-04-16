@@ -2267,12 +2267,8 @@ io.on('connection', (socket) => {
         });
 
         if (hostSocketId) {
-            io.to(hostSocketId).emit('control_response', { 
-                accepted: true, 
-                agentSocketId,
-                agentId: linkedAgentId || 'native-agent'
-            });
-            io.to(hostSocketId).emit('control_connected', { agentId: linkedAgentId || 'native-agent', agentSocketId });
+            io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
+            io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
         } else {
             console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
         }

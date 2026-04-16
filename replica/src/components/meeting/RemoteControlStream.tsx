@@ -51,30 +51,12 @@ export function RemoteControlStream() {
   const isDataChannelOpen = controlDataChannel && controlDataChannel.readyState === 'open';
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!mouseEnabled) {
-      console.log("[RemoteControlStream] Mouse event IGNORED: mouseEnabled is false");
-      return;
-    }
-    
+    if (!mouseEnabled) return;
     const video = videoRef.current;
-    
-    // Fallback: If not WebRTC, use the container and the frame for mapping
-    if (!isWebRtcStream || !video) {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const x_rel = (e.clientX - rect.left) / rect.width;
-        const y_rel = (e.clientY - rect.top) / rect.height;
-        
-        console.log("[RemoteControlStream] Mouse event (Legacy Frame):", x_rel, y_rel);
-        sendControlEvent({ type: 'mouse_move', x: x_rel, y: y_rel, isLegacy: true });
-        return;
-    }
+    if (!video || !isWebRtcStream) return;
 
     const { videoWidth, videoHeight, clientWidth, clientHeight } = video;
-    if (videoWidth === 0 || videoHeight === 0) {
-      console.log("[RemoteControlStream] Mouse event BLOCKED: video dimensions are 0");
-      return;
-    }
+    if (videoWidth === 0 || videoHeight === 0) return;
 
     const rect = video.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -99,15 +81,10 @@ export function RemoteControlStream() {
 
     // Focus Guard: ignore moves outside actual video area
     if (clickX < offsetX || clickX > offsetX + renderedWidth || 
-        clickY < offsetY || clickY > offsetY + renderedHeight) {
-      // console.log("[RemoteControlStream] Mouse event BLOCKED: Outside video bounds");
-      return;
-    }
+        clickY < offsetY || clickY > offsetY + renderedHeight) return;
 
     const x = Math.round(((clickX - offsetX) / renderedWidth) * videoWidth);
     const y = Math.round(((clickY - offsetY) / renderedHeight) * videoHeight);
-
-    // console.log("[RemoteControlStream] Mouse event (WebRTC):", x, y, "Screen:", videoWidth, videoHeight);
 
     sendControlEvent({ 
       type: 'mouse_move', 
