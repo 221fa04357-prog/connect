@@ -2173,11 +2173,7 @@ io.on('connection', (socket) => {
         });
 
         if (hostSocketId) {
-            io.to(hostSocketId).emit('control_response', { 
-                accepted: true, 
-                agentSocketId,
-                agentId: linkedAgentId || 'native-agent'
-            });
+            io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
             io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
         } else {
             console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
@@ -2231,7 +2227,6 @@ io.on('connection', (socket) => {
 
     socket.on('host_input_event', (data) => {
         const { agentId, event } = data;
-        console.log(`[RemoteControl] Received host_input_event for agentId: ${agentId}, type: ${event?.type}`);
 
         let targetSocketId = null;
 
@@ -2257,12 +2252,9 @@ io.on('connection', (socket) => {
 
         if (!targetSocketId) {
             console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
-            // Diagnostic log: check if agentId exists in agentSocketMap
-            console.log('[RemoteControl] Current agentSocketMap keys:', Object.keys(agentSocketMap));
             return;
         }
 
-        console.log(`[RemoteControl] Forwarding input event to targetSocketId: ${targetSocketId}`);
         io.to(targetSocketId).emit('host_input_event', event);
         io.to(targetSocketId).emit('input_event', event);
     });

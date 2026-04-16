@@ -46,8 +46,7 @@ const InputManager = {
      * Moves mouse to absolute coordinates.
      */
     async moveMouse(x, y) {
-        const command = `[Win32.Win32Input]::SetCursorPos(${Math.round(x)}, ${Math.round(y)});\n`;
-        console.log(`[PS-EXEC] Executing: ${command.trim()}`);
+        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(x)}, ${Math.round(y)})\n`;
         getPS().stdin.write(command);
     },
 
@@ -58,7 +57,6 @@ const InputManager = {
         const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN :
             button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
         const command = `[Win32.Win32Input]::mouse_event(${flag}, 0, 0, 0, 0);\n`;
-        console.log(`[PS-EXEC] Executing: ${command.trim()}`);
         getPS().stdin.write(command);
     },
 
