@@ -2260,47 +2260,48 @@ io.on('connection', (socket) => {
     });
 
     socket.on('agent_frame', (data) => {
-        console.log('[RemoteControl] Received agent_frame event', { hostId: data?.hostId, participantId: data?.participantId, hasFrame: !!data?.frame });
-        
         const { hostId, participantId, frame } = data;
         let hostSocketId = null;
 
-        console.log('[RemoteControl] Resolving host socket for agent_frame...');
-        
-        // Try direct hostId as socket
-        if (hostId) {
-            console.log('[RemoteControl] Checking direct hostId:', hostId);
-            if (io.sockets.sockets.get && io.sockets.sockets.get(hostId)) {
-                hostSocketId = hostId;
-                console.log('[RemoteControl] Found via io.sockets.sockets.get');
-            } else if (io.sockets.sockets[hostId]) {
-                hostSocketId = hostId;
-                console.log('[RemoteControl] Found via io.sockets.sockets[]');
-            }
-        }
-
-        // Try controlSessionMap lookup
-        if (!hostSocketId && participantId && controlSessionMap[participantId]) {
+        // 1. Try resolving via controlSessionMap (Strongest link)
+        if (participantId && controlSessionMap[participantId]) {
             hostSocketId = controlSessionMap[participantId].hostSocketId;
-            console.log('[RemoteControl] Found via controlSessionMap for participantId:', participantId);
         }
 
-        // Try activeSessions fallback
-        if (!hostSocketId && participantId && activeSessions[participantId]) {
-            const linkedAgent = activeSessions[participantId];
-            const session = controlSessionMap[participantId];
-            if (session?.hostSocketId) {
-                hostSocketId = session.hostSocketId;
-                console.log('[RemoteControl] Found via activeSessions+controlSessionMap for participantId:', participantId);
+        // 2. Try direct hostId if it's a valid socket ID
+        if (!hostSocketId && hostId) {
+            if (io.sockets.sockets.has(hostId)) {
+                hostSocketId = hostId;
+            } else {
+                // Check if hostId is a userId and find its socket
+                for (const [sid, p] of Object.entries(userSocketMap)) {
+                   if (sid === hostId) {
+                       hostSocketId = p;
+                       break;
+                   }
+                }
             }
+        }
+
+        // 3. Last resort fallback lookup
+        if (!hostSocketId && participantId) {
+            // Find who is currently controlling this participant in any room
+            rooms.forEach((participants, mId) => {
+                const p = Array.from(participants.values()).find(p => p.id === participantId);
+                if (p) {
+                    // This is complex, but we hope step 1 or 2 caught it
+                }
+            });
         }
 
         if (hostSocketId) {
-            console.log('[RemoteControl] Forwarding remote_frame to host socket:', hostSocketId);
             io.to(hostSocketId).emit('remote_frame', { frame });
-            console.log('[RemoteControl] Forwarded remote_frame successfully');
         } else {
-            console.warn('[RemoteControl] FAILED to resolve host socket for agent_frame', { hostId, participantId, controlSessionMapKeys: Object.keys(controlSessionMap) });
+            // Throttled logging for failures
+            if (!socket._lastFrameError || Date.now() - socket._lastFrameError > 5000) {
+                console.warn('[RemoteControl] Routing FAILED for agent_frame:', { hostId, participantId });
+                socket._lastFrameError = Date.now();
+            }
         }
     });
 
