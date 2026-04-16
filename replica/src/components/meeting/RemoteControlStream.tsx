@@ -66,7 +66,7 @@ export function RemoteControlStream() {
 
     window.addEventListener('remote_control_frame', handleFrame);
     return () => window.removeEventListener('remote_control_frame', handleFrame);
-  }, [hasFrame]);
+  }, []);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (nativeAgentStatus.status !== 'connected' || !videoRef.current) return;
@@ -102,6 +102,7 @@ export function RemoteControlStream() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (nativeAgentStatus.status !== 'connected') return;
+    // Basic key relay
     sendControlEvent({
       type: 'key_down',
       key: e.key.toLowerCase(),
@@ -110,6 +111,7 @@ export function RemoteControlStream() {
       alt: e.altKey,
       meta: e.metaKey
     });
+    // Prevent default browser shortcuts if controlled
     if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
       e.preventDefault();
     }
@@ -134,16 +136,15 @@ export function RemoteControlStream() {
         }`}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Hidden bridge canvas */}
-      {/* Hidden bridge canvas - using visibility instead of display:none to ensure captureStream works */}
-      <canvas 
-        ref={canvasRef} 
-        style={{ 
-          position: 'absolute', 
-          left: '-9999px', 
-          top: '-9999px', 
-          visibility: 'hidden' 
-        }} 
+      {/* Hidden bridge canvas (required for captureStream) */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: '-9999px',
+          visibility: 'hidden'
+        }}
       />
 
       {!hasFrame ? (
@@ -158,11 +159,12 @@ export function RemoteControlStream() {
             autoPlay
             playsInline
             muted
+            tabIndex={0}
+            onClick={() => videoRef.current?.focus()}
             className="max-w-full max-h-full w-auto h-auto cursor-none select-none shadow-2xl bg-black"
             onMouseMove={handleMouseMove}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
-            tabIndex={0}
             onKeyDown={handleKeyDown}
             onKeyUp={handleKeyUp}
           />
@@ -170,7 +172,10 @@ export function RemoteControlStream() {
       )}
 
       {/* Control Overlay */}
+      {/* Control Overlay */}
       <div className="absolute top-4 right-4 flex gap-2 opacity-0 hover:opacity-100 transition-opacity">
+
+        {/* PiP Button */}
         <Button
           size="sm"
           variant="secondary"
@@ -187,14 +192,20 @@ export function RemoteControlStream() {
         >
           <Play className="w-4 h-4 mr-2" /> PiP
         </Button>
+
+        {/* Fullscreen Button */}
         <Button
           size="sm"
           variant="secondary"
           onClick={() => setIsFullscreen(!isFullscreen)}
           className="bg-zinc-900/80 backdrop-blur-md border border-white/10"
         >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          {isFullscreen
+            ? <Minimize2 className="w-4 h-4" />
+            : <Maximize2 className="w-4 h-4" />
+          }
         </Button>
+
       </div>
 
       <div className="absolute bottom-4 left-4 p-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/5 text-[10px] text-zinc-400 flex items-center gap-3">
@@ -204,7 +215,7 @@ export function RemoteControlStream() {
         <div className="flex items-center gap-1">
           <Keyboard className="w-3 h-3" /> Enabled
         </div>
-        <div className="w-1.5 h-1.5 rounded-full bg-green-500" /> Live Stream
+        <div className="w-1.5 h-1.5 rounded-full bg-green-500" /> Live
       </div>
     </div>
   );
