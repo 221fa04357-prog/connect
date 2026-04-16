@@ -768,51 +768,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string, agentId?: string }) => {
-      console.log('[RemoteControl] control_response received:', data);
+    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
       if (data.accepted) {
-        set({ 
-          isControlling: true,
-          nativeAgentStatus: { 
-            status: 'connected', 
-            agentSocketId: data.agentSocketId,
-            agentId: data.agentId 
-          }
-        });
-        
-        // Sync with MeetingStore to activate visual overlay
-        import('./useMeetingStore').then((store) => {
-          store.useMeetingStore.getState().setRemoteControlState({
-            status: 'active',
-            role: 'controller',
-            targetId: get().remoteControlSession.participantId, 
-            targetName: 'Participant'
-          });
-        });
-
+        set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
         import('sonner').then(({ toast }) => toast.success('Remote control session started!'));
       } else {
-        set({ isControlling: false, nativeAgentStatus: { status: 'idle' } });
+        set({ nativeAgentStatus: { status: 'idle' } });
         import('sonner').then(({ toast }) => toast.error('Remote control request rejected.'));
       }
-    });
-
-    socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
-      console.log('[RemoteControl] control_started notification received:', data);
-      set((state) => ({
-        remoteControlSession: {
-          ...state.remoteControlSession,
-          active: true,
-          hostId: data.hostId,
-          participantId: data.participantId,
-          role: data.hostId === socket.id ? 'controller' : (data.participantId === socket.id ? 'controlled' : null)
-        }
-      }));
-    });
-
-    socket.on('control_denied', (data: { participantId: string }) => {
-       console.log('[RemoteControl] control_denied received from participant:', data.participantId);
-       set({ isControlling: false, nativeAgentStatus: { status: 'idle' } });
     });
 
     socket.on('remote_frame', (data: { frame: string }) => {
@@ -1226,16 +1189,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       console.log(`[RemoteControl] Emitting request_control for participant: ${participantId}`);
-      
-      set((state) => ({
-        remoteControlSession: {
-          ...state.remoteControlSession,
-          participantId: participantId,
-          role: 'controller'
-        },
-        nativeAgentStatus: { status: 'pending' }
-      }));
-
       socket.emit('request_control', {
         meetingId,
         participantId,
@@ -1356,27 +1309,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      const targetAgentId = nativeAgentStatus.agentId || nativeAgentStatus.agentSocketId;
-
-      if (socket && nativeAgentStatus.status === 'connected' && targetAgentId) {
-        // DIAGNOSTIC LOG: Every event is now logged to identity the breakage point
-        console.log(`[RemoteControl] RELAY: sending ${event.type} to agent ${targetAgentId}`, {
-            event,
-            status: nativeAgentStatus.status
-        });
-
+      if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
         socket.emit('host_input_event', {
           meetingId, 
-          agentId: targetAgentId,
+          agentId: nativeAgentStatus.agentId,
           event
         });
-      } else {
-          // Failure Diagnostic
-          if (nativeAgentStatus.status === 'connected') {
-              console.warn(`[RemoteControl] RELAY BLOCKED: Target ID missing. Status: ${nativeAgentStatus.status}`);
-          } else {
-              console.log(`[RemoteControl] RELAY INACTIVE: Session status is "${nativeAgentStatus.status}"`);
-          }
       }
     };
   })(),
