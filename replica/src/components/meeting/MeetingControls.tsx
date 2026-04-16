@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
-import { toast } from "sonner";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -2100,15 +2099,6 @@ function ControlBar() {
 
         } catch (err) {
             console.error("Error sharing screen:", err);
-            // Fail-safe: If the participant cancels the screen share prompt, 
-            // we must terminate the remote control session to keep both sides in sync.
-            const { remoteControlState } = useMeetingStore.getState();
-            if (remoteControlState.status === 'active' && remoteControlState.role === 'controlled') {
-                useChatStore.getState().stopControl();
-                toast.error("Screen Share Required", {
-                    description: "Remote control requires screen sharing to be active."
-                });
-            }
         }
     };
 
