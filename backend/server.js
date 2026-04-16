@@ -1990,25 +1990,6 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
 
-        // --- Remote Control Cleanup for Host Disconnect ---
-        for (const pid in controlSessionMap) {
-            if (controlSessionMap[pid].hostSocketId === socket.id) {
-                console.log(`[RemoteControl] Host ${socket.id} disconnected. Stopping session for participant ${pid}`);
-                const targetSocket = userSocketMap[pid] || getSocketIdFallback(null, pid); // We don't have meetingId here easily
-                if (targetSocket) {
-                    io.to(targetSocket).emit('control_stopped');
-                }
-                
-                const agentId = controlSessionMap[pid].agentId;
-                if (agentId && agentSocketMap[agentId]) {
-                    io.to(agentSocketMap[agentId]).emit('control_stopped');
-                }
-                
-                delete controlSessionMap[pid];
-                delete activeSessions[pid];
-            }
-        }
-
         // Remove from all rooms
         rooms.forEach((participants, meetingId) => {
             if (participants.has(socket.id)) {
@@ -2083,23 +2064,13 @@ io.on('connection', (socket) => {
         if (disconnectedParticipantId) {
             unlinkedParticipants = unlinkedParticipants.filter(p => p.participantId !== disconnectedParticipantId);
             
-            // Handle Remote Control Session Cleanup on Disconnect
-            const activeControlSession = controlSessionMap[disconnectedParticipantId];
-            if (activeControlSession) {
-                const { hostSocketId } = activeControlSession;
-                if (hostSocketId) {
-                    console.log(`[RemoteControl] Participant ${disconnectedParticipantId} disconnected. Notifying Host ${hostSocketId}`);
-                    io.to(hostSocketId).emit('control_stopped');
-                }
-                delete controlSessionMap[disconnectedParticipantId];
-            }
-
             // Free up any agent that was locked to this participant
             const linkedAgentId = activeSessions[disconnectedParticipantId];
             if (linkedAgentId) {
                 console.log(`[AGENT] Participant ${disconnectedParticipantId} disconnected. Freeing agent ${linkedAgentId}`);
                 delete activeSessions[disconnectedParticipantId];
                 delete agentStatusMap[disconnectedParticipantId];
+                delete controlSessionMap[disconnectedParticipantId];
                 
                 // Return agent to available pool if agent is still connected
                 if (agentSocketMap[linkedAgentId] && !availableAgents.includes(linkedAgentId)) {
@@ -2147,56 +2118,28 @@ io.on('connection', (socket) => {
 
     socket.on("request_control", (data) => {
         const { participantId, meetingId, hostId, hostName } = data;
-        
-        const room = rooms.get(meetingId);
-        if (!room) {
-             socket.emit('control_error', { message: 'Meeting room not found.' });
-             return;
-        }
-
-        // Security: Only the HOST or CO-HOST can initiate remote control
-        const sender = room.get(socket.id);
-        const isAuthorized = sender && (sender.role === 'host' || sender.role === 'co-host');
-        if (!isAuthorized) {
-            console.warn(`[RemoteControl] Unauthorized control request from ${sender?.name} (${sender?.role})`);
-            socket.emit('control_error', { message: 'Only the host or co-host is allowed to request remote control.' });
-            return;
-        }
-
-        // Session Lock: Check if any remote control session is already active in this meeting
-        let sessionAlreadyActive = false;
-        for (const pid in controlSessionMap) {
-            const session = controlSessionMap[pid];
-            // If the host is in this room and there's an active session
-            if (activeSessions[pid]) {
-                sessionAlreadyActive = true;
-                break;
-            }
-        }
-
-        if (sessionAlreadyActive) {
-            socket.emit('control_error', { message: 'A remote control session is already in progress in this meeting.' });
-            return;
-        }
-
-        console.log(`[RemoteControl] Authorized request from ${sender.role} ${hostName} to ${participantId}`);
+        console.log(`[RemoteControl] Request from ${hostName || socket.id} to ${participantId} for meeting ${meetingId}`);
         const targetSocket = userSocketMap[participantId];
         if (targetSocket) {
             console.log(`[RemoteControl] Mapped participantId ${participantId} to socketId ${targetSocket}`);
             io.to(targetSocket).emit("control_request", {
                 hostId: hostId || socket.id,
-                hostName: hostName || 'The Host'
+                hostName: hostName || 'A Participant'
             });
             console.log(`[RemoteControl] Event "control_request" emitted to ${targetSocket}`);
         } else {
             console.log(`[RemoteControl] Target socket not found for participantId ${participantId}`);
             // Fallback: search rooms for the socket if map missed it
             let found = false;
-            participants.forEach((p, sId) => {
-                if (p.id === participantId) {
-                    console.log(`[RemoteControl] Found participantId ${participantId} in room ${meetingId} with socketId ${sId}`);
-                    io.to(sId).emit("control_request", { hostId: socket.id, hostName: hostName || 'The Host' });
-                    found = true;
+            rooms.forEach((participants, mId) => {
+                if (mId === meetingId) {
+                    participants.forEach((p, sId) => {
+                        if (p.id === participantId) {
+                            console.log(`[RemoteControl] Found participantId ${participantId} in room ${mId} with socketId ${sId}`);
+                            io.to(sId).emit("control_request", { hostId: socket.id, hostName: hostName || 'A Participant' });
+                            found = true;
+                        }
+                    });
                 }
             });
             if (!found) {
@@ -2297,64 +2240,30 @@ io.on('connection', (socket) => {
 
     socket.on('control_stop', (data) => {
         const { meetingId, participantId } = data;
-        console.log(`[RemoteControl] Control session stop requested for room: ${meetingId}`);
+        console.log(`[RemoteControl] Control session stopped for room: ${meetingId}`);
         
-        // Unified Broadcast to reset all indicators
+        // Notify everyone to reset their control indicators
         io.to(meetingId).emit('control_stopped');
 
-        // Target Specific Cleanup
-        const pId = participantId || Object.keys(controlSessionMap).find(pid => controlSessionMap[pid].hostSocketId === socket.id);
-        
-        if (pId && controlSessionMap[pId]) {
-            const agentId = controlSessionMap[pId].agentId;
+        // Stop any agent involved with this participant (if provided)
+        if (participantId && controlSessionMap[participantId]) {
+            const agentId = controlSessionMap[participantId].agentId;
             if (agentId && agentSocketMap[agentId]) {
                 io.to(agentSocketMap[agentId]).emit('control_stopped');
             }
-            delete controlSessionMap[pId];
-            delete activeSessions[pId];
-            console.log(`[RemoteControl] Session for participant ${pId} stopped and cleaned up.`);
-        } else {
-            // Fallback: Clear any session where this user was the host
-            for (const pid in controlSessionMap) {
-                if (controlSessionMap[pid].hostSocketId === socket.id) {
-                    const aid = controlSessionMap[pid].agentId;
-                    if (aid && agentSocketMap[aid]) io.to(agentSocketMap[aid]).emit('control_stopped');
-                    delete controlSessionMap[pid];
-                    delete activeSessions[pid];
-                }
-            }
+            delete controlSessionMap[participantId];
+            delete activeSessions[participantId];
         }
-    });
 
         // Also broadcast stop to all agents as fallback
         availableAgents.forEach(aid => {
             const asid = agentSocketMap[aid];
             if (asid) io.to(asid).emit('control_stopped');
         });
+    });
 
     socket.on('host_input_event', (data) => {
-        const { agentId, event, meetingId } = data;
-
-        // Security: Only the HOST can send input events
-        if (meetingId) {
-            const room = rooms.get(meetingId);
-            const sender = room?.get(socket.id);
-            if (!sender || sender.role !== 'host') {
-                // Silently drop unauthorized input events to prevent spamming logs
-                return;
-            }
-        } else {
-            // If meetingId is missing, we try to find the sender in any room
-            let authorized = false;
-            for (const [mid, participants] of rooms.entries()) {
-                const p = participants.get(socket.id);
-                if (p && p.role === 'host') {
-                    authorized = true;
-                    break;
-                }
-            }
-            if (!authorized) return;
-        }
+        const { agentId, event } = data;
 
         let targetSocketId = null;
 
