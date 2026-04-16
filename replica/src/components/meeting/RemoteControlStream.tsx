@@ -12,66 +12,60 @@ export function RemoteControlStream() {
   const { nativeAgentStatus, sendControlEvent } = useChatStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
-  const hasFrameRef = useRef(false);
 
   // Initialize MediaStream from Canvas
-  const initStream = () => {
+  useEffect(() => {
     if (canvasRef.current && videoRef.current && !streamRef.current) {
       console.log('[RemoteControlStream] Initializing Canvas-to-Video bridge');
       const stream = canvasRef.current.captureStream(30); // 30 FPS
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
 
+      // Auto-play the stream
       videoRef.current.play()
         .then(() => console.log('[RemoteControlStream] Video playback started'))
         .catch(err => console.error('[RemoteControlStream] Video play blocked/failed:', err));
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleFrame = (event: any) => {
       const base64 = event.detail;
-      if (!base64 || !canvasRef.current) return;
+      if (!base64) {
+        console.warn('[RemoteControlStream] Received empty frame event');
+        return;
+      }
+      if (!canvasRef.current) return;
 
       const img = new Image();
       img.onload = () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         // Resize canvas to match frame if needed
         if (canvas.width !== img.width || canvas.height !== img.height) {
-          console.log(`[RemoteControlStream] Frame dimensions: ${img.width}x${img.height}. Resizing canvas.`);
+          console.log(`[RemoteControlStream] Resizing canvas to ${img.width}x${img.height}`);
           canvas.width = img.width;
           canvas.height = img.height;
-          // Re-initialize stream if it was 0x0 or failed initially
-          initStream();
         }
 
         ctx.drawImage(img, 0, 0);
-
-        if (!hasFrameRef.current) {
+        if (!hasFrame) {
           console.log('[RemoteControlStream] First frame rendered successfully');
-          hasFrameRef.current = true;
           setHasFrame(true);
-          initStream();
         }
       };
-
       img.onerror = (err) => {
-        console.error('[RemoteControlStream] Failed to load image from base64 frame:', err);
+        console.error('[RemoteControlStream] Failed to load image from base64 frame', err);
       };
       img.src = base64;
     };
 
-    console.log('[RemoteControlStream] Attaching frame listener');
     window.addEventListener('remote_control_frame', handleFrame);
-    return () => {
-      console.log('[RemoteControlStream] Detaching frame listener');
-      window.removeEventListener('remote_control_frame', handleFrame);
-    };
+    return () => window.removeEventListener('remote_control_frame', handleFrame);
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -148,7 +142,8 @@ export function RemoteControlStream() {
         style={{
           position: 'absolute',
           left: '-9999px',
-          top: '-9999px'
+          top: '-9999px',
+          visibility: 'hidden'
         }}
       />
 

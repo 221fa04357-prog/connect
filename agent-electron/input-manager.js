@@ -16,7 +16,6 @@ function getPS() {
         '$sig = @\'',
         '[DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, uint dwExtraInfo);',
         '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);',
-        '[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);',
         '\'@',
         'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru > $null;'
     ];
