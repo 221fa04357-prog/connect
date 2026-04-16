@@ -144,6 +144,35 @@ export default function MeetingRoom() {
       }, 100);
     };
 
+    // --- WEBRTC DATA CHANNEL (CONTROL) ---
+    const dataChannel = pc.createDataChannel('control');
+    dataChannel.onopen = () => {
+      console.log(`[DataChannel] Opened for ${participantSocketId}`);
+      useChatStore.getState().setControlDataChannel(dataChannel);
+    };
+    dataChannel.onerror = (error) => console.error(`[DataChannel] Error:`, error);
+    dataChannel.onclose = () => {
+      console.log(`[DataChannel] Closed for ${participantSocketId}`);
+      const currentChannel = useChatStore.getState().controlDataChannel;
+      if (currentChannel === dataChannel) {
+        useChatStore.getState().setControlDataChannel(null);
+      }
+    };
+
+    pc.ondatachannel = (event) => {
+      if (event.channel.label === 'control') {
+        event.channel.onmessage = (e) => {
+          try {
+            const controlEvent = JSON.parse(e.data);
+            window.dispatchEvent(new CustomEvent('remote_control_event', { detail: controlEvent }));
+          } catch (err) {
+            console.error('Error parsing remote control event via DataChannel:', err);
+          }
+        };
+      }
+    };
+    // -------------------------------------
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         useChatStore.getState().socket?.emit('signal_send', {
@@ -499,6 +528,41 @@ export default function MeetingRoom() {
 
 
   /* ---------------- CONNECTION MONITORING ---------------- */
+  const handleReconnect = useCallback(() => {
+    console.log("Triggering manual reconnect...");
+    
+    // 1. Close existing WebRTC
+    Object.values(peerConnections.current).forEach((pc: RTCPeerConnection) => pc.close());
+    peerConnections.current = {};
+    clearRemoteStreams();
+
+    // 2. Clear UI control states 
+    const chatStore = useChatStore.getState();
+    useChatStore.setState({ isControlling: false, controlDataChannel: null });
+
+    // 3. Disconnect socket
+    if (chatStore.socket) {
+      chatStore.socket.disconnect();
+      
+      // 4. Reconnect socket and wait
+      setTimeout(() => {
+        chatStore.socket?.connect();
+        
+        // 5. Emit rejoin-meeting
+        const myUserId = user?.id || chatStore.localUserId;
+        if (meeting?.id && myUserId) {
+          chatStore.socket?.emit('rejoin-meeting', { 
+            meetingId: meeting.id, 
+            userId: myUserId 
+          });
+        }
+        
+        checkConnection();
+        import('sonner').then(({ toast }) => toast.success("Reconnected to meeting"));
+      }, 500);
+    }
+  }, [clearRemoteStreams, meeting?.id, user?.id]);
+
   const checkConnection = useCallback(() => {
     if (!window.navigator.onLine) {
       setConnectionQuality('offline');
@@ -943,7 +1007,7 @@ export default function MeetingRoom() {
 
                 <div className="pt-2">
                   <Button
-                    onClick={checkConnection}
+                    onClick={handleReconnect}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2 h-11"
                   >
                     <RefreshCw className="w-4 h-4" />

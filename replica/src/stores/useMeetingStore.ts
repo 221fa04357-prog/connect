@@ -185,6 +185,9 @@ interface MeetingState {
 
   preSuspensionState: PreSuspensionState | null;
   setPreSuspensionState: (state: PreSuspensionState | null) => void;
+
+  captionLanguage: string;
+  setCaptionLanguage: (language: string) => void;
 }
 
 
@@ -697,6 +700,9 @@ export const useMeetingStore = create<MeetingState>()(
 
         useChatStore.getState().updateMeetingSettings(state.meeting.id, settings);
       },
+
+      captionLanguage: 'en',
+      setCaptionLanguage: (language) => set({ captionLanguage: language }),
 
     }),
     {

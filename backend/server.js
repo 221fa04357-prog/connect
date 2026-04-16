@@ -684,6 +684,43 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('rejoin-meeting', async (data) => {
+        const { meetingId, userId } = data;
+        if (!meetingId || !userId) return;
+
+        console.log(`[Rejoin] User ${userId} rejoining meeting ${meetingId} with socket ${socket.id}`);
+        // 1. Join socket room
+        socket.join(meetingId);
+        
+        // 2. Restore user socket map
+        userSocketMap[userId] = socket.id;
+
+        // 3. Restore control session state for participant if they were controlled
+        const controlSession = controlSessionMap[userId];
+        if (controlSession) {
+            console.log(`[Rejoin] Restoring control session for participant ${userId}`);
+            socket.emit('control_started', {
+                agentId: controlSession.agentId,
+                participantId: userId,
+                hostId: controlSession.hostUserId || controlSession.hostSocketId
+            });
+        }
+
+        // 4. If user was host controlling someone
+        Object.entries(controlSessionMap).forEach(([pId, session]) => {
+            if (session.hostUserId === userId || session.hostSocketId === userId) {
+                console.log(`[Rejoin] Restoring control session for host ${userId} controlling ${pId}`);
+                session.hostSocketId = socket.id;
+                
+                socket.emit('control_started', {
+                    agentId: session.agentId,
+                    participantId: pId,
+                    hostId: socket.id
+                });
+            }
+        });
+    });
+
     socket.on('join_meeting', async (data) => {
         const { meetingId, user, initialState } = typeof data === 'string' ? { meetingId: data, user: null, initialState: {} } : data;
 
@@ -2153,10 +2190,10 @@ io.on('connection', (socket) => {
         const linkedAgentId = agent.agentId || activeSessions[participantId] || null;
         if (linkedAgentId) {
             activeSessions[participantId] = linkedAgentId;
-            controlSessionMap[participantId] = { agentId: linkedAgentId, hostSocketId };
+            controlSessionMap[participantId] = { agentId: linkedAgentId, hostSocketId, hostUserId: hostId };
             console.log('[RemoteControl] Mapped participantId', participantId, 'to hostSocketId', hostSocketId, 'agentId', linkedAgentId);
         } else {
-            controlSessionMap[participantId] = { agentId: null, hostSocketId };
+            controlSessionMap[participantId] = { agentId: null, hostSocketId, hostUserId: hostId };
             console.log('[RemoteControl] Mapped participantId', participantId, 'to hostSocketId', hostSocketId, '(no agentId)');
         }
 
