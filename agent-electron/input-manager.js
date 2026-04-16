@@ -53,8 +53,8 @@ const InputManager = {
      * mouseDown simulation.
      */
     async mouseDown(button = 'left') {
-        const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN :
-            button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
+        const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
+                     button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
         const command = `[Win32.Win32Input]::mouse_event(${flag}, 0, 0, 0, 0);\n`;
         getPS().stdin.write(command);
     },
@@ -63,8 +63,8 @@ const InputManager = {
      * mouseUp simulation.
      */
     async mouseUp(button = 'left') {
-        const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP :
-            button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
+        const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 
+                     button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
         const command = `[Win32.Win32Input]::mouse_event(${flag}, 0, 0, 0, 0);\n`;
         getPS().stdin.write(command);
     },
@@ -90,7 +90,7 @@ const InputManager = {
             'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27, 'space': 0x20,
             'control': 0x11, 'shift': 0x10, 'alt': 0x12, 'meta': 0x5B // Windows key
         };
-
+        
         let vk = vkMap[key.toLowerCase()];
         if (!vk && key.length === 1) {
             // Basic ASCII to VK mapping (A-Z, 0-9)

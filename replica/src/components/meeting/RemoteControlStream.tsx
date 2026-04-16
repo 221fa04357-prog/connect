@@ -1,67 +1,19 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useChatStore } from '@/stores/useChatStore';
-import { Loader2, Maximize2, Minimize2, MousePointer2, Keyboard, Play } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, MousePointer2, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui';
 
 export function RemoteControlStream() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
+  const imgRef = useRef<HTMLImageElement>(null);
   const { nativeAgentStatus, sendControlEvent } = useChatStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [hasFrame, setHasFrame] = useState(false);
-
-  // Initialize MediaStream from Canvas
-  useEffect(() => {
-    if (canvasRef.current && videoRef.current && !streamRef.current) {
-      console.log('[RemoteControlStream] Initializing Canvas-to-Video bridge');
-      const stream = canvasRef.current.captureStream(30); // 30 FPS
-      streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-
-      // Auto-play the stream
-      videoRef.current.play()
-        .then(() => console.log('[RemoteControlStream] Video playback started'))
-        .catch(err => console.error('[RemoteControlStream] Video play blocked/failed:', err));
-    }
-  }, []);
+  const [frame, setFrame] = useState<string | null>(null);
 
   useEffect(() => {
     const handleFrame = (event: any) => {
-      const base64 = event.detail;
-      if (!base64) {
-        console.warn('[RemoteControlStream] Received empty frame event');
-        return;
-      }
-      if (!canvasRef.current) return;
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Resize canvas to match frame if needed
-        if (canvas.width !== img.width || canvas.height !== img.height) {
-          console.log(`[RemoteControlStream] Resizing canvas to ${img.width}x${img.height}`);
-          canvas.width = img.width;
-          canvas.height = img.height;
-        }
-
-        ctx.drawImage(img, 0, 0);
-        if (!hasFrame) {
-          console.log('[RemoteControlStream] First frame rendered successfully');
-          setHasFrame(true);
-        }
-      };
-      img.onerror = (err) => {
-        console.error('[RemoteControlStream] Failed to load image from base64 frame', err);
-      };
-      img.src = base64;
+      console.log('[RemoteControlStream] Received frame event, size:', event.detail?.length || 0);
+      setFrame(event.detail);
     };
 
     window.addEventListener('remote_control_frame', handleFrame);
@@ -69,9 +21,9 @@ export function RemoteControlStream() {
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (nativeAgentStatus.status !== 'connected' || !videoRef.current) return;
+    if (nativeAgentStatus.status !== 'connected' || !imgRef.current) return;
 
-    const rect = videoRef.current.getBoundingClientRect();
+    const rect = imgRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
@@ -113,7 +65,7 @@ export function RemoteControlStream() {
     });
     // Prevent default browser shortcuts if controlled
     if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
-      e.preventDefault();
+        e.preventDefault();
     }
   };
 
@@ -130,82 +82,43 @@ export function RemoteControlStream() {
   }
 
   return (
-    <div
+    <div 
       ref={containerRef}
-      className={`relative bg-black rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'w-full h-full'
-        }`}
+      className={`relative bg-black rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'w-full h-full'
+      }`}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Hidden bridge canvas (required for captureStream) */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute',
-          left: '-9999px',
-          top: '-9999px',
-          visibility: 'hidden'
-        }}
-      />
-
-      {!hasFrame ? (
+      {!frame ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 border border-white/10 rounded-xl">
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
           <p className="text-sm text-zinc-400">Initializing stream...</p>
         </div>
       ) : (
-        <div className="w-full h-full flex items-center justify-center overflow-hidden">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            tabIndex={0}
-            onClick={() => videoRef.current?.focus()}
-            className="max-w-full max-h-full w-auto h-auto cursor-none select-none shadow-2xl bg-black"
-            onMouseMove={handleMouseMove}
-            onMouseDown={handleMouseDown}
-            onMouseUp={handleMouseUp}
-            onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-          />
-        </div>
+        <img
+          ref={imgRef}
+          src={frame}
+          alt="Remote Screen"
+          className="w-full h-full object-cover cursor-none select-none"
+          onMouseMove={handleMouseMove}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+        />
       )}
 
       {/* Control Overlay */}
-      {/* Control Overlay */}
       <div className="absolute top-4 right-4 flex gap-2 opacity-0 hover:opacity-100 transition-opacity">
-
-        {/* PiP Button */}
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            if (videoRef.current) {
-              if (document.pictureInPictureElement) {
-                document.exitPictureInPicture();
-              } else {
-                videoRef.current.requestPictureInPicture().catch(console.error);
-              }
-            }
-          }}
-          className="bg-zinc-900/80 backdrop-blur-md border border-white/10"
-        >
-          <Play className="w-4 h-4 mr-2" /> PiP
-        </Button>
-
-        {/* Fullscreen Button */}
         <Button
           size="sm"
           variant="secondary"
           onClick={() => setIsFullscreen(!isFullscreen)}
           className="bg-zinc-900/80 backdrop-blur-md border border-white/10"
         >
-          {isFullscreen
-            ? <Minimize2 className="w-4 h-4" />
-            : <Maximize2 className="w-4 h-4" />
-          }
+          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </Button>
-
       </div>
 
       <div className="absolute bottom-4 left-4 p-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/5 text-[10px] text-zinc-400 flex items-center gap-3">
