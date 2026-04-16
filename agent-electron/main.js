@@ -85,7 +85,7 @@ async function captureLoop(hostId, participantId) {
                     participantId,
                     frame: `data:image/jpeg;base64,${base64}`
                 });
-
+                
                 // Log every ~30 frames
                 if (!global._frameSentCount) global._frameSentCount = 0;
                 global._frameSentCount++;
