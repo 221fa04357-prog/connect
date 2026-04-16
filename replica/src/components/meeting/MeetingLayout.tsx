@@ -1228,7 +1228,57 @@ export function ParticipantsPanel() {
                 )}
             </AnimatePresence>
             <ControlApprovalDialog />
+            <ControlledBanner />
         </>
+    );
+}
+
+function ControlledBanner() {
+    const { remoteControlState } = useMeetingStore();
+    const { stopControl } = useChatStore();
+
+    if (remoteControlState.status !== 'active' || remoteControlState.role !== 'controlled') return null;
+
+    return (
+        <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4"
+        >
+            <div className="bg-[#1A1A1A]/90 backdrop-blur-xl border border-blue-500/30 rounded-full py-3 px-6 shadow-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative">
+                        <Monitor className="w-5 h-5 text-blue-400" />
+                        <motion.div 
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ repeat: Infinity, duration: 2 }}
+                            className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border border-[#1A1A1A]" 
+                        />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-semibold text-white/90 truncate">System Controlled</span>
+                        <span className="text-[10px] text-zinc-400 truncate">
+                            Host is controlling your system
+                        </span>
+                    </div>
+                </div>
+
+                <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                        if (confirm('Stop remote control session?')) {
+                            stopControl();
+                        }
+                    }}
+                    className="rounded-full bg-red-600 hover:bg-red-700 h-8 px-4 text-xs font-bold shadow-lg shadow-red-600/20"
+                >
+                    <X className="w-3.5 h-3.5 mr-1.5" />
+                    Stop Control
+                </Button>
+            </div>
+        </motion.div>
     );
 }
 
@@ -1309,7 +1359,7 @@ function ControlApprovalDialog() {
 
         respondToControl(true);
 
-        // Transition to active state entirely from the first popup 
+        // Transition to active state
         useMeetingStore.getState().setRemoteControlState({
             status: 'active',
             role: 'controlled',
@@ -1317,9 +1367,8 @@ function ControlApprovalDialog() {
             targetName: pendingRequest.hostName
         });
 
-        // NATIVE ELECTRON CAPTURE REPLACES WRAPPER:
-        // By skipping `start-remote-control-share`, we prevent the browser from prompting the user
-        // "What to share". The Electron Agent will silently auto-capture instead.
+        // Trigger automatic screen share prompt
+        window.dispatchEvent(new CustomEvent('start-remote-control-share'));
     };
 
     return (
@@ -1677,7 +1726,7 @@ function ParticipantItem({
                                     </DropdownMenuItem>
                                 )}
 
-                                {canControl && (effectiveRole === 'participant' || (effectiveRole === 'co-host' && isViewerHost)) && !isCurrentUser && (
+                                {isViewerHost && !isViewerCoHost && (effectiveRole === 'participant' || effectiveRole === 'co-host') && !isCurrentUser && (
                                     <>
                                         <DropdownMenuItem onClick={() => {
                                             useChatStore.getState().requestControl(participant.id);

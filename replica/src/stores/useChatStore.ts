@@ -61,7 +61,15 @@ interface ChatState {
   kickParticipant: (meetingId: string, participantId: string) => void;
   forceMediaState: (meetingId: string, participantId: string, type: 'audio' | 'video', state: boolean) => void;
 
-  // Final Remote Control Methods
+  // Unified Remote Control State
+  remoteControlSession: {
+    active: boolean,
+    hostId: string | null,
+    participantId: string | null,
+    role: 'controller' | 'controlled' | null
+  };
+  setRemoteControlSession: (session: Partial<ChatState['remoteControlSession']>) => void;
+  
   nativeAgentStatus: {
     status: 'idle' | 'pending' | 'connected' | 'error',
     agentId?: string,
@@ -103,6 +111,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   frequentQuestionUsers: [],
   smartReplies: [],
   isFetchingSmartReplies: false,
+  remoteControlSession: {
+    active: false,
+    hostId: null,
+    participantId: null,
+    role: null
+  },
+  setRemoteControlSession: (session) => set((state) => ({
+    remoteControlSession: { ...state.remoteControlSession, ...session }
+  })),
+
   nativeAgentStatus: { status: 'idle' },
   isControlling: false,
   pendingControlRequest: null,
@@ -772,8 +790,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('control_stopped', () => {
-      set({ nativeAgentStatus: { status: 'idle' } });
-      import('sonner').then(({ toast }) => toast.info('Remote control stopped.'));
+      console.log('[RemoteControl] Session stopped event received');
+      set({ 
+        isControlling: false, 
+        nativeAgentStatus: { status: 'idle' },
+        pendingControlRequest: null 
+      });
+
+      import('./useMeetingStore').then((mStore) => {
+        mStore.useMeetingStore.getState().setRemoteControlState({ 
+          status: 'idle', 
+          role: null, 
+          targetId: null, 
+          targetName: null 
+        });
+      });
+      
+      window.dispatchEvent(new CustomEvent('control_session_stopped'));
+      import('sonner').then(({ toast }) => toast.info('Remote control session ended.'));
     });
 
     socket.on('agent_install_requested', () => {
@@ -1145,6 +1179,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     import('./useParticipantsStore').then((store) => {
       const me = store.useParticipantsStore.getState().participants.find(p => p.id === localUserId);
+      
+      // Strict Host-Only Check
+      if (me?.role !== 'host') {
+        import('sonner').then(({ toast }) => toast.error('Unauthorized', {
+          description: 'Only the meeting host can request remote control.'
+        }));
+        return;
+      }
+
       console.log(`[RemoteControl] Emitting request_control for participant: ${participantId}`);
       socket.emit('request_control', {
         meetingId,
@@ -1194,6 +1237,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         hostId: pendingControlRequest.hostId,
         agentId: 'socket-agent'
       });
+      // Unified state update
+      get().setRemoteControlSession({ 
+        active: true, 
+        role: 'controlled', 
+        hostId: pendingControlRequest.hostId, 
+        participantId: localUserId 
+      });
       set({ isControlling: false });
     } else {
       socket.emit('control_rejected', {
@@ -1206,36 +1256,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   stopControl: () => {
     const { socket, meetingId, controlDataChannel } = get();
+    console.log('[RemoteControl] Stopping control session...');
+    
     if (socket && meetingId) {
       socket.emit('control_stop', { meetingId });
     }
+    
     if (controlDataChannel) {
         controlDataChannel.close();
     }
-    set({ isControlling: false, controlDataChannel: null, nativeAgentStatus: { status: 'idle' } });
-  },
+    
+    set({ 
+      isControlling: false, 
+      controlDataChannel: null, 
+      nativeAgentStatus: { status: 'idle' },
+      pendingControlRequest: null,
+      remoteControlSession: { active: false, hostId: null, participantId: null, role: null }
+    });
 
-
-
-  sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus, controlDataChannel } = get();
-    // Prioritize WebRTC Data Channel if available and open
-    if (controlDataChannel && controlDataChannel.readyState === 'open') {
-      try {
-        controlDataChannel.send(JSON.stringify(event));
-        return;
-      } catch (err) {
-        console.error("Failed to send via DataChannel:", err);
-      }
-    }
-
-    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
-      socket.emit('host_input_event', {
-        agentId: nativeAgentStatus.agentId,
-        event
+    import('./useMeetingStore').then((mStore) => {
+      mStore.useMeetingStore.getState().setRemoteControlState({ 
+        status: 'idle', 
+        role: null, 
+        targetId: null, 
+        targetName: null 
       });
-    }
+    });
   },
+
+
+
+  sendControlEvent: (() => {
+    let lastMouseMoveTime = 0;
+    
+    return (event: any) => {
+      const { socket, meetingId, nativeAgentStatus, controlDataChannel } = get();
+      
+      // OPTIMIZATION: Input Throttling for mouse_move (~60fps)
+      if (event.type === 'mouse_move') {
+        const now = Date.now();
+        if (now - lastMouseMoveTime < 16) return;
+        lastMouseMoveTime = now;
+      }
+
+      // Prioritize WebRTC Data Channel if available and open
+      if (controlDataChannel && controlDataChannel.readyState === 'open') {
+        try {
+          controlDataChannel.send(JSON.stringify(event));
+          return;
+        } catch (err) {
+          console.error("Failed to send via DataChannel:", err);
+        }
+      }
+
+      if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
+        socket.emit('host_input_event', {
+          meetingId, 
+          agentId: nativeAgentStatus.agentId,
+          event
+        });
+      }
+    };
+  })(),
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),
 
