@@ -77,6 +77,8 @@ interface ChatState {
   stopControl: () => void;
   connectToAgent: (agentId: string, targetParticipantId?: string) => void;
   sendControlEvent: (event: any) => void;
+  controlDataChannel: RTCDataChannel | null;
+  setControlDataChannel: (channel: RTCDataChannel | null) => void;
   install_agent_trigger: (meetingId: string, targetId: string) => void;
   getAgentStatus: (meetingId: string, participantId: string) => void;
 
@@ -104,6 +106,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   nativeAgentStatus: { status: 'idle' },
   isControlling: false,
   pendingControlRequest: null,
+  controlDataChannel: null,
+  setControlDataChannel: (channel) => set({ controlDataChannel: channel }),
 
   setPendingControlRequest: (request) => set({ pendingControlRequest: request }),
 
@@ -848,6 +852,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
       });
+    
+    socket.on('caption_language_changed', (data: { language: string }) => {
+      import('./useMeetingStore').then((store) => {
+        store.useMeetingStore.getState().setCaptionLanguage(data.language);
+      });
+    });
     });
 
     // Removed conflicting 'agent_status_update' listener
@@ -1195,16 +1205,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   stopControl: () => {
-    const { socket, meetingId } = get();
+    const { socket, meetingId, controlDataChannel } = get();
     if (socket && meetingId) {
       socket.emit('control_stop', { meetingId });
     }
+    if (controlDataChannel) {
+        controlDataChannel.close();
+    }
+    set({ isControlling: false, controlDataChannel: null, nativeAgentStatus: { status: 'idle' } });
   },
 
 
 
   sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus } = get();
+    const { socket, nativeAgentStatus, controlDataChannel } = get();
+    // Prioritize WebRTC Data Channel if available and open
+    if (controlDataChannel && controlDataChannel.readyState === 'open') {
+      try {
+        controlDataChannel.send(JSON.stringify(event));
+        return;
+      } catch (err) {
+        console.error("Failed to send via DataChannel:", err);
+      }
+    }
+
     if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
       socket.emit('host_input_event', {
         agentId: nativeAgentStatus.agentId,
@@ -1228,6 +1252,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   markAsRead: () => set({ unreadCount: 0 }),
 
   clearFrequentQuestionUsers: () => set({ frequentQuestionUsers: [] }),
+
+  emitCaptionLanguage: (meetingId: string, language: string) => {
+    get().socket?.emit('caption_language_change', { meetingId, language });
+  },
 
   fetchSmartReplies: async (chatContext) => {
     if (get().isFetchingSmartReplies) return;
