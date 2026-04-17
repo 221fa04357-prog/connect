@@ -77,8 +77,8 @@ interface ChatState {
   stopControl: () => void;
   connectToAgent: (agentId: string, targetParticipantId?: string) => void;
   sendControlEvent: (event: any) => void;
-  controlDataChannel: RTCDataChannel | null;
-  setControlDataChannel: (channel: RTCDataChannel | null) => void;
+  controlDataChannels: Record<string, RTCDataChannel>;
+  setControlDataChannel: (socketId: string, channel: RTCDataChannel | null) => void;
   install_agent_trigger: (meetingId: string, targetId: string) => void;
   getAgentStatus: (meetingId: string, participantId: string) => void;
 
@@ -106,8 +106,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   nativeAgentStatus: { status: 'idle' },
   isControlling: false,
   pendingControlRequest: null,
-  controlDataChannel: null,
-  setControlDataChannel: (channel) => set({ controlDataChannel: channel }),
+  controlDataChannels: {},
+  setControlDataChannel: (socketId, channel) => {
+    const channels = { ...get().controlDataChannels };
+    if (channel) {
+      channels[socketId] = channel;
+    } else {
+      delete channels[socketId];
+    }
+    set({ controlDataChannels: channels });
+  },
 
   setPendingControlRequest: (request) => set({ pendingControlRequest: request }),
 
@@ -750,14 +758,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
-    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string }) => {
+    socket.on('control_response', (data: { accepted: boolean, agentSocketId: string, agentId?: string }) => {
       if (data.accepted) {
-        set({ nativeAgentStatus: { status: 'connected', agentSocketId: data.agentSocketId } });
+        set({ 
+          nativeAgentStatus: { 
+            status: 'connected', 
+            agentId: data.agentId || data.agentSocketId, 
+            agentSocketId: data.agentSocketId 
+          } 
+        });
         import('sonner').then(({ toast }) => toast.success('Remote control session started!'));
       } else {
         set({ nativeAgentStatus: { status: 'idle' } });
         import('sonner').then(({ toast }) => toast.error('Remote control request rejected.'));
       }
+    });
+
+    socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
+       console.log('[RemoteControl] External control session started:', data);
+       // If I am the host, I already handle it via control_response.
+       // But if I'm another participant, I might want to know.
     });
 
     socket.on('remote_frame', (data: { frame: string }) => {
@@ -1205,36 +1225,56 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   stopControl: () => {
-    const { socket, meetingId, controlDataChannel } = get();
+    const { socket, meetingId, controlDataChannels } = get();
     if (socket && meetingId) {
       socket.emit('control_stop', { meetingId });
     }
-    if (controlDataChannel) {
-        controlDataChannel.close();
-    }
-    set({ isControlling: false, controlDataChannel: null, nativeAgentStatus: { status: 'idle' } });
+    
+    // Close all data channels for safety or just the active ones? 
+    // Usually we just clear the state.
+    Object.values(controlDataChannels).forEach(ch => {
+        if (ch.readyState === 'open') ch.close();
+    });
+
+    set({ isControlling: false, controlDataChannels: {}, nativeAgentStatus: { status: 'idle' } });
   },
 
 
 
   sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus, controlDataChannel } = get();
-    // Prioritize WebRTC Data Channel if available and open
-    if (controlDataChannel && controlDataChannel.readyState === 'open') {
-      try {
-        controlDataChannel.send(JSON.stringify(event));
-        return;
-      } catch (err) {
-        console.error("Failed to send via DataChannel:", err);
-      }
-    }
-
+    const { socket, nativeAgentStatus, controlDataChannels } = get();
+    
+    // 🚨 1. Native Agent Priority
     if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
       socket.emit('host_input_event', {
         agentId: nativeAgentStatus.agentId,
         event
       });
     }
+
+    // 🚨 2. Browser-to-Browser (DataChannel)
+    // Use dynamic imports to avoid circular dependency issues at boot
+    Promise.all([
+      import('./useMeetingStore'),
+      import('./useParticipantsStore')
+    ]).then(([msStore, pStore]) => {
+      const targetParticipantId = msStore.useMeetingStore.getState().remoteControlState.targetId;
+      if (targetParticipantId) {
+        const targetParticipant = pStore.useParticipantsStore.getState().participants.find(p => p.id === targetParticipantId);
+        const targetSocketId = (targetParticipant as any)?.socketId;
+        
+        if (targetSocketId && controlDataChannels[targetSocketId]) {
+          const channel = controlDataChannels[targetSocketId];
+          if (channel.readyState === 'open') {
+            try {
+              channel.send(JSON.stringify(event));
+            } catch (err) {
+              console.error("Failed to send via DataChannel:", err);
+            }
+          }
+        }
+      }
+    });
   },
 
   setFrequentQuestionUsers: (users) => set({ frequentQuestionUsers: users }),

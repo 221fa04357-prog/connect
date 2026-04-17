@@ -145,18 +145,17 @@ export default function MeetingRoom() {
     };
 
     // --- WEBRTC DATA CHANNEL (CONTROL) ---
-    const dataChannel = pc.createDataChannel('control');
+    const dataChannel = pc.createDataChannel('control', {
+      ordered: true
+    });
     dataChannel.onopen = () => {
       console.log(`[DataChannel] Opened for ${participantSocketId}`);
-      useChatStore.getState().setControlDataChannel(dataChannel);
+      useChatStore.getState().setControlDataChannel(participantSocketId, dataChannel);
     };
     dataChannel.onerror = (error) => console.error(`[DataChannel] Error:`, error);
     dataChannel.onclose = () => {
       console.log(`[DataChannel] Closed for ${participantSocketId}`);
-      const currentChannel = useChatStore.getState().controlDataChannel;
-      if (currentChannel === dataChannel) {
-        useChatStore.getState().setControlDataChannel(null);
-      }
+      useChatStore.getState().setControlDataChannel(participantSocketId, null);
     };
 
     pc.ondatachannel = (event) => {
@@ -355,8 +354,18 @@ export default function MeetingRoom() {
                   return;
                 }
 
-                console.log(`Received OFFER from ${from} (Polite: ${isPolite})`);
-                await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                console.log(`Received OFFER from ${from} (Polite: ${isPolite}, Collision: ${offerCollision})`);
+                
+                if (offerCollision) {
+                  // Polite peer must rollback its own offer to accept the remote one
+                  await Promise.all([
+                    pc.setLocalDescription({ type: "rollback" }),
+                    pc.setRemoteDescription(new RTCSessionDescription(signal))
+                  ]);
+                } else {
+                  await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                }
+
                 await pc.setLocalDescription();
 
                 useChatStore.getState().socket?.emit('signal_send', {
@@ -538,7 +547,7 @@ export default function MeetingRoom() {
 
     // 2. Clear UI control states 
     const chatStore = useChatStore.getState();
-    useChatStore.setState({ isControlling: false, controlDataChannel: null });
+    useChatStore.setState({ isControlling: false, controlDataChannels: {} });
 
     // 3. Disconnect socket
     if (chatStore.socket) {

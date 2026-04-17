@@ -2273,7 +2273,11 @@ io.on('connection', (socket) => {
         }
 
         // agentId may be an internal agent identifier or an actual socket id
-        if (agentSocketMap[agentId]) {
+        const normalizedId = typeof agentId === 'string' ? agentId.replace(/[- ]/g, '').toUpperCase() : agentId;
+
+        if (agentSocketMap[normalizedId]) {
+            targetSocketId = agentSocketMap[normalizedId];
+        } else if (agentSocketMap[agentId]) {
             targetSocketId = agentSocketMap[agentId];
         } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
             targetSocketId = agentId;
@@ -2282,8 +2286,13 @@ io.on('connection', (socket) => {
         } else {
             // If we have a controlSession for this participant, use it
             const candidate = Object.values(controlSessionMap).find(s => s.agentId === agentId || s.hostSocketId === agentId);
-            if (candidate && candidate.agentId && agentSocketMap[candidate.agentId]) {
-                targetSocketId = agentSocketMap[candidate.agentId];
+            if (candidate && candidate.agentId) {
+                const cNormalized = typeof candidate.agentId === 'string' ? candidate.agentId.replace(/[- ]/g, '').toUpperCase() : candidate.agentId;
+                if (agentSocketMap[cNormalized]) {
+                    targetSocketId = agentSocketMap[cNormalized];
+                } else if (agentSocketMap[candidate.agentId]) {
+                    targetSocketId = agentSocketMap[candidate.agentId];
+                }
             }
         }
 
@@ -2338,6 +2347,13 @@ io.on('connection', (socket) => {
             console.log('[RemoteControl] Forwarded remote_frame successfully');
         } else {
             console.warn('[RemoteControl] FAILED to resolve host socket for agent_frame', { hostId, participantId, controlSessionMapKeys: Object.keys(controlSessionMap) });
+        }
+    });
+
+    socket.on('agent_cursor_pos', (data) => {
+        const { hostId, x, y } = data;
+        if (hostId) {
+            io.to(hostId).emit('remote_cursor_pos', { x, y });
         }
     });
 

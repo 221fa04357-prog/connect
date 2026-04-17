@@ -21,9 +21,15 @@ function getPS() {
     ];
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
-    psProcess.stderr.on('data', (data) => console.error(`PS Error: ${data}`));
+    psProcess.stderr.on('data', (data) => console.error(`[PS ERROR] ${data}`));
+    psProcess.stdout.on('data', (data) => console.log(`[PS OUT] ${data}`));
 
-    console.log('Using persistent PowerShell for input simulation');
+    psProcess.on('exit', (code) => {
+        console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
+        psProcess = null;
+    });
+
+    console.log('[INPUT] Using persistent PowerShell session');
     return psProcess;
 }
 
@@ -45,7 +51,10 @@ const InputManager = {
      * Moves mouse to absolute coordinates.
      */
     async moveMouse(x, y) {
-        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(x)}, ${Math.round(y)})\n`;
+        const roundedX = Math.round(x);
+        const roundedY = Math.round(y);
+        // console.log(`[INPUT] Moving mouse to ${roundedX}, ${roundedY}`);
+        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${roundedX}, ${roundedY})\n`;
         getPS().stdin.write(command);
     },
 

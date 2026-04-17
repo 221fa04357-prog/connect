@@ -8,25 +8,46 @@ import { Button } from '@/components/ui';
 
 export function RemoteControlStream() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState<string | null>(null);
+  const [remoteCursor, setRemoteCursor] = useState<{ x: number, y: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { sendControlEvent, controlDataChannel, nativeAgentStatus } = useChatStore();
+  const { socket, sendControlEvent, controlDataChannels, nativeAgentStatus } = useChatStore();
   const { remoteControlState } = useMeetingStore();
   const { remoteScreenStreams } = useMediaStore();
   const { participants } = useParticipantsStore();
   
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [frame, setFrame] = useState<string | null>(null);
   const [mouseEnabled, setMouseEnabled] = useState(true);
   const [keyboardEnabled, setKeyboardEnabled] = useState(true);
 
-  // Fallback for native agent frames if still used
+  // Listen for remote frames and cursor feedback
   useEffect(() => {
-    const handleFrame = (event: any) => {
-      setFrame(event.detail);
+    if (!socket) return;
+
+    const handleFrame = (data: { frame: string }) => {
+      setFrame(data.frame);
     };
-    window.addEventListener('remote_control_frame', handleFrame);
-    return () => window.removeEventListener('remote_control_frame', handleFrame);
-  }, []);
+    const handleCursorPos = (data: { x: number, y: number }) => {
+      setRemoteCursor(data);
+    };
+
+    socket.on('remote_frame', handleFrame);
+    socket.on('remote_cursor_pos', handleCursorPos);
+
+    // Also listen for DataChannel events dispatched via window
+    const handleDcEvent = (e: any) => {
+      if (e.detail?.type === 'cursor_pos') {
+        setRemoteCursor(e.detail);
+      }
+    };
+    window.addEventListener('remote_control_event', handleDcEvent);
+
+    return () => {
+      socket.off('remote_frame', handleFrame);
+      socket.off('remote_cursor_pos', handleCursorPos);
+      window.removeEventListener('remote_control_event', handleDcEvent);
+    };
+  }, [socket]);
 
   const targetParticipant = participants.find(p => p.id === remoteControlState.targetId);
   const targetWebRtcStream = targetParticipant?.socketId ? remoteScreenStreams[targetParticipant.socketId] : null;
@@ -48,38 +69,77 @@ export function RemoteControlStream() {
     }
   }, [targetWebRtcStream]);
 
-  const isDataChannelOpen = controlDataChannel && controlDataChannel.readyState === 'open';
+  const isDataChannelOpen = Object.values(controlDataChannels).some(ch => ch.readyState === 'open');
+
+  const lastSentRef = useRef<number>(0);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!mouseEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
     
+    // 🚨 1. Throttling (Industry Level)
+    const now = Date.now();
+    if (now - lastSentRef.current < 15) return;
+    lastSentRef.current = now;
+
     let rect;
+    let contentWidth, contentHeight;
+    let offsetX = 0, offsetY = 0;
+
     if (isWebRtcStream && videoRef.current) {
         rect = videoRef.current.getBoundingClientRect();
+        const video = videoRef.current;
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const elementRatio = rect.width / rect.height;
+
+        if (elementRatio > videoRatio) {
+            contentHeight = rect.height;
+            contentWidth = rect.height * videoRatio;
+            offsetX = (rect.width - contentWidth) / 2;
+        } else {
+            contentWidth = rect.width;
+            contentHeight = rect.width / videoRatio;
+            offsetY = (rect.height - contentHeight) / 2;
+        }
     } else if (containerRef.current) {
         rect = containerRef.current.getBoundingClientRect();
+        contentWidth = rect.width;
+        contentHeight = rect.height;
     }
+    
     if (!rect) return;
 
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    // 🚨 2. Coordinate Mapping Issue Fix
+    const clientXInElement = e.clientX - rect.left;
+    const clientYInElement = e.clientY - rect.top;
 
-    sendControlEvent({ type: 'mouse_move', x, y });
+    const x = (clientXInElement - offsetX) / contentWidth;
+    const y = (clientYInElement - offsetY) / contentHeight;
+
+    // Clamp values between 0 and 1
+    const clampedX = Math.max(0, Math.min(1, x));
+    const clampedY = Math.max(0, Math.min(1, y));
+
+    sendControlEvent({ 
+      type: 'mouse_move', 
+      x: clampedX, 
+      y: clampedY,
+      time: Date.now()
+    });
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!mouseEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
     const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
-    sendControlEvent({ type: 'mouse_down', button: buttonMap[e.button] || 'left' });
+    sendControlEvent({ type: 'mouse_down', button: buttonMap[e.button] || 'left', time: Date.now() });
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
     if (!mouseEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
     const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
-    sendControlEvent({ type: 'mouse_up', button: buttonMap[e.button] || 'left' });
+    sendControlEvent({ type: 'mouse_up', button: buttonMap[e.button] || 'left', time: Date.now() });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -91,7 +151,8 @@ export function RemoteControlStream() {
       shift: e.shiftKey,
       ctrl: e.ctrlKey,
       alt: e.altKey,
-      meta: e.metaKey
+      meta: e.metaKey,
+      time: Date.now()
     });
     if (['Tab', 'F1', 'F3', 'F5', 'F6', 'F11', 'F12'].includes(e.key)) {
         e.preventDefault();
@@ -101,23 +162,22 @@ export function RemoteControlStream() {
   const handleKeyUp = (e: React.KeyboardEvent) => {
     if (!keyboardEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
-    sendControlEvent({ type: 'key_up', key: e.key.toLowerCase() });
+    sendControlEvent({ type: 'key_up', key: e.key.toLowerCase(), time: Date.now() });
   };
 
   const handleWheel = (e: React.WheelEvent) => {
     if (!mouseEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
-    sendControlEvent({ type: 'mouse_wheel', deltaX: e.deltaX, deltaY: e.deltaY });
+    sendControlEvent({ type: 'mouse_wheel', deltaX: e.deltaX, deltaY: e.deltaY, time: Date.now() });
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!mouseEnabled) return;
     if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
     const buttonMap: Record<number, string> = { 0: 'left', 1: 'middle', 2: 'right' };
-    sendControlEvent({ type: 'mouse_double_click', button: buttonMap[e.button] || 'left' });
+    sendControlEvent({ type: 'mouse_double_click', button: buttonMap[e.button] || 'left', time: Date.now() });
   };
 
-  // UI Fix Requirement: show "You are controlling..." ONLY if stream is available AND data channel or agent is open
   const canControl = isDataChannelOpen || nativeAgentStatus.status === 'connected';
 
   if (!canControl || !hasStream) {
@@ -169,6 +229,27 @@ export function RemoteControlStream() {
           tabIndex={0}
           onKeyDown={handleKeyDown}
           onKeyUp={handleKeyUp}
+        />
+      )}
+
+      {/* VIRTUAL CURSOR OVERLAY */}
+      {remoteCursor && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${remoteCursor.x * 100}%`,
+            top: `${remoteCursor.y * 100}%`,
+            width: '12px',
+            height: '12px',
+            backgroundColor: 'rgba(255, 0, 0, 0.6)',
+            border: '2px solid white',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 100,
+            boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+            transition: 'all 0.05s linear'
+          }}
         />
       )}
 

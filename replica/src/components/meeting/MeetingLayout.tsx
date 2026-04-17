@@ -1291,7 +1291,7 @@ function ControlApprovalDialog() {
             description: "The installer will start downloading shortly."
         });
         window.open(
-            "https://drive.google.com/uc?export=download&id=16SKAG5jiaPcgeknTP7Y7OAPdhqKuYQWE"
+            "https://drive.google.com/uc?export=download&id=1VSqThAxMOHIR9CvUdX9uwQIj-cD_MIvI"
         );
 
         if (meetingId && localUserId) {
