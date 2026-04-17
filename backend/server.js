@@ -2204,14 +2204,14 @@ io.on('connection', (socket) => {
 
         // Broadcast to the meeting so everyone stays in sync with control status
         io.to(meetingId).emit('control_started', {
-            agentId: linkedAgentId || 'native-agent',
+            agentId: linkedAgentId || agentSocketId,
             participantId,
             hostId
         });
 
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
-            io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
+            io.to(hostSocketId).emit('control_connected', { agentId: linkedAgentId || agentSocketId, agentSocketId });
         } else {
             console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
         }
