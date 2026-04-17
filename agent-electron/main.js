@@ -117,18 +117,29 @@ function stopStreaming() {
     isControlled = false;
 }
 
-async function handleInputEvent(event) {
+async function handleInputEvent(event, hostId) {
     if (!isControlled) return;
 
     try {
         const { type, x, y, button, key } = event;
         const { width, height } = screen.getPrimaryDisplay().bounds;
 
+        console.log(`[AGENT] Executing ${type}`, { x, y, button, key });
+
         if (type === 'mouse_move') {
             const now = Date.now();
             if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
-                await InputManager.moveMouse(x * width, y * height);
+                const targetX = x * width;
+                const targetY = y * height;
+                await InputManager.moveMouse(targetX, targetY);
                 lastMouseMove = now;
+
+                // Send feedback back to host
+                socket.emit('agent_cursor_pos', {
+                    hostId, 
+                    participantId: global.participantId,
+                    x, y
+                });
             }
         } else if (type === 'mouse_down') {
             await InputManager.mouseDown(button || 'left');
@@ -136,6 +147,8 @@ async function handleInputEvent(event) {
             await InputManager.mouseUp(button || 'left');
         } else if (type === 'mouse_click') {
             await InputManager.clickMouse(button || 'left', event.double || false);
+        } else if (type === 'mouse_double_click') {
+            await InputManager.clickMouse(button || 'left', true);
         } else if (type === 'key_down' || type === 'key_press') {
             await InputManager.simulateKey(key, false);
         } else if (type === 'key_up') {
@@ -213,9 +226,9 @@ app.whenReady().then(() => {
     // ✅ HOST INPUT (mouse/keyboard)
     const handleIncomingInput = (event) => {
         if (event && event.event) {
-            handleInputEvent(event.event);
+            handleInputEvent(event.event, event.hostId);
         } else {
-            handleInputEvent(event);
+            handleInputEvent(event, null);
         }
     };
 
