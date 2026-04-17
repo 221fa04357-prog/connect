@@ -74,8 +74,12 @@ export function RemoteControlStream() {
   const lastSentRef = useRef<number>(0);
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    console.log('[RemoteControl] Mouse move detected');
     if (!mouseEnabled) return;
-    if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') return;
+    if (!isDataChannelOpen && nativeAgentStatus.status !== 'connected') {
+        console.warn('[RemoteControl] Mouse move blocked: No connection', { isDataChannelOpen, status: nativeAgentStatus.status });
+        return;
+    }
     
     // 🚨 1. Throttling (Industry Level)
     const now = Date.now();
