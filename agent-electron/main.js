@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron');
+const { app, BrowserWindow, screen, desktopCapturer, globalShortcut } = require('electron');
 app.commandLine.appendSwitch('ignore-certificate-errors');
 const io = require('socket.io-client');
 const InputManager = require('./input-manager');
@@ -7,257 +7,193 @@ const InputManager = require('./input-manager');
 const SERVER_URL = 'https://connect-pupt.onrender.com';
 let socket;
 let mainWindow;
-let captureInterval;
 let isControlled = false;
+let isControlAllowed = false;
+let activeSessionToken = null;
 const AGENT_ID = 'AGENT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-// Single instance lock
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-    app.quit();
-} else {
-    app.on('second-instance', () => {
-        if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
+// Adaptive Performance State
+let frameFPS = 20;
+let frameQuality = 75;
+let lastCpuCheck = 0;
+
+// Input Queue
+const eventQueue = [];
+const QUEUE_PROCESS_INTERVAL = 10; // Process events every 10ms to handle jitter
+
+function setupEventListeners() {
+    socket.removeAllListeners();
+
+    socket.on('connect', () => {
+        console.log('[SOCKET] Linked to signaling server');
+        socket.emit("agent_idle_connect", { agentId: AGENT_ID });
+    });
+
+    socket.on("manual_link_received", (data) => {
+        global.meetingId = data.meetingId;
+        global.participantId = data.participantId;
+        socket.emit("agent_status", { agentId: AGENT_ID, meetingId: data.meetingId, participantId: data.participantId, ready: true });
+    });
+
+    socket.on('control_started', (data) => {
+        activeSessionToken = data?.token || "SESSION_SECURE_PROTO";
+        startStreaming(data.hostId, data.participantId || global.participantId);
+    });
+
+    socket.on('control_stopped', stopStreaming);
+
+    // Clipboard Sync Event
+    socket.on('clipboard_update', (data) => {
+        if (isControlAllowed && data.text) {
+            InputManager.setClipboardText(data.text);
+            console.log('[CLIPBOARD] Synced text from participant');
         }
     });
 
-    // Move app.whenReady() or other logic here if you want it inside the lock
-    // But usually you just quit if it's not the first instance.
+    const handleIncomingInput = (event) => {
+        const payload = event?.event || event;
+        // SESSION VALIDATION
+        if (activeSessionToken && payload.token && payload.token !== activeSessionToken) {
+            console.warn('[SECURITY] Unauthorized input attempt blocked.');
+            return;
+        }
+
+        // OPTIMIZATION: If queue has multiple mouse moves, discard the oldest ones
+        // to prevent "rubber banding" / cursor delay during network spikes.
+        if (payload.type === 'mouse_move') {
+            const lastMoveIndex = eventQueue.findLastIndex(e => e.type === 'mouse_move');
+            if (lastMoveIndex !== -1 && eventQueue.length > 5) {
+                // If there are already moves in queue, replace the last one or remove it
+                // To keep the queue short and responsive.
+                eventQueue.splice(lastMoveIndex, 1);
+            }
+        }
+
+        eventQueue.push(payload);
+    };
+
+    socket.on('host_input_event', handleIncomingInput);
+    socket.on('input_event', handleIncomingInput);
 }
 
-// Performance Optimization: Throttling
-let lastMouseMove = 0;
-const MOUSE_THROTTLE_MS = 33; // ~30 FPS for mouse events
+// Process Input Queue systematically
+setInterval(async () => {
+    if (eventQueue.length === 0 || !isControlAllowed) return;
+    
+    const event = eventQueue.shift();
+    await handleInputEvent(event);
+}, QUEUE_PROCESS_INTERVAL);
 
-// Session Linking
-global.meetingId = null;
-global.participantId = null;
+async function handleInputEvent(event) {
+    try {
+        const { type, x, y, dx, dy, button, key, deltaX, deltaY, canvasWidth, canvasHeight, isRelative } = event;
 
-function createWindow() {
-    mainWindow = new BrowserWindow({
-        width: 400,
-        height: 550,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-        },
-        show: true
-    });
+        // Ensure focus for keyboard input
+        if (type.startsWith('key_')) {
+            await InputManager.ensureFocus();
+        }
 
-    mainWindow.loadFile('index.html');
-
-    // Send initial ID and status
-    mainWindow.webContents.on('did-finish-load', () => {
-        const currentStatus = (socket && socket.connected) ? 'Connected' : 'Connecting...';
-        mainWindow.webContents.send('status-update', {
-            status: currentStatus,
-            agentId: AGENT_ID,
-            serverUrl: SERVER_URL,
-            meetingId: global.meetingId
-        });
-    });
+        switch (type) {
+            case 'mouse_move':
+                if (isRelative) {
+                    await InputManager.moveMouse(dx || 0, dy || 0, true);
+                } else {
+                    const coords = InputManager.mapCoordinates(x, y, canvasWidth, canvasHeight);
+                    await InputManager.moveMouse(coords.x, coords.y);
+                }
+                break;
+            case 'mouse_down': await InputManager.mouseDown(button || 'left'); break;
+            case 'mouse_up': await InputManager.mouseUp(button || 'left'); break;
+            case 'mouse_click': await InputManager.clickMouse(button || 'left', event.double || false); break;
+            case 'mouse_wheel': await InputManager.scrollMouse(deltaX || 0, deltaY || 0); break;
+            case 'key_down': case 'key_press': await InputManager.simulateKey(key, false); break;
+            case 'key_up': await InputManager.simulateKey(key, true); break;
+            case 'clipboard_request':
+                const text = InputManager.getClipboardText();
+                socket.emit('agent_clipboard', { text });
+                break;
+            default: console.warn(`[DEBUG] Unknown event type: ${type}`);
+        }
+    } catch (err) {
+        console.error('[ERROR] Input execution failure:', err);
+    }
 }
 
-
+// Adaptive Performance Control
+function monitorPerformance() {
+    const now = Date.now();
+    if (now - lastCpuCheck > 5000) {
+        // Mock CPU check/load detection
+        // If high load, reduce frame rate to save battery/local perf
+        const isHighLoad = false; // In a real app we'd use process.getCPUUsage()
+        if (isHighLoad) {
+            frameFPS = 10;
+            frameQuality = 50;
+        } else {
+            frameFPS = 24;
+            frameQuality = 75;
+        }
+        lastCpuCheck = now;
+    }
+}
 
 let captureTimeout;
-
 async function captureLoop(hostId, participantId) {
     if (!isControlled) return;
+    monitorPerformance();
     try {
         const start = Date.now();
         const sources = await desktopCapturer.getSources({
             types: ['screen'],
-            thumbnailSize: { width: 1280, height: 720 }
+            thumbnailSize: { width: 1920, height: 1080 }
         });
 
         if (sources.length > 0) {
             const screenSource = sources[0];
             const thumb = screenSource.thumbnail;
             if (!thumb.isEmpty()) {
-                const jpegBuffer = thumb.toJPEG(60);
+                const jpegBuffer = thumb.toJPEG(frameQuality);
                 const base64 = jpegBuffer.toString('base64');
-
-                socket.emit('agent_frame', {
-                    hostId,
-                    participantId,
-                    frame: `data:image/jpeg;base64,${base64}`
-                });
-                console.log('Agent frame emitted', { hostId, participantId });
+                socket.emit('agent_frame', { hostId, participantId, frame: `data:image/jpeg;base64,${base64}` });
             }
         }
 
-        // Dynamically delay to prevent event loop starvation (~15 FPS target)
         const elapsed = Date.now() - start;
-        const delay = Math.max(0, 66 - elapsed);
-
-        if (isControlled) {
-            captureTimeout = setTimeout(() => captureLoop(hostId, participantId), delay);
-        }
+        const delay = Math.max(0, (1000 / frameFPS) - elapsed);
+        if (isControlled) captureTimeout = setTimeout(() => captureLoop(hostId, participantId), delay);
     } catch (err) {
-        console.error('Capture error:', err);
-        // Continue loop even on failure to avoid deadlocks
-        if (isControlled) {
-            captureTimeout = setTimeout(() => captureLoop(hostId, participantId), 100);
-        }
+        if (isControlled) captureTimeout = setTimeout(() => captureLoop(hostId, participantId), 100);
     }
 }
 
 async function startStreaming(hostId, participantId) {
     if (captureTimeout) clearTimeout(captureTimeout);
     isControlled = true;
-    console.log('Starting screen stream for host:', hostId, 'participant:', participantId);
+    isControlAllowed = true;
     captureLoop(hostId, participantId);
 }
 
 function stopStreaming() {
+    console.log('[SAFETY] Terminating session and releasing input.');
     if (captureTimeout) clearTimeout(captureTimeout);
+    
+    // DRAG SAFETY: Release all mouse buttons on stop
+    InputManager.mouseUp('left');
+    InputManager.mouseUp('right');
+    InputManager.mouseUp('middle');
+
     isControlled = false;
+    isControlAllowed = false;
+    activeSessionToken = null;
+    eventQueue.length = 0; // Clear pending events
 }
 
-async function handleInputEvent(event) {
-    if (!isControlled) return;
-
-    try {
-        const { type, x, y, button, key } = event;
-        const { width, height } = screen.getPrimaryDisplay().bounds;
-
-        if (type === 'mouse_move') {
-            const now = Date.now();
-            if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
-                await InputManager.moveMouse(x * width, y * height);
-                lastMouseMove = now;
-            }
-        } else if (type === 'mouse_down') {
-            await InputManager.mouseDown(button || 'left');
-        } else if (type === 'mouse_up') {
-            await InputManager.mouseUp(button || 'left');
-        } else if (type === 'mouse_click') {
-            await InputManager.clickMouse(button || 'left', event.double || false);
-        } else if (type === 'key_down' || type === 'key_press') {
-            await InputManager.simulateKey(key, false);
-        } else if (type === 'key_up') {
-            await InputManager.simulateKey(key, true);
-        }
-    } catch (err) {
-        console.error('Input execution error:', err);
-    }
-}
-
-app.whenReady().then(() => {
-    console.log('[AGENT] Screen capturing and remote control logic initialized.');
-    console.log('[AGENT] NOTE: Running as Administrator is recommended for full system-level input control.');
+app.whenReady().then(async () => {
+    globalShortcut.register('CommandOrControl+Shift+Q', stopStreaming);
     createWindow();
-
-    socket = io(SERVER_URL, {
-        transports: ["websocket"],
-        secure: true,
-        rejectUnauthorized: false
-    });
-
-    socket.on('connect', () => {
-        console.log('Connected to signaling server');
-
-        // --- NEW AUTO-LINK BEHAVIOR ---
-        // Emit agent_idle_connect instead of agent_status on initial boot
-        socket.emit("agent_idle_connect", { agentId: AGENT_ID });
-
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
-        }
-    });
-
-    // Listen for manual or auto link pairing from backend
-    socket.on("manual_link_received", ({ meetingId, participantId }) => {
-        console.log(`[LINK] Assigned to participant ${participantId} in meeting ${meetingId}`);
-        global.meetingId = meetingId;
-        global.participantId = participantId;
-
-        socket.emit("agent_status", {
-            agentId: AGENT_ID,
-            meetingId,
-            participantId,
-            ready: true
-        });
-
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Linked & Connected',
-                agentId: AGENT_ID,
-                meetingId: global.meetingId
-            });
-        }
-    });
-
-    // ✅ CONTROL START
-    socket.on('control_started', (data) => {
-        const hostId = data?.hostId;
-        const participantId = data?.participantId || global.participantId;
-        if (!hostId) {
-            console.warn('control_started received without hostId');
-            return;
-        }
-        startStreaming(hostId, participantId);
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Controlled by Host',
-                agentId: AGENT_ID,
-                meetingId: global.meetingId,
-                participantId
-            });
-        }
-    });
-
-    // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (event) => {
-        if (event && event.event) {
-            handleInputEvent(event.event);
-        } else {
-            handleInputEvent(event);
-        }
-    };
-
-    socket.on('host_input_event', handleIncomingInput);
-    socket.on('input_event', handleIncomingInput);
-
-    // ✅ CONTROL STOP
-    socket.on('control_stopped', () => {
-        console.log('[AGENT] Control stopped');
-        global.currentRequestId = null;
-        stopStreaming();
-
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Linked & Connected',
-                agentId: AGENT_ID,
-                meetingId: global.meetingId
-            });
-        }
-    });
-
-    socket.on('connect_error', (error) => {
-        console.error('Connection Error:', error.message);
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Error: ' + error.message,
-                agentId: AGENT_ID
-            });
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('Disconnected from signaling server');
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status: 'Disconnected',
-                agentId: AGENT_ID
-            });
-        }
-    });
+    socket = io(SERVER_URL, { transports: ["websocket"], secure: true, reconnection: true });
+    setupEventListeners();
 });
 
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
-});
+app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
