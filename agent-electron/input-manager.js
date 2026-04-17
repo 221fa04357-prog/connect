@@ -9,30 +9,20 @@ function getPS() {
         stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Initialize common types and Win32 API
+    // Initialize common types
     const initCommands = [
-        '[Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null',
-        '[Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null',
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        'Add-Type -AssemblyName System.Drawing;',
         '$sig = @\'',
-        '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);',
         '[DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, uint dwExtraInfo);',
         '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);',
         '\'@',
-        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru | Out-Null'
+        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru > $null;'
     ];
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
-    
-    psProcess.stderr.on('data', (data) => {
-        const err = data.toString();
-        if (err.includes('Error') || err.includes('Exception')) {
-            console.error(`[PS ERROR] ${err}`);
-        }
-    });
-    
-    psProcess.stdout.on('data', (data) => {
-        // console.log(`[PS OUT] ${data}`);
-    });
+    psProcess.stderr.on('data', (data) => console.error(`[PS ERROR] ${data}`));
+    psProcess.stdout.on('data', (data) => console.log(`[PS OUT] ${data}`));
 
     psProcess.on('exit', (code) => {
         console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
@@ -63,8 +53,8 @@ const InputManager = {
     async moveMouse(x, y) {
         const roundedX = Math.round(x);
         const roundedY = Math.round(y);
-        // Using SetCursorPos directly via our Win32 class is much faster and more reliable than [Cursor]::Position
-        const command = `[Win32.Win32Input]::SetCursorPos(${roundedX}, ${roundedY});\n`;
+        // console.log(`[INPUT] Moving mouse to ${roundedX}, ${roundedY}`);
+        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${roundedX}, ${roundedY})\n`;
         getPS().stdin.write(command);
     },
 
@@ -92,24 +82,12 @@ const InputManager = {
      * Clicks the mouse.
      */
     async clickMouse(button = 'left', double = false) {
-        // We combine these into a single write to ensure they are processed sequentially by the same PS instance
-        const flagDown = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
-                         button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
-        const flagUp = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 
-                       button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
-        
-        let command = `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
-        command += `Start-Sleep -m 50; `;
-        command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0);\n`;
-        
+        await this.mouseDown(button);
+        await this.mouseUp(button);
         if (double) {
-            command += `Start-Sleep -m 100; `;
-            command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
-            command += `Start-Sleep -m 50; `;
-            command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0);\n`;
+            await this.mouseDown(button);
+            await this.mouseUp(button);
         }
-        
-        getPS().stdin.write(command);
     },
 
     /**
@@ -135,9 +113,7 @@ const InputManager = {
         } else {
             // Fallback for typing whole strings or complex keys on key_down
             if (!isUp) {
-                // Escape special characters for SendKeys
-                const escapedKey = key.replace(/([+^%~(){}[\]])/g, '{$1}').replace(/'/g, "''");
-                const command = `[System.Windows.Forms.SendKeys]::SendWait('${escapedKey}')\n`;
+                const command = `[Windows.Forms.SendKeys]::SendWait('${key.replace(/'/g, "''")}')\n`;
                 getPS().stdin.write(command);
             }
         }

@@ -775,32 +775,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
-       console.log('[RemoteControl] Control session started globally:', data);
-       const hostIsMe = data.hostId === get().localUserId || data.hostId === get().socket?.id;
-       
-       if (hostIsMe) {
-         set({ 
-           isControlling: true,
-           nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId } 
-         });
-         import('sonner').then(({ toast }) => toast.success('Remote control started!'));
-         
-         // Update MeetingStore as well
-         import('./useMeetingStore').then((store) => {
-           const participants = import('./useParticipantsStore').then(pStore => {
-             const pList = pStore.useParticipantsStore.getState().participants;
-             const target = pList.find(p => p.id === data.participantId);
-             store.useMeetingStore.getState().setRemoteControlState({
-               status: 'active',
-               role: 'controller',
-               targetId: data.participantId,
-               targetName: target?.name || 'Participant'
-             });
-           });
-         });
-       } else if (data.participantId === get().localUserId) {
-         import('sonner').then(({ toast }) => toast.info('Control session is now active.'));
-       }
+       console.log('[RemoteControl] External control session started:', data);
+       // If I am the host, I already handle it via control_response.
+       // But if I'm another participant, I might want to know.
     });
 
     socket.on('remote_frame', (data: { frame: string }) => {
@@ -896,12 +873,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       });
     
-    });
-
     socket.on('caption_language_changed', (data: { language: string }) => {
       import('./useMeetingStore').then((store) => {
         store.useMeetingStore.getState().setCaptionLanguage(data.language);
       });
+    });
     });
 
     // Removed conflicting 'agent_status_update' listener
@@ -938,7 +914,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ pendingControlRequest: { hostId: data.hostId, hostName: data.hostName } });
     });
 
-    // control_started handled above (merged)
+    socket.on('control_started', (data: { agentId: string, participantId: string, hostId: string }) => {
+      console.log('[Frontend] Remote control STARTED:', data);
+      const hostIsMe = data.hostId === get().socket?.id;
+
+      if (hostIsMe) {
+        import('sonner').then(({ toast }) => toast.success('Remote control started!'));
+        set({
+          isControlling: true,
+          nativeAgentStatus: { status: 'connected', agentId: data.agentId, targetParticipantId: data.participantId }
+        });
+
+        import('./useParticipantsStore').then((pStore) => {
+          const participants = pStore.useParticipantsStore.getState().participants;
+          const target = participants.find(p => p.id === data.participantId);
+          import('./useMeetingStore').then((mStore) => {
+            mStore.useMeetingStore.getState().setRemoteControlState({
+              status: 'active',
+              role: 'controller',
+              targetId: data.participantId,
+              targetName: target?.name || 'Participant'
+            });
+          });
+        });
+      } else if (data.participantId === get().localUserId) {
+        import('sonner').then(({ toast }) => toast.info('Control session is now active.'));
+      }
+    });
 
     socket.on('control_denied', (data: { participantId: string }) => {
       console.log('[Frontend] Control request denied by participant');
@@ -1243,19 +1245,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { socket, nativeAgentStatus, controlDataChannels } = get();
     
     // 🚨 1. Native Agent Priority
-    if (socket && nativeAgentStatus.status === 'connected') {
-      const ms = import.meta.glob('./useMeetingStore.ts', { eager: true })['./useMeetingStore.ts'] as any;
-      const targetId = nativeAgentStatus.targetParticipantId || ms?.useMeetingStore?.getState()?.remoteControlState?.targetId;
-      
-      console.log(`[RemoteControl] Sending ${event.type} to Agent: ${nativeAgentStatus.agentId}, Participant: ${targetId}`);
-      
+    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
       socket.emit('host_input_event', {
         agentId: nativeAgentStatus.agentId,
-        participantId: targetId,
         event
       });
-    } else {
-      console.warn(`[RemoteControl] Native Agent NOT connected. Status: ${nativeAgentStatus.status}, ID: ${nativeAgentStatus.agentId}`);
     }
 
     // 🚨 2. Browser-to-Browser (DataChannel)
