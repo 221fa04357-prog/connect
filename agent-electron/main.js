@@ -224,11 +224,14 @@ app.whenReady().then(() => {
     });
 
     // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (event) => {
-        if (event && event.event) {
-            handleInputEvent(event.event, event.hostId);
-        } else {
-            handleInputEvent(event, null);
+    const handleIncomingInput = (data) => {
+        // console.log('[AGENT] Incoming input data:', data);
+        if (data && data.type) {
+            // Direct event object (new relay format)
+            handleInputEvent(data, data.hostId || null);
+        } else if (data && data.event) {
+            // Wrapped event object
+            handleInputEvent(data.event, data.hostId || null);
         }
     };
 
