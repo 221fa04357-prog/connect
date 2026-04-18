@@ -9,42 +9,46 @@ function getPS() {
         stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Initialize common types and Win32 API
+    // Initialize common types
     const initCommands = [
-        '[Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null',
-        '[Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null',
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        'Add-Type -AssemblyName System.Drawing;',
         '$sig = @\'',
-        '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);',
         '[DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, uint dwExtraInfo);',
         '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);',
         '\'@',
-        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru | Out-Null'
+        'Add-Type -MemberDefinition $sig -Name "Win32Input" -Namespace "Win32" -PassThru > $null;'
     ];
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
-    
-    // Check for success
-    psProcess.stdin.write('if ([Win32.Win32Input]) { "WIN32_READY" } else { "WIN32_FAILED" }\n');
-    
-    psProcess.stderr.on('data', (data) => {
-        const err = data.toString();
-        if (err.includes('Error') || err.includes('Exception')) {
-            console.error(`[PS ERROR] ${err}`);
-        }
-    });
-    
-    psProcess.stdout.on('data', (data) => {
-        const out = data.toString();
-        if (out.includes('WIN32_READY')) {
-            console.log('[INPUT] Win32 API successfully injected into PowerShell');
-        }
-        // console.log(`[PS OUT] ${data}`);
-    });
 
-    psProcess.on('exit', (code) => {
-        console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
-        psProcess = null;
-    });
+// Check for success
+psProcess.stdin.write('if ([Win32.Win32Input]) { "WIN32_READY" } else { "WIN32_FAILED" }\n');
+
+// STDERR (keep full logging but structured)
+psProcess.stderr.on('data', (data) => {
+    const err = data.toString();
+    console.error(`[PS ERROR] ${err}`);
+});
+
+// STDOUT (keep debug + success detection)
+psProcess.stdout.on('data', (data) => {
+    const out = data.toString();
+
+    if (out.includes('WIN32_READY')) {
+        console.log('[INPUT] Win32 API successfully injected into PowerShell');
+    } else if (out.includes('WIN32_FAILED')) {
+        console.error('[INPUT] Win32 API injection FAILED');
+    }
+
+    // Optional debug log (enable if needed)
+    console.log(`[PS OUT] ${out}`);
+});
+
+psProcess.on('exit', (code) => {
+    console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
+    psProcess = null;
+});
 
     console.log('[INPUT] Using persistent PowerShell session');
     return psProcess;
@@ -65,15 +69,18 @@ const InputManager = {
     },
 
     /**
-     * Moves mouse to absolute coordinates.
-     */
-    async moveMouse(x, y) {
-        const roundedX = Math.round(x);
-        const roundedY = Math.round(y);
-        console.log(`[INPUT] Moving mouse to: ${roundedX}, ${roundedY}`);
-        const command = `[Win32.Win32Input]::SetCursorPos(${roundedX}, ${roundedY});\n`;
-        getPS().stdin.write(command);
-    },
+ * Moves mouse to absolute coordinates.
+ */
+async moveMouse(x, y) {
+    const roundedX = Math.round(x);
+    const roundedY = Math.round(y);
+
+    // Keep logging optional (enable when debugging)
+    console.log(`[INPUT] Moving mouse to: ${roundedX}, ${roundedY}`);
+
+    const command = `[Win32.Win32Input]::SetCursorPos(${roundedX}, ${roundedY});\n`;
+    getPS().stdin.write(command);
+},
 
     /**
      * mouseDown simulation.
@@ -97,28 +104,36 @@ const InputManager = {
     },
 
     /**
-     * Clicks the mouse.
-     */
-    async clickMouse(button = 'left', double = false) {
-        console.log(`[INPUT] Clicking mouse: ${button} (double: ${double})`);
-        const flagDown = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
-                         button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
-        const flagUp = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 
-                       button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
-        
-        let command = `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
-        command += `Start-Sleep -m 50; `;
-        command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0);\n`;
-        
-        if (double) {
-            command += `Start-Sleep -m 100; `;
-            command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
-            command += `Start-Sleep -m 50; `;
-            command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0);\n`;
-        }
-        
-        getPS().stdin.write(command);
-    },
+ * Clicks the mouse.
+ */
+async clickMouse(button = 'left', double = false) {
+    console.log(`[INPUT] Clicking mouse: ${button} (double: ${double})`);
+
+    const flagDown = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
+                     button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
+
+    const flagUp = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 
+                   button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
+
+    let command = '';
+
+    // First click
+    command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
+    command += `Start-Sleep -Milliseconds 50; `;
+    command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0); `;
+
+    // Double click
+    if (double) {
+        command += `Start-Sleep -Milliseconds 100; `;
+        command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
+        command += `Start-Sleep -Milliseconds 50; `;
+        command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0); `;
+    }
+
+    command += `\n`;
+
+    getPS().stdin.write(command);
+},
 
     /**
      * Simulates a key event (down/up).
@@ -143,9 +158,7 @@ const InputManager = {
         } else {
             // Fallback for typing whole strings or complex keys on key_down
             if (!isUp) {
-                // Escape special characters for SendKeys
-                const escapedKey = key.replace(/([+^%~(){}[\]])/g, '{$1}').replace(/'/g, "''");
-                const command = `[System.Windows.Forms.SendKeys]::SendWait('${escapedKey}')\n`;
+                const command = `[Windows.Forms.SendKeys]::SendWait('${key.replace(/'/g, "''")}')\n`;
                 getPS().stdin.write(command);
             }
         }

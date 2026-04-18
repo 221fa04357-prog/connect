@@ -246,18 +246,35 @@ app.whenReady().then(() => {
     });
 
     // ✅ HOST INPUT (mouse/keyboard)
-    const handleIncomingInput = (data) => {
-        console.log('[AGENT] Incoming socket event data:', JSON.stringify(data));
-        if (data && data.type) {
-            // Direct event object (new relay format)
-            handleInputEvent(data, data.hostId || null);
-        } else if (data && data.event) {
-            // Wrapped event object
-            handleInputEvent(data.event, data.hostId || null);
-        } else {
-            console.warn('[AGENT] Unrecognized input data format:', data);
-        }
-    };
+const handleIncomingInput = (data) => {
+    if (!data) {
+        console.warn('[AGENT] Received empty input data');
+        return;
+    }
+
+    // Debug (enable when needed)
+    console.log('[AGENT] Incoming input:', JSON.stringify(data));
+
+    let event = null;
+    let hostId = null;
+
+    if (data.type) {
+        // New format (direct event)
+        event = data;
+        hostId = data.hostId || null;
+
+    } else if (data.event) {
+        // Wrapped format
+        event = data.event;
+        hostId = data.hostId || null;
+
+    } else {
+        console.warn('[AGENT] Unrecognized input format:', data);
+        return;
+    }
+
+    handleInputEvent(event, hostId);
+};
 
     socket.on('host_input_event', handleIncomingInput);
     socket.on('input_event', handleIncomingInput);
