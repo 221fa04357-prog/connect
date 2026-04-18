@@ -2103,7 +2103,6 @@ io.on('connection', (socket) => {
             if (agentSocketMap[aid] === socket.id) {
                 console.log(`[AGENT] Removing agentId ${aid} from socket map and queues`);
                 delete agentSocketMap[aid];
-                // availableAgents = availableAgents.filter(a => a !== aid); // Move this outside if we want to remove all
 
                 // Clear active session to allow participant to reconnect later if agent crashes
                 for (const pid in activeSessions) {
@@ -2113,7 +2112,6 @@ io.on('connection', (socket) => {
                         break;
                     }
                 }
-                // Do NOT break, we want to clear all mappings for this socket.id
             }
         }
         // Cleanup available agents once
