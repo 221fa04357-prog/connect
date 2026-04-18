@@ -677,9 +677,6 @@ const ANALYTICS_WINDOW_MS = 20 * 60 * 1000;
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    // Helper to check if a socket exists and is connected
-    const isValidSocket = (sid) => sid && io.sockets.sockets.get && io.sockets.sockets.get(sid);
-
     // --- GLOBAL EVENT LOGGER FOR DEBUGGING ---
     socket.onAny((event, data) => {
         if (event === 'agent_frame' || event === 'host_input_event' || event === 'accept_control' || event === 'control_started') {
@@ -2277,6 +2274,9 @@ io.on('connection', (socket) => {
         }
 
         const normalizedId = typeof agentId === 'string' ? agentId.replace(/[- ]/g, '').toUpperCase() : agentId;
+
+        // Helper to check if socket exists
+        const isValidSocket = (sid) => sid && io.sockets.sockets.get && io.sockets.sockets.get(sid);
 
         // 1. Try normalizedId mapping (preferred)
         if (agentSocketMap[normalizedId]) {
