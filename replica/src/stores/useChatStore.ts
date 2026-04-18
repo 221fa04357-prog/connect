@@ -780,22 +780,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
        // But if I'm another participant, I might want to know.
     });
 
-    socket.on('remote_frame', (data: { frame: ArrayBuffer | string }) => {
-      // Handle binary or base64 frames
-      let frameUrl: string;
-      if (typeof data.frame !== 'string') {
-        const blob = new Blob([data.frame], { type: 'image/jpeg' });
-        frameUrl = URL.createObjectURL(blob);
-      } else {
-        frameUrl = data.frame;
-      }
-      
-      // window.dispatchEvent will be picked up by RemoteControlStream.tsx
-      window.dispatchEvent(new CustomEvent('remote_control_frame', { detail: frameUrl }));
-    });
-
-    socket.on('host_input_event', (data: any) => {
-      console.log('[RemoteControl] Host input event received by participant browser:', data);
+    socket.on('remote_frame', (data: { frame: string }) => {
+      // Dispatch event for RemoteControlStream component
+      console.log('[RemoteControl] Received remote_frame event from backend, frame size:', data.frame?.length || 0);
+      window.dispatchEvent(new CustomEvent('remote_control_frame', { detail: data.frame }));
     });
 
     socket.on('control_error', (data: { message: string }) => {
