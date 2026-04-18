@@ -11,7 +11,6 @@ export function RemoteControlStream() {
   const [frame, setFrame] = useState<string | null>(null);
   const [remoteCursor, setRemoteCursor] = useState<{ x: number, y: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { socket, sendControlEvent, controlDataChannels, nativeAgentStatus } = useChatStore();
   const { remoteControlState } = useMeetingStore();
   const { remoteScreenStreams } = useMediaStore();
@@ -35,31 +34,6 @@ export function RemoteControlStream() {
     socket.on('remote_frame', handleFrame);
     socket.on('remote_cursor_pos', handleCursorPos);
 
-    // Listen for window event (dispatched by useChatStore)
-    const handleFrameEvent = (e: any) => {
-      if (e.detail) {
-        setFrame(e.detail);
-        
-        // Render to canvas for smoother "video" feel
-        if (canvasRef.current) {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-            
-            // Draw to canvas (no aspect ratio logic needed here as canvas is styled with object-contain)
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-          };
-          img.src = e.detail;
-        }
-      }
-    };
-    window.addEventListener('remote_control_frame', handleFrameEvent);
-
     // Also listen for DataChannel events dispatched via window
     const handleDcEvent = (e: any) => {
       if (e.detail?.type === 'cursor_pos') {
@@ -71,7 +45,6 @@ export function RemoteControlStream() {
     return () => {
       socket.off('remote_frame', handleFrame);
       socket.off('remote_cursor_pos', handleCursorPos);
-      window.removeEventListener('remote_control_frame', handleFrameEvent);
       window.removeEventListener('remote_control_event', handleDcEvent);
     };
   }, [socket]);
@@ -244,9 +217,10 @@ export function RemoteControlStream() {
           onLoadedMetadata={(e) => e.currentTarget.play()}
         />
       ) : (
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full object-contain cursor-pointer select-none bg-zinc-950"
+        <img
+          src={frame!}
+          alt="Remote Screen"
+          className="w-full h-full object-contain cursor-pointer select-none"
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
