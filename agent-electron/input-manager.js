@@ -23,6 +23,9 @@ function getPS() {
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
     
+    // Check for success
+    psProcess.stdin.write('if ([Win32.Win32Input]) { "WIN32_READY" } else { "WIN32_FAILED" }\n');
+    
     psProcess.stderr.on('data', (data) => {
         const err = data.toString();
         if (err.includes('Error') || err.includes('Exception')) {
@@ -31,6 +34,10 @@ function getPS() {
     });
     
     psProcess.stdout.on('data', (data) => {
+        const out = data.toString();
+        if (out.includes('WIN32_READY')) {
+            console.log('[INPUT] Win32 API successfully injected into PowerShell');
+        }
         // console.log(`[PS OUT] ${data}`);
     });
 
@@ -63,7 +70,7 @@ const InputManager = {
     async moveMouse(x, y) {
         const roundedX = Math.round(x);
         const roundedY = Math.round(y);
-        // Using SetCursorPos directly via our Win32 class is much faster and more reliable than [Cursor]::Position
+        console.log(`[INPUT] Moving mouse to: ${roundedX}, ${roundedY}`);
         const command = `[Win32.Win32Input]::SetCursorPos(${roundedX}, ${roundedY});\n`;
         getPS().stdin.write(command);
     },
@@ -72,6 +79,7 @@ const InputManager = {
      * mouseDown simulation.
      */
     async mouseDown(button = 'left') {
+        console.log(`[INPUT] Mouse DOWN: ${button}`);
         const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
                      button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
         const command = `[Win32.Win32Input]::mouse_event(${flag}, 0, 0, 0, 0);\n`;
@@ -92,7 +100,7 @@ const InputManager = {
      * Clicks the mouse.
      */
     async clickMouse(button = 'left', double = false) {
-        // We combine these into a single write to ensure they are processed sequentially by the same PS instance
+        console.log(`[INPUT] Clicking mouse: ${button} (double: ${double})`);
         const flagDown = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
                          button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
         const flagUp = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 

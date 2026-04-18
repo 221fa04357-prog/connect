@@ -118,7 +118,10 @@ function stopStreaming() {
 }
 
 async function handleInputEvent(event, hostId) {
-    if (!isControlled) return;
+    if (!isControlled) {
+        console.warn(`[AGENT] Input blocked: isControlled=${isControlled}`);
+        return;
+    }
 
     try {
         const { type, x, y, button, key } = event;
@@ -129,8 +132,9 @@ async function handleInputEvent(event, hostId) {
         if (type === 'mouse_move') {
             const now = Date.now();
             if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
-                const targetX = x * width;
-                const targetY = y * height;
+                const targetX = Math.round(x * width);
+                const targetY = Math.round(y * height);
+                console.log(`[INPUT] Physical Pixel Move: ${targetX}x${targetY} (Screen: ${width}x${height})`);
                 await InputManager.moveMouse(targetX, targetY);
                 lastMouseMove = now;
 
@@ -160,8 +164,15 @@ async function handleInputEvent(event, hostId) {
 }
 
 app.whenReady().then(() => {
-    console.log('[AGENT] Screen capturing and remote control logic initialized.');
-    console.log('[AGENT] NOTE: Running as Administrator is recommended for full system-level input control.');
+    let isAdmin = false;
+    try {
+        require('child_process').execSync('net session', { stdio: 'ignore' });
+        isAdmin = true;
+    } catch (e) {
+        isAdmin = false;
+    }
+    console.log(`[AGENT] Screen capturing and remote control logic initialized.`);
+    console.log(`[SECURITY] RUNNING AS ADMINISTRATOR: ${isAdmin ? 'YES ✅' : 'NO ❌ (Control may fail)'}`);
     createWindow();
 
     socket = io(SERVER_URL, {
@@ -176,6 +187,17 @@ app.whenReady().then(() => {
         // --- NEW AUTO-LINK BEHAVIOR ---
         // Emit agent_idle_connect instead of agent_status on initial boot
         socket.emit("agent_idle_connect", { agentId: AGENT_ID });
+        
+        // Re-identify if already linked (critical for reconnection)
+        if (global.meetingId && global.participantId) {
+            console.log(`[RECONNECT] Re-identifying as participant ${global.participantId}`);
+            socket.emit("agent_status", {
+                agentId: AGENT_ID,
+                meetingId: global.meetingId,
+                participantId: global.participantId,
+                ready: true
+            });
+        }
 
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
@@ -225,13 +247,15 @@ app.whenReady().then(() => {
 
     // ✅ HOST INPUT (mouse/keyboard)
     const handleIncomingInput = (data) => {
-        // console.log('[AGENT] Incoming input data:', data);
+        console.log('[AGENT] Incoming socket event data:', JSON.stringify(data));
         if (data && data.type) {
             // Direct event object (new relay format)
             handleInputEvent(data, data.hostId || null);
         } else if (data && data.event) {
             // Wrapped event object
             handleInputEvent(data.event, data.hostId || null);
+        } else {
+            console.warn('[AGENT] Unrecognized input data format:', data);
         }
     };
 
