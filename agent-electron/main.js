@@ -117,32 +117,16 @@ function stopStreaming() {
     isControlled = false;
 }
 
-let lastSeq = 0;
-
 async function handleInputEvent(event, hostId) {
     if (!isControlled) return;
 
     try {
-        const { type, x, y, button, key, seq } = event;
-        
-        // Sequence checking to prevent out-of-order execution
-        if (seq) {
-            if (seq <= lastSeq) return; // Drop older out-of-order event
-            lastSeq = seq;
-        }
-
+        const { type, x, y, button, key } = event;
         const { width, height } = screen.getPrimaryDisplay().bounds;
 
-        // Ensure initialization is complete before proceeding
-        await InputManager.getPS();
+        console.log(`[AGENT] Executing ${type}`, { x, y, button, key });
 
         if (type === 'mouse_move') {
-            // Coordinate normalization check
-            if (x < 0 || x > 1 || y < 0 || y > 1) {
-                console.warn('[AGENT] Dropping out-of-bounds mouse coordinates:', x, y);
-                return;
-            }
-
             const now = Date.now();
             if (now - lastMouseMove > MOUSE_THROTTLE_MS) {
                 const targetX = x * width;
@@ -157,26 +141,18 @@ async function handleInputEvent(event, hostId) {
                     x, y
                 });
             }
-        } else {
-            // Log non-mouse events for debugging
-            console.log(`[AGENT] Executing ${type}`, { x, y, button, key, seq });
-            
-            if (type === 'mouse_down') {
-                await InputManager.mouseDown(button || 'left');
-            } else if (type === 'mouse_up') {
-                await InputManager.mouseUp(button || 'left');
-            } else if (type === 'mouse_click') {
-                await InputManager.clickMouse(button || 'left', event.double || false);
-            } else if (type === 'mouse_double_click') {
-                await InputManager.clickMouse(button || 'left', true);
-            } else if (type === 'key_down' || type === 'key_press') {
-                await InputManager.simulateKey(key, false);
-            } else if (type === 'key_up') {
-                await InputManager.simulateKey(key, true);
-            }
-            
-            // Optional basic ACK back to server
-            socket.emit('input_executed', { hostId, type, seq });
+        } else if (type === 'mouse_down') {
+            await InputManager.mouseDown(button || 'left');
+        } else if (type === 'mouse_up') {
+            await InputManager.mouseUp(button || 'left');
+        } else if (type === 'mouse_click') {
+            await InputManager.clickMouse(button || 'left', event.double || false);
+        } else if (type === 'mouse_double_click') {
+            await InputManager.clickMouse(button || 'left', true);
+        } else if (type === 'key_down' || type === 'key_press') {
+            await InputManager.simulateKey(key, false);
+        } else if (type === 'key_up') {
+            await InputManager.simulateKey(key, true);
         }
     } catch (err) {
         console.error('Input execution error:', err);
@@ -204,18 +180,6 @@ app.whenReady().then(() => {
         if (mainWindow) {
             mainWindow.webContents.send('status-update', { status: 'Connected', agentId: AGENT_ID });
         }
-
-        // --- Session Heartbeat ---
-        if (global.heartbeatInterval) clearInterval(global.heartbeatInterval);
-        global.heartbeatInterval = setInterval(() => {
-            if (socket.connected) {
-                socket.emit('agent_heartbeat', { agentId: AGENT_ID, meetingId: global.meetingId, participantId: global.participantId });
-            }
-        }, 5000);
-    });
-
-    socket.on('disconnect', () => {
-        if (global.heartbeatInterval) clearInterval(global.heartbeatInterval);
     });
 
     // Listen for manual or auto link pairing from backend
