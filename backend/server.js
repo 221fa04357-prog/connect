@@ -2204,14 +2204,14 @@ io.on('connection', (socket) => {
 
         // Broadcast to the meeting so everyone stays in sync with control status
         io.to(meetingId).emit('control_started', {
-            agentId: linkedAgentId || 'native-agent',
+            agentId: linkedAgentId || agentSocketId,
             participantId,
             hostId
         });
 
         if (hostSocketId) {
             io.to(hostSocketId).emit('control_response', { accepted: true, agentSocketId });
-            io.to(hostSocketId).emit('control_connected', { agentId: 'native-agent', agentSocketId });
+            io.to(hostSocketId).emit('control_connected', { agentId: linkedAgentId || agentSocketId, agentSocketId });
         } else {
             console.log(`[RemoteControl] Host socket not found to send response. hostId: ${hostId}`);
         }
@@ -2263,41 +2263,52 @@ io.on('connection', (socket) => {
     });
 
     socket.on('host_input_event', (data) => {
-        const { agentId, event } = data;
+        const { event, participantId, meetingId, agentId } = data;
+
+        if (!event) return;
+
+        // Mouse-only Throttling (~100 FPS limit)
+        if (event.type === 'mouse_move') {
+            const now = Date.now();
+            socket.lastMouseMoveTime = socket.lastMouseMoveTime || 0;
+            if (now - socket.lastMouseMoveTime < 10) return;
+            socket.lastMouseMoveTime = now;
+        }
 
         let targetSocketId = null;
 
-        if (!agentId) {
-            console.warn('[RemoteControl] host_input_event: no agentId given');
-            return;
-        }
-
-        // agentId may be an internal agent identifier or an actual socket id
-        const normalizedId = typeof agentId === 'string' ? agentId.replace(/[- ]/g, '').toUpperCase() : agentId;
-
-        if (agentSocketMap[normalizedId]) {
-            targetSocketId = agentSocketMap[normalizedId];
-        } else if (agentSocketMap[agentId]) {
-            targetSocketId = agentSocketMap[agentId];
-        } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
-            targetSocketId = agentId;
-        } else if (io.sockets.sockets[agentId]) {
-            targetSocketId = agentId;
-        } else {
-            // If we have a controlSession for this participant, use it
-            const candidate = Object.values(controlSessionMap).find(s => s.agentId === agentId || s.hostSocketId === agentId);
-            if (candidate && candidate.agentId) {
-                const cNormalized = typeof candidate.agentId === 'string' ? candidate.agentId.replace(/[- ]/g, '').toUpperCase() : candidate.agentId;
-                if (agentSocketMap[cNormalized]) {
-                    targetSocketId = agentSocketMap[cNormalized];
-                } else if (agentSocketMap[candidate.agentId]) {
-                    targetSocketId = agentSocketMap[candidate.agentId];
-                }
+        // 1. Validate via Backend Source of Truth if participantId is provided
+        if (participantId) {
+            const session = controlSessionMap[participantId];
+            if (!session) {
+                console.warn(`[RemoteControl] Dropped input: No active session for participant ${participantId}`);
+                return;
             }
+
+            // Verify Authorization
+            if (session.hostSocketId !== socket.id) {
+                console.warn(`[RemoteControl] Unauthorized input: Socket ${socket.id} is not the host for ${participantId}`);
+                return;
+            }
+
+            // Resolve target agent socket
+            const linkedAgentId = session.agentId;
+            if (linkedAgentId && agentSocketMap[linkedAgentId]) {
+                targetSocketId = agentSocketMap[linkedAgentId];
+            } else if (io.sockets.sockets.get && io.sockets.sockets.get(linkedAgentId)) {
+                targetSocketId = linkedAgentId; // if agentId is already a socket ID
+            }
+        } else if (agentId) {
+            // 2. Legacy fallback
+            const normalizedId = typeof agentId === 'string' ? agentId.replace(/[- ]/g, '').toUpperCase() : agentId;
+            if (agentSocketMap[normalizedId]) targetSocketId = agentSocketMap[normalizedId];
+            else if (agentSocketMap[agentId]) targetSocketId = agentSocketMap[agentId];
+            else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) targetSocketId = agentId;
+            else if (io.sockets.sockets[agentId]) targetSocketId = agentId;
         }
 
         if (!targetSocketId) {
-            console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
+            console.warn(`[RemoteControl] host_input_event: Could not resolve target socket for input`);
             return;
         }
 
