@@ -77,21 +77,18 @@ async function captureLoop(hostId, participantId) {
             const screenSource = sources[0];
             const thumb = screenSource.thumbnail;
             if (!thumb.isEmpty()) {
-                const jpegBuffer = thumb.toJPEG(60);
-                const base64 = jpegBuffer.toString('base64');
-
                 socket.emit('agent_frame', {
                     hostId,
                     participantId,
-                    frame: `data:image/jpeg;base64,${base64}`
+                    frame: jpegBuffer // Send binary buffer directly
                 });
                 console.log('Agent frame emitted', { hostId, participantId });
             }
         }
 
-        // Dynamically delay to prevent event loop starvation (~15 FPS target)
+        // Dynamically delay to target ~30 FPS for a "video" feel
         const elapsed = Date.now() - start;
-        const delay = Math.max(0, 66 - elapsed);
+        const delay = Math.max(10, 33 - elapsed);
 
         if (isControlled) {
             captureTimeout = setTimeout(() => captureLoop(hostId, participantId), delay);

@@ -5,7 +5,7 @@ let psProcess = null;
 function getPS() {
     if (psProcess && !psProcess.killed) return psProcess;
 
-    psProcess = spawn('powershell.exe', ['-NoProfile', '-Command', '-'], {
+    psProcess = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', '-'], {
         stdio: ['pipe', 'pipe', 'pipe']
     });
 
