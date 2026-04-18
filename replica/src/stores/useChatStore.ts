@@ -1242,37 +1242,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
 
   sendControlEvent: (event: any) => {
-    const { socket, nativeAgentStatus, controlDataChannels } = get();
+    const { socket, nativeAgentStatus, controlDataChannels, meetingId } = get();
     
-    // 🚨 1. Native Agent Priority
-    if (socket && nativeAgentStatus.status === 'connected' && nativeAgentStatus.agentId) {
-      socket.emit('host_input_event', {
-        agentId: nativeAgentStatus.agentId,
-        event
-      });
+    // Add sequence ID for strict ordering
+    if (typeof window !== 'undefined') {
+        (window as any)._remoteControlSeq = ((window as any)._remoteControlSeq || 0) + 1;
+        event.seq = (window as any)._remoteControlSeq;
     }
 
-    // 🚨 2. Browser-to-Browser (DataChannel)
-    // Use dynamic imports to avoid circular dependency issues at boot
-    Promise.all([
-      import('./useMeetingStore'),
-      import('./useParticipantsStore')
-    ]).then(([msStore, pStore]) => {
+    import('./useMeetingStore').then((msStore) => {
       const targetParticipantId = msStore.useMeetingStore.getState().remoteControlState.targetId;
+      
+      // 🚨 1. Native Agent Priority
+      if (socket && nativeAgentStatus.status === 'connected') {
+        socket.emit('host_input_event', {
+          participantId: targetParticipantId,
+          meetingId,
+          agentId: nativeAgentStatus.agentId,
+          event
+        });
+      }
+
+      // 🚨 2. Browser-to-Browser (DataChannel)
       if (targetParticipantId) {
-        const targetParticipant = pStore.useParticipantsStore.getState().participants.find(p => p.id === targetParticipantId);
-        const targetSocketId = (targetParticipant as any)?.socketId;
-        
-        if (targetSocketId && controlDataChannels[targetSocketId]) {
-          const channel = controlDataChannels[targetSocketId];
-          if (channel.readyState === 'open') {
-            try {
-              channel.send(JSON.stringify(event));
-            } catch (err) {
-              console.error("Failed to send via DataChannel:", err);
+        import('./useParticipantsStore').then((pStore) => {
+          const targetParticipant = pStore.useParticipantsStore.getState().participants.find(p => p.id === targetParticipantId);
+          const targetSocketId = (targetParticipant as any)?.socketId;
+          
+          if (targetSocketId && controlDataChannels[targetSocketId]) {
+            const channel = controlDataChannels[targetSocketId];
+            if (channel.readyState === 'open') {
+              try {
+                channel.send(JSON.stringify(event));
+              } catch (err) {
+                console.error("Failed to send via DataChannel:", err);
+              }
             }
           }
-        }
+        });
       }
     });
   },
