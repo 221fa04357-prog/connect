@@ -21,13 +21,34 @@ function getPS() {
     ];
 
     psProcess.stdin.write(initCommands.join('\n') + '\n');
-    psProcess.stderr.on('data', (data) => console.error(`[PS ERROR] ${data}`));
-    psProcess.stdout.on('data', (data) => console.log(`[PS OUT] ${data}`));
 
-    psProcess.on('exit', (code) => {
-        console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
-        psProcess = null;
-    });
+// Check for success
+psProcess.stdin.write('if ([Win32.Win32Input]) { "WIN32_READY" } else { "WIN32_FAILED" }\n');
+
+// STDERR (keep full logging but structured)
+psProcess.stderr.on('data', (data) => {
+    const err = data.toString();
+    console.error(`[PS ERROR] ${err}`);
+});
+
+// STDOUT (keep debug + success detection)
+psProcess.stdout.on('data', (data) => {
+    const out = data.toString();
+
+    if (out.includes('WIN32_READY')) {
+        console.log('[INPUT] Win32 API successfully injected into PowerShell');
+    } else if (out.includes('WIN32_FAILED')) {
+        console.error('[INPUT] Win32 API injection FAILED');
+    }
+
+    // Optional debug log (enable if needed)
+    console.log(`[PS OUT] ${out}`);
+});
+
+psProcess.on('exit', (code) => {
+    console.warn(`[PS EXIT] PowerShell process exited with code ${code}. Restarting...`);
+    psProcess = null;
+});
 
     console.log('[INPUT] Using persistent PowerShell session');
     return psProcess;
@@ -48,20 +69,24 @@ const InputManager = {
     },
 
     /**
-     * Moves mouse to absolute coordinates.
-     */
-    async moveMouse(x, y) {
-        const roundedX = Math.round(x);
-        const roundedY = Math.round(y);
-        // console.log(`[INPUT] Moving mouse to ${roundedX}, ${roundedY}`);
-        const command = `[Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${roundedX}, ${roundedY})\n`;
-        getPS().stdin.write(command);
-    },
+ * Moves mouse to absolute coordinates.
+ */
+async moveMouse(x, y) {
+    const roundedX = Math.round(x);
+    const roundedY = Math.round(y);
+
+    // Keep logging optional (enable when debugging)
+    console.log(`[INPUT] Moving mouse to: ${roundedX}, ${roundedY}`);
+
+    const command = `[Win32.Win32Input]::SetCursorPos(${roundedX}, ${roundedY});\n`;
+    getPS().stdin.write(command);
+},
 
     /**
      * mouseDown simulation.
      */
     async mouseDown(button = 'left') {
+        console.log(`[INPUT] Mouse DOWN: ${button}`);
         const flag = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
                      button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
         const command = `[Win32.Win32Input]::mouse_event(${flag}, 0, 0, 0, 0);\n`;
@@ -79,16 +104,36 @@ const InputManager = {
     },
 
     /**
-     * Clicks the mouse.
-     */
-    async clickMouse(button = 'left', double = false) {
-        await this.mouseDown(button);
-        await this.mouseUp(button);
-        if (double) {
-            await this.mouseDown(button);
-            await this.mouseUp(button);
-        }
-    },
+ * Clicks the mouse.
+ */
+async clickMouse(button = 'left', double = false) {
+    console.log(`[INPUT] Clicking mouse: ${button} (double: ${double})`);
+
+    const flagDown = button === 'right' ? this.MOUSE_FLAGS.RIGHTDOWN : 
+                     button === 'middle' ? this.MOUSE_FLAGS.MIDDLEDOWN : this.MOUSE_FLAGS.LEFTDOWN;
+
+    const flagUp = button === 'right' ? this.MOUSE_FLAGS.RIGHTUP : 
+                   button === 'middle' ? this.MOUSE_FLAGS.MIDDLEUP : this.MOUSE_FLAGS.LEFTUP;
+
+    let command = '';
+
+    // First click
+    command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
+    command += `Start-Sleep -Milliseconds 50; `;
+    command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0); `;
+
+    // Double click
+    if (double) {
+        command += `Start-Sleep -Milliseconds 100; `;
+        command += `[Win32.Win32Input]::mouse_event(${flagDown}, 0, 0, 0, 0); `;
+        command += `Start-Sleep -Milliseconds 50; `;
+        command += `[Win32.Win32Input]::mouse_event(${flagUp}, 0, 0, 0, 0); `;
+    }
+
+    command += `\n`;
+
+    getPS().stdin.write(command);
+},
 
     /**
      * Simulates a key event (down/up).

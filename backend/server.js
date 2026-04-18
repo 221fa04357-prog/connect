@@ -2101,7 +2101,7 @@ io.on('connection', (socket) => {
             if (agentSocketMap[aid] === socket.id) {
                 console.log(`[AGENT] Removing agentId ${aid} from socket map and queues`);
                 delete agentSocketMap[aid];
-                availableAgents = availableAgents.filter(a => a !== aid);
+                // availableAgents = availableAgents.filter(a => a !== aid); // Move this outside if we want to remove all
                 
                 // Clear active session to allow participant to reconnect later if agent crashes
                 for (const pid in activeSessions) {
@@ -2111,9 +2111,11 @@ io.on('connection', (socket) => {
                         break;
                     }
                 }
-                break;
+                // Do NOT break, we want to clear all mappings for this socket.id
             }
         }
+        // Cleanup available agents once
+        availableAgents = availableAgents.filter(aid => agentSocketMap[aid] !== socket.id);
     });
 
     socket.on("request_control", (data) => {
@@ -2273,37 +2275,124 @@ io.on('connection', (socket) => {
         }
 
         // agentId may be an internal agent identifier or an actual socket id
-        const normalizedId = typeof agentId === 'string' ? agentId.replace(/[- ]/g, '').toUpperCase() : agentId;
+const normalizedId =
+    typeof agentId === 'string'
+        ? agentId.replace(/[- ]/g, '').toUpperCase()
+        : agentId;
 
-        if (agentSocketMap[normalizedId]) {
-            targetSocketId = agentSocketMap[normalizedId];
-        } else if (agentSocketMap[agentId]) {
-            targetSocketId = agentSocketMap[agentId];
-        } else if (io.sockets.sockets.get && io.sockets.sockets.get(agentId)) {
-            targetSocketId = agentId;
-        } else if (io.sockets.sockets[agentId]) {
-            targetSocketId = agentId;
+// Helper to check if socket exists
+const isValidSocket = (sid) => {
+    return sid && io.sockets.sockets.get && io.sockets.sockets.get(sid);
+};
+
+// 1. Try normalizedId mapping (preferred)
+if (agentSocketMap[normalizedId]) {
+    const sid = agentSocketMap[normalizedId];
+    if (isValidSocket(sid)) {
+        targetSocketId = sid;
+    } else {
+        console.warn(`[RemoteControl] Stale mapping for normalized ${normalizedId}`);
+    }
+}
+
+// 2. Try raw agentId mapping
+if (!targetSocketId && agentSocketMap[agentId]) {
+    const sid = agentSocketMap[agentId];
+    if (isValidSocket(sid)) {
+        targetSocketId = sid;
+    } else {
+        console.warn(`[RemoteControl] Stale mapping for ${agentId}`);
+    }
+}
+
+// 3. agentId itself might be a socketId
+if (!targetSocketId && isValidSocket(agentId)) {
+    targetSocketId = agentId;
+}
+
+// 4. Legacy fallback (older socket.io structure)
+if (!targetSocketId && io.sockets.sockets[agentId]) {
+    targetSocketId = agentId;
+}
+} else {
+    // If we have a controlSession for this participant, use it
+    const candidate = Object.values(controlSessionMap).find(
+        s => s.agentId === agentId || s.hostSocketId === agentId
+    );
+
+    if (candidate && candidate.agentId) {
+        const cNormalized =
+            typeof candidate.agentId === 'string'
+                ? candidate.agentId.replace(/[- ]/g, '').toUpperCase()
+                : candidate.agentId;
+
+        const isValidSocket = (sid) =>
+            sid && io.sockets.sockets.get && io.sockets.sockets.get(sid);
+
+        if (agentSocketMap[cNormalized] && isValidSocket(agentSocketMap[cNormalized])) {
+            targetSocketId = agentSocketMap[cNormalized];
+
+        } else if (agentSocketMap[candidate.agentId] && isValidSocket(agentSocketMap[candidate.agentId])) {
+            targetSocketId = agentSocketMap[candidate.agentId];
+
         } else {
-            // If we have a controlSession for this participant, use it
-            const candidate = Object.values(controlSessionMap).find(s => s.agentId === agentId || s.hostSocketId === agentId);
-            if (candidate && candidate.agentId) {
-                const cNormalized = typeof candidate.agentId === 'string' ? candidate.agentId.replace(/[- ]/g, '').toUpperCase() : candidate.agentId;
-                if (agentSocketMap[cNormalized]) {
-                    targetSocketId = agentSocketMap[cNormalized];
-                } else if (agentSocketMap[candidate.agentId]) {
-                    targetSocketId = agentSocketMap[candidate.agentId];
-                }
+            console.warn('[RemoteControl] No valid socket found in controlSession fallback');
+        }
+    }
+}
+// Fallback 1: agentStatusMap
+if (!targetSocketId && participantId) {
+    const fallbackAgent = agentStatusMap[participantId];
+
+    if (fallbackAgent && fallbackAgent.socketId && io.sockets.sockets.get(fallbackAgent.socketId)) {
+        targetSocketId = fallbackAgent.socketId;
+        console.log(`[RemoteControl] Routed via agentStatusMap -> ${targetSocketId}`);
+    }
+}
+
+// Fallback 2: search control sessions
+if (!targetSocketId) {
+    for (const [pid, session] of Object.entries(controlSessionMap)) {
+        if (session.hostSocketId === socket.id) {
+            const agent = agentStatusMap[pid];
+
+            if (agent && agent.socketId && io.sockets.sockets.get(agent.socketId)) {
+                targetSocketId = agent.socketId;
+                console.log(`[RemoteControl] Routed via controlSessionMap -> participant ${pid}`);
+                break;
             }
         }
+    }
+}
 
-        if (!targetSocketId) {
-            console.warn(`[RemoteControl] host_input_event: no targetSocketId found for agentId=${agentId}`);
-            return;
-        }
+// Final check
+if (!targetSocketId) {
+    console.warn(`[RemoteControl] DROPPING EVENT: agentId=${agentId}, participantId=${participantId}`);
 
-        io.to(targetSocketId).emit('host_input_event', event);
-        io.to(targetSocketId).emit('input_event', event);
+    // Lightweight debug (avoid huge logs)
+    console.debug(`[RemoteControl] Maps snapshot`, {
+        agentSocketKeys: Object.keys(agentSocketMap).length,
+        agentStatusKeys: Object.keys(agentStatusMap).length,
+        controlSessions: Object.keys(controlSessionMap).length
     });
+
+    return;
+}
+
+// Relay event (include hostId for tracking)
+const relayData = { ...event, hostId: socket.id };
+
+io.to(targetSocketId).emit('host_input_event', relayData);
+io.to(targetSocketId).emit('input_event', relayData);
+
+// Optional: mirror to participant UI (debug visibility)
+const participantSocketId =
+    userSocketMap[participantId] ||
+    getSocketIdFallback(meetingId, participantId);
+
+if (participantSocketId && participantSocketId !== targetSocketId) {
+    io.to(participantSocketId).emit('host_input_event', relayData);
+}
 
     socket.on('agent_frame', (data) => {
         console.log('[RemoteControl] Received agent_frame event', { hostId: data?.hostId, participantId: data?.participantId, hasFrame: !!data?.frame });
